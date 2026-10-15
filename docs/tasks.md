@@ -4,18 +4,18 @@ Planned work that is specified but not started. Each task links to its requireme
 
 | # | Task | Requirements | Size |
 |---|---|---|---|
+| T6 | Full-scale performance of filtering, counts and statistics (lower priority since startup is fixed; [plan](full-scale-performance-plan.md)) | NFR-003, NFR-004, NFR-005 | L |
 | T1 | Resizable hierarchical filter boxes | UI-010 | S |
 | T2 | Collapsible filter widgets and graphs | UI-011 | S |
 | T3 | Live-updating import file list | DAT-013 | S |
 | T4 | Import statistics per file (time, duplicates, errors) | DAT-014 | M |
 | T5 | Geographical hotspot view | SRC-019 | L |
-| T6 | Facet performance at full scale (existing) | NFR-005 | L |
 | T7 | Monospace "data inspection" typography | UI-012 | S |
 | T8 | Statistics bar on the right (collapsible, hosts the graphs) | UI-013, UI-011, SRC-017 | M |
 | T9 | Top-30 employers widget | SRC-020 | M |
 | T10 | Employer logo cache | AD-010 | M |
 
-Suggested order: T7 early (pure CSS, affects how everything else is judged), T8 before T2 (so one collapsible-widget mechanism serves both bars), then T2 and T1 together, T3 with T4 (same view), then T9 and T5 (both live in the statistics bar); T10 is independent and can slot in anywhere. T6 should be measured after the full data import and may come first if updates feel slow.
+Priority order: T7 early (pure CSS, affects how everything else is judged), T8 before T2 (so one collapsible-widget mechanism serves both bars), then T2 and T1 together, T3 with T4 (same view), then T9 and T5 (both live in the statistics bar); T10 is independent and can slot in anywhere. T6 follows the [full-scale performance plan](full-scale-performance-plan.md) when filtered use at full scale feels slow, and before T9 and T5 if their queries make it worse.
 
 ## T1. Resizable hierarchical filter boxes (UI-010)
 - The occupation and location trees currently have a fixed `max-height: 240px` (`.tree` in `styles.css`).
@@ -54,10 +54,11 @@ Suggested order: T7 early (pure CSS, affects how everything else is judged), T8 
 - Storage: promote `lat`/`lon` (or a grid cell id) to columns, which is a schema change and needs a re-import or a backfill from `raw`; record a decision and update `data-model.md`.
 - Performance budget: must stay within NFR-003/NFR-005; measure on the full data set.
 
-## T6. Facet performance at full scale (NFR-005, existing)
-- Measured at 926k ads: facets 0.3 s warm, 0.5–1.5 s filtered, 2.4 s cold; ~10x more ads are expected. See [constraints.md](constraints.md).
-- Ideas: summary table of counts by (year/month, field, group, occupation, region, municipality, emp type, hours) refreshed after import; cache keyed by filter; debounce/cancel stale facet queries; compute the chart separately from the facets.
-- Do after the full import so the numbers are real; re-measure list, keyword, facets, timeline.
+## T6. Full-scale performance of filtering, counts and statistics (NFR-003, NFR-004, NFR-005)
+- Status 2026-10-15: the startup and freeze problems at about 70 GB / 11 million ads are fixed (D22: reads in workers, splash, window shown in about 3 s). Priority lowered by the user. What remains is slow filtered counts, facet counts, timeline and cold queries; main process and list stay responsive meanwhile.
+- Follow the [full-scale performance plan](full-scale-performance-plan.md) (sections 1 and 2 are largely done by D22): measure first, optimize facets/counts/timeline, benchmark compact metadata storage, bound obsolete work and replace deep OFFSET paging.
+- Retain Electron + SQLite initially. Consider Rust or another engine only if profiling demonstrates a remaining bottleneck that warrants the change.
+- Existing measurements at 926k ads are not a full-scale baseline; remeasure startup, list, keyword, exact counts, facets, timeline and detail lookup on the full dataset.
 
 ## T7. Monospace typography (UI-012)
 - Today the UI uses a sans-serif stack (`Inter`, `Segoe UI`, `system-ui`) set on `body` in `styles.css`; there are no bundled fonts and the CSP allows only `font-src 'self'`.

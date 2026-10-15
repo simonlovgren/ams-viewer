@@ -31,4 +31,4 @@
 - Source is ~57 GB (21 files); the database is about 1.2x the source size (3.6 GB array became a 4.4 GB database), so expect roughly 70 GB under the `userData` folder and an import time of about an hour (about 20 MB/s).
 - Ads from 2006–2017 have no occupation, location or employment type; occupation and location filters only cover 2018 onwards.
 - Ads with several occupations (2023+) are filterable only by their first occupation (D20).
-- At 926k ads facet counts take 0.3 s warm and 0.5–1.5 s filtered (2.4 s cold); at ~10x the data this will be too slow for live updates and needs a summary table or caching (NFR-005).
+- At 926k ads facet counts take 0.3 s warm and 0.5–1.5 s filtered (2.4 s cold); at ~10x the data (11.25M ads now imported) filtered counts and facets are slow on cold data, but the window and list stay responsive (D22); a summary table or caching is a later task (T6, reduced priority).

@@ -21,13 +21,18 @@
 - Global `svg { fill: none; stroke: currentColor; stroke-width: 2 }` is meant for icons. Any other inline SVG (the chart) inherits it, and its text then looks bold/glowing; reset with `stroke: none` on that SVG (`#chart svg`).
 - The list view stays mounted (hidden) while an ad is open; scrollTop is saved/restored manually in `show()`.
 - Stale async results are dropped with counters (`seq`, `fseq`, `adSeq`); keep using them for new async UI.
-- Filter state lives in `F`, persisted as `localStorage.filters`. When changing its shape, add a migration next to the existing one at the top of `app.js` (old shapes: `field/group/occ/region/muni/lbl`).
+- Filter state lives in `F`, kept in `sessionStorage.filters` (only while the app is open, SRC-013). Nothing needs migrating when its shape changes; the old `localStorage.filters` key is deleted on start.
 - Mouse back/forward = DOM `mouseup` buttons 3/4 (Linux). Backspace navigates back except in inputs; the search input has its own Backspace handler (removes the last free-text entry).
 - Tool edits applied in the same batch as a read may not be visible to that read; re-check with grep after multi-edit batches.
 
 ## Packaging
 - Only `src/**` and `package.json` are bundled (`build.files`); the 770 MB data files in the project root must never be added.
 - `npm run pack` output goes to `dist/` (git-ignored). The unpacked Linux build starts; Wayland prints a harmless Vulkan/ozone warning.
+
+## Startup and reads (2026-10-15)
+- A stale live-typed keyword (`W`, an FTS prefix of one letter) saved in `localStorage` made the first page query run for minutes on 11M ads. FTS prefix terms of 1 to 2 characters match huge posting lists; consider requiring a minimum prefix length. Filters are session-only now.
+- Do not run DB queries in the main process. Set `PRAGMA busy_timeout` before `journal_mode=WAL` when several connections open together.
+- Startup diagnostics: `[startup]` and `[perf]` lines print to the console; `AMS_TRACE=1 npm start` logs every IPC call. Long GUI test runs trigger the OS "not responding" popup if the main process blocks; use short `timeout` runs and `pkill -f ams_oldbrowser/node_modules/electron` afterwards.
 
 ## Import crash (2026-10-15)
 - Importing large `.json` array files crashed the whole app (`SIGTRAP`, `realloc` in a WorkerThread, ~10 GB memory peak, nothing inserted) because the old importer did `JSON.parse(readFileSync(file))`. Fixed by streaming (`arrayItems()` in `import-worker.js`). Never read a whole data file into memory.

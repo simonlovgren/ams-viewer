@@ -16,7 +16,7 @@ Browse, filter and read historical job ads offline. Source data is published as 
 - **Ad view**: job-ad style presentation (hero header, formatted description, requirements, how to apply, at-a-glance facts, employer info), with a clickable breadcrumb and clickable tags that apply filters.
 - **Data sources view**: import (file picker or drag & drop, multiple files), progress, per-source removal, totals.
 - **Navigation**: sidebar menu; Backspace, mouse back/forward buttons and Alt+←/→ move through view history; `/` focuses search.
-- **Persistence of state**: filters and tree expansion are saved in `localStorage`; the list view is kept alive (hidden) while an ad is open, preserving scroll position.
+- **Persistence of state**: filters are kept in `sessionStorage` (only while the app is open); tree expansion and layout are saved in `localStorage`; the list view is kept alive (hidden) while an ad is open, preserving scroll position.
 
 ## Architecture
 
@@ -29,7 +29,7 @@ flowchart LR
     M[main.js - window, IPC]
     D[db.js - schema, queries]
   end
-  FW[facets-worker.js]
+  RW[read-worker.js x2]
   IW[import-worker.js]
   DB[(SQLite ads.db<br/>WAL mode)]
   UI -- contextBridge API --> P[preload.js]
@@ -48,7 +48,8 @@ flowchart LR
 | `src/main/preload.js` | Exposes a minimal `window.api` via `contextBridge`. |
 | `src/main/db.js` | Schema, row mapping, filter → SQL builder, search, facets, ad lookup, source removal. Shared by main and workers. |
 | `src/main/import-worker.js` | Streams a file, maps records, inserts into `ads` and `ads_fts` in batched transactions, reports progress. |
-| `src/main/facets-worker.js` | Runs facet-count queries on its own DB connection so the main thread stays responsive. |
+| `src/main/read-worker.js` | All database reads, on their own connections: a `list` instance (rows, single ad, summary) and a `stats` instance (facets, counts, source removal) so a slow count never delays the list. The main process only queues requests (a newer request of the same kind supersedes a queued older one). |
+| `src/main/splash-preload.js`, `src/renderer/splash.*` | Splash window with progress bar shown while the database summary and first results load (UI-014). |
 | `src/renderer/app.js` | All UI logic: state, history, list, filter trees, ad rendering, data view. No framework. |
 
 ## Data flow
@@ -61,4 +62,4 @@ flowchart LR
 
 Each filter group's counts are computed with all *other* filters applied but its own ignored. This lets the user see alternatives within a group (e.g. other occupation fields) while still reflecting keyword, date and location choices.
 
-Options never disappear: every option present in the data is returned with its count (0 when no ad matches) and shown grayed out but selectable (SRC-015). The unfiltered option lists are cached in the facets worker and refreshed when the database changes.
+Options never disappear: every option present in the data is returned with its count (0 when no ad matches) and shown grayed out but selectable (SRC-015). The unfiltered option lists are cached in the stats worker and refreshed when the database changes.

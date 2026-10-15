@@ -72,7 +72,7 @@ Format: decision, requirements it satisfies, rationale, consequences. Every deci
 
 ## D15. Facets return all options with filtered counts; unfiltered lists cached
 - **Requirements**: SRC-015, SRC-009, NFR-003
-- **Why**: options must stay visible (grayed at count 0) so the filter panel does not jump around. The facets worker runs the unfiltered group-by once per dimension (cached, invalidated via `PRAGMA data_version`), runs the filtered group-by only when relevant filters are active, and merges counts onto the full list.
+- **Why**: options must stay visible (grayed at count 0) so the filter panel does not jump around. The stats worker runs the unfiltered group-by once per dimension (cached, invalidated via `PRAGMA data_version`), runs the filtered group-by only when relevant filters are active, and merges counts onto the full list.
 - **Consequence**: payload always contains every option (~2.5k occupations, ~300 municipalities at one quarter; more with all years). Cold start of the cache costs ~300 ms; filtered updates ~60 ms. During imports the cache is rebuilt often.
 
 ## D16. Free-text entries as chips inside the search input
@@ -87,7 +87,7 @@ Format: decision, requirements it satisfies, rationale, consequences. Every deci
 
 ## D18. Ads-over-time chart: server-side binning, hand-built SVG
 - **Requirements**: SRC-017, SRC-009, NFR-003
-- **Why**: the chart must follow every active filter and adapt its resolution to the period. `timeline()` in `db.js` groups matching ads by year/month/week/day (SQL `substr` / `date(..,'weekday 0','-6 days')`), fills empty bins and returns the unit and bounds; it is part of the facets result, so it runs in the facets worker and costs no extra IPC. The renderer draws an SVG with no charting library (no new dependency); axis labels are chosen by priority (first bin, then year/month landmarks, then fillers such as months, week numbers or days) and dropped when they would overlap.
+- **Why**: the chart must follow every active filter and adapt its resolution to the period. `timeline()` in `db.js` groups matching ads by year/month/week/day (SQL `substr` / `date(..,'weekday 0','-6 days')`), fills empty bins and returns the unit and bounds; it is part of the facets result, so it runs in the stats worker and costs no extra IPC. The renderer draws an SVG with no charting library (no new dependency); axis labels are chosen by priority (first bin, then year/month landmarks, then fillers such as months, week numbers or days) and dropped when they would overlap.
 - **Consequence**: the chart is recomputed on every filter change (cheap without a date filter, ~0.8 s at 130k ads with a date filter because it runs a second grouped query; see constraints). Its width follows the resizable sidebar through a `ResizeObserver`. Inline SVG inherits the global icon stroke style, so the chart resets `stroke`.
 
 ## D19. Free-text entries combined with AND or OR via `ftsMatch()`
@@ -104,3 +104,8 @@ Format: decision, requirements it satisfies, rationale, consequences. Every deci
 - **Requirements**: DAT-003
 - **Why**: Electron derives the `userData` folder from `package.json`; adding `productName` (for packaging, D14) silently moved `npm start` from `ams-viewer` to `AMS Viewer` and split the imported data across two databases. `main.js` now sets the folder explicitly, matching the folder that holds the user's imports.
 - **Consequence**: the path no longer depends on package metadata and is the same for development and packaged builds. The old `~/.config/ams-viewer` folder (only `2026-Q3`, 1.1 GB) is an unused leftover that the user can delete.
+
+## D22. Database reads only in workers; staged startup behind a splash window
+- **Requirements**: UI-014, NFR-004, NFR-005, SRC-013
+- **Why**: with 11M ads the first window took about 6 minutes (cold facet counts, an unfiltered `COUNT(*)` and a stale saved keyword filter, all in or ahead of the first paint) and synchronous queries in the main process made the OS flag the window as not responding. Now the main process runs no queries. Two read workers share `read-worker.js`: `list` (rows, single ad, summary) and `stats` (facets, counts, source removal), so slow statistics never delay the list; queued requests of the same kind are superseded by newer ones. Startup shows a splash window while the summary and first page load (about 3 s on 11M ads); facets and the chart load afterwards (a placeholder is shown). The unfiltered total comes from the per-source counts instead of `COUNT(*)`. Filters are kept only for the session (`sessionStorage`) so a stale filter cannot make the next start slow (SRC-013 changed).
+- **Consequence**: filtered counts and facets can still take a long time on big data (T6 / `docs/full-scale-performance-plan.md`); a running obsolete query is not cancelled. `PRAGMA busy_timeout` is now set before the WAL pragma, because several connections opening at once on a database needing WAL recovery failed with `SQLITE_BUSY`.

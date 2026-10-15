@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'" />
+  <title>AMS Viewer</title>
+  <link rel="stylesheet" href="splash.css" />
+</head>
+<body>
+  <div class="card">
+    <svg class="logo" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="7" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+    <h1>AMS Viewer</h1>
+    <p id="stage">Starting…</p>
+    <div class="bar"><i id="fill"></i></div>
+    <div class="meta"><span id="pct">0%</span><span id="elapsed">0 s</span></div>
+    <small>A large database can take a while to open.</small>
+  </div>
+  <script src="splash.js"></script>
+</body>
+</html>

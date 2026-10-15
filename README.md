@@ -30,7 +30,7 @@ node --check src/renderer/app.js
 ### Project layout
 
 ```
-src/main/       Electron main process: main.js, preload.js, db.js, import-worker.js, facets-worker.js
+src/main/       Electron main process: main.js, preload.js, db.js, import-worker.js, read-worker.js, splash-preload.js
 src/renderer/   UI: index.html, styles.css, app.js (plain JS, no build step)
 requirements/   Requirements with IDs (what the app shall do)
 docs/           System description, technologies, design decisions, constraints, data model

@@ -2,16 +2,15 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const { Worker } = require('worker_threads');
-const dbm = require('./db');
 
-let db;
 let win;
 let importing = false;
 
 const DATA_EXT = /\.(jsonl|ndjson|json)$/i;
 
-function createWindow() {
+function createWindow(show = true) {
   win = new BrowserWindow({
+    show,
     width: 1400,
     height: 900,
     minWidth: 960,
@@ -67,25 +66,139 @@ function startImport(files) {
 app.setPath('userData', path.join(app.getPath('appData'), 'AMS Viewer'));
 const dbPath = () => path.join(app.getPath('userData'), 'ads.db');
 
-app.whenReady().then(() => {
-  db = dbm.open(dbPath());
-
-  ipcMain.handle('db:info', () => dbm.info(db));
-  ipcMain.handle('ads:search', (_e, f, offset, limit, wantTotal) =>
-    dbm.search(db, f || {}, Math.max(0, offset | 0), Math.min(200, Math.max(1, limit | 0)), !!wantTotal));
-  const fw = new Worker(path.join(__dirname, 'facets-worker.js'), { workerData: { dbPath: dbPath() } });
-  const pending = new Map();
-  let fid = 0;
-  fw.on('message', ({ id, data, error }) => {
-    const p = pending.get(id);
-    pending.delete(id);
-    if (p) error ? p.reject(new Error(error)) : p.resolve(data);
+let splash;
+function createSplash() {
+  splash = new BrowserWindow({
+    width: 460,
+    height: 270,
+    frame: false,
+    resizable: false,
+    show: false,
+    center: true,
+    backgroundColor: '#0a0d18',
+    title: 'AMS Viewer',
+    webPreferences: {
+      preload: path.join(__dirname, 'splash-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
   });
-  ipcMain.handle('ads:facets', (_e, f) => new Promise((resolve, reject) => {
-    pending.set(++fid, { resolve, reject });
-    fw.postMessage({ id: fid, f: f || {} });
-  }));
-  ipcMain.handle('ads:get', (_e, id) => dbm.getAd(db, id));
+  splash.loadFile(path.join(__dirname, '..', 'renderer', 'splash.html'));
+  return new Promise((resolve) => splash.once('ready-to-show', () => { splash.show(); resolve(); }));
+}
+const progress = (pct, text) => splash && !splash.isDestroyed() && splash.webContents.send('splash:progress', { pct, text });
+
+// Database reads run in workers, never in the main process: a blocked main process makes the OS flag the window as not responding.
+function lane() {
+  let worker;
+  let dead = null;
+  const queue = [];
+  let cur = null;
+  let seq = 0;
+  const fail = (e) => {
+    dead = e;
+    if (cur) cur.reject(e);
+    cur = null;
+    for (const q of queue) q.reject(e);
+    queue.length = 0;
+  };
+  const next = () => {
+    if (cur || !queue.length) return;
+    cur = queue.shift();
+    worker.postMessage({ id: cur.id, type: cur.type, payload: cur.payload });
+  };
+  return {
+    start() {
+      worker = new Worker(path.join(__dirname, 'read-worker.js'), { workerData: { dbPath: dbPath() } });
+      worker.on('message', ({ id, data, error }) => {
+        if (!cur || cur.id !== id) return;
+        const c = cur;
+        cur = null;
+        if (error) c.reject(new Error(error)); else c.resolve(data);
+        next();
+      });
+      worker.on('error', fail);
+      worker.on('exit', () => fail(new Error('Read worker stopped')));
+    },
+    // latest: a queued request of the same type is superseded (resolves as stale) so slow outdated work never piles up.
+    request(type, payload, latest = false) {
+      return new Promise((resolve, reject) => {
+        if (dead) { reject(dead); return; }
+        if (latest) {
+          for (let i = queue.length - 1; i >= 0; i--) {
+            if (queue[i].type === type) { queue[i].resolve({ stale: true }); queue.splice(i, 1); }
+          }
+        }
+        queue.push({ id: ++seq, type, payload, resolve, reject });
+        next();
+      });
+    },
+  };
+}
+const lists = lane(); // result rows, single ad, database summary: always fast
+const stats = lane(); // facets, counts, source removal: can take long on big data
+
+app.whenReady().then(async () => {
+  const t0 = Date.now();
+  const lap = (what) => console.log(`[startup] ${what} +${Date.now() - t0} ms`);
+  let last = Date.now();
+  setInterval(() => {
+    const now = Date.now();
+    if (now - last > 1500) console.log(`[perf] main process blocked ${now - last - 250} ms`);
+    last = now;
+  }, 250).unref();
+  try {
+    await createSplash();
+    progress(5, 'Opening the database…');
+    registerHandlers();
+    lists.start();
+    stats.start();
+    progress(15, 'Reading the database summary…');
+    const info = await lists.request('info');
+    lap(`summary read (${info.total} ads)`);
+    progress(50, 'Loading the first results…');
+    await lists.request('search', { f: {}, offset: 0, limit: 1 });
+    lap('first query done');
+    progress(75, 'Loading the window…');
+    stats.request('facets', { f: {} }).catch(() => {}); // start the slow filter counts early
+  } catch (e) {
+    console.error('[startup] failed:', e);
+  }
+
+  let shown = false;
+  const showMain = () => {
+    if (shown) return;
+    shown = true;
+    progress(100, 'Ready');
+    if (win && !win.isDestroyed()) win.show();
+    setTimeout(() => splash && !splash.isDestroyed() && splash.close(), 200);
+    lap('window shown');
+  };
+  ipcMain.once('app:ready', showMain);
+  setTimeout(showMain, 120000);
+  createWindow(false);
+  app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow());
+});
+
+function registerHandlers() {
+  // Slow calls (over 0.5 s) are logged; set AMS_TRACE=1 to log every call.
+  const trace = !!process.env.AMS_TRACE;
+  const timed = (name, fn) => async (...a) => {
+    const t = Date.now();
+    if (trace) console.log(`[trace] ${name} start`);
+    try { return await fn(...a); } finally {
+      const ms = Date.now() - t;
+      if (trace) console.log(`[trace] ${name} done ${ms} ms`);
+      else if (ms > 500) console.log(`[perf] ${name} ${ms} ms`);
+    }
+  };
+  ipcMain.handle('db:info', timed('info', () => lists.request('info')));
+  ipcMain.handle('ads:search', timed('search', (_e, f, offset, limit) =>
+    lists.request('search', { f: f || {}, offset: Math.max(0, offset | 0), limit: Math.min(200, Math.max(1, limit | 0)) }, true)));
+  ipcMain.handle('ads:count', timed('count', (_e, f) => stats.request('count', { f: f || {} }, true)));
+  ipcMain.handle('ads:facets', timed('facets', (_e, f) => stats.request('facets', { f: f || {} }, true)));
+  ipcMain.handle('ads:get', (_e, id) => lists.request('get', { id }));
   ipcMain.handle('import:dialog', async () => {
     const r = await dialog.showOpenDialog(win, {
       title: 'Import job ad files',
@@ -95,17 +208,18 @@ app.whenReady().then(() => {
     return r.canceled ? { ok: false, canceled: true } : startImport(r.filePaths);
   });
   ipcMain.handle('import:start', (_e, files) => (Array.isArray(files) ? startImport(files) : { ok: false }));
-  ipcMain.handle('source:remove', (_e, name) => {
+  ipcMain.handle('source:remove', async (_e, name) => {
     if (importing) return { ok: false, error: 'Import running' };
-    dbm.removeSource(db, String(name));
-    return { ok: true };
+    try {
+      await stats.request('remove', { name: String(name) });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e.message || e) };
+    }
   });
   ipcMain.handle('open:external', (_e, url) => {
     if (typeof url === 'string' && /^https?:\/\//i.test(url)) shell.openExternal(url);
   });
-
-  createWindow();
-  app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow());
-});
+}
 
 app.on('window-all-closed', () => app.quit());

@@ -10,7 +10,7 @@
 | Icons | Inline SVG (Lucide-style paths) embedded in `app.js` | No external dependency or font loading; works offline. |
 | Styling | CSS custom properties, dark teal/blue/purple/pink palette | Requested theme; gradients via `--grad`. |
 | Routing | Browser History API (`pushState`/`popstate`) | Gives back/forward semantics for free; mouse back buttons and Backspace map onto it. |
-| State persistence | `localStorage` (filters, tree expansion) | Simple, survives restarts, renderer-local. |
+| State persistence | `sessionStorage` (filters, only while the app is open), `localStorage` (tree expansion, layout) | Simple, renderer-local. |
 | Security | `contextIsolation`, `sandbox`, no `nodeIntegration`, CSP, `contextBridge` | Standard Electron hardening; ad content is untrusted data. |
 | Packaging | **electron-builder** (dev dependency) | AppImage / NSIS / dmg from `package.json` config (D14). |
 

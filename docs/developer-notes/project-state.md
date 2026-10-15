@@ -25,4 +25,4 @@ Import to SQLite with progress (multi-file, drag and drop); keyword search with 
 
 ## Real data import (2026-10-15)
 - Data lives in `~/storage/ams_data` (21 `.jsonl`/`.json` files, ~57 GB, plus `.zip`/`.zst` copies the importer ignores). In the real database (`~/.config/AMS Viewer`) as of 2026-10-15: 2017, 2026-Q1, Q2, Q3 (1.14M ads, 7.2 GB) and `2016.jsonl` with 0 ads (imported before ids were synthesized; re-import it). `2018.json` and `2006.jsonl` were only tested in a scratch DB.
-- Next: import everything via the app (about an hour, ~70 GB DB), then re-measure facet/chart/keyword timings at ~10x scale. Facet counts (and the ads-over-time chart with a date filter) are the expected bottleneck (NFR-005).
+- All files are imported (11.25M ads). Startup is fast since D22 (window in ~3 s). Filtered counts, facet counts and the timeline are still slow on cold data; the user lowered the priority (T6, `docs/full-scale-performance-plan.md`). Re-measure before working on it.

@@ -10,6 +10,7 @@ Desktop application for browsing historical Swedish job ads (Arbetsförmedlingen
 | [constraints.md](constraints.md) | Technical, data and scope constraints, known limitations |
 | [data-model.md](data-model.md) | Source record format, database schema, indexes |
 | [tasks.md](tasks.md) | Planned work that is specified but not started |
+| [full-scale-performance-plan.md](full-scale-performance-plan.md) | Top-priority investigation and optimization plan for the full dataset (NFR-003/004/005) |
 | [developer-notes/](developer-notes/README.md) | Memory bank for future sessions: gotchas, testing recipes, project state |
 
 ## Quick start

@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS sources (
 
 function open(path) {
   const db = new DatabaseSync(path);
-  db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=15000;');
+  // busy_timeout first: opening several connections at once on a WAL database that needs recovery otherwise fails with SQLITE_BUSY.
+  db.exec('PRAGMA busy_timeout=30000; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;');
   db.exec(SCHEMA);
   return db;
 }
@@ -182,11 +183,20 @@ function search(db, f, offset, limit, wantTotal) {
     ).all(...params, limit, offset);
   }
   let total = null;
-  if (wantTotal) {
-    const { sql, params } = where(f);
-    total = db.prepare(`SELECT COUNT(*) n FROM ads a WHERE ${sql}`).get(...params).n;
-  }
+  if (wantTotal) total = count(db, f);
   return { total, rows: rows.map((r) => ({ ...r })) };
+}
+
+// The unfiltered total comes from the per-source counts: a COUNT(*) over millions of rows takes seconds.
+function totalAds(db) {
+  const n = db.prepare('SELECT COALESCE(SUM(ads), 0) n FROM sources').get().n;
+  return n || db.prepare('SELECT COUNT(*) n FROM ads').get().n;
+}
+
+function count(db, f) {
+  const { sql, params } = where(f);
+  if (sql === '1') return totalAds(db);
+  return db.prepare(`SELECT COUNT(*) n FROM ads a WHERE ${sql}`).get(...params).n;
 }
 
 const FACETS = {
@@ -203,7 +213,7 @@ const rowKey = (r) => JSON.stringify(Object.values(r).slice(0, -1));
 // `cache` keeps the unfiltered option lists until another connection changes the database.
 function facets(db, f, cache = {}) {
   const ver = db.prepare('PRAGMA data_version').get().data_version;
-  if (cache.ver !== ver) { cache.ver = ver; cache.all = {}; }
+  if (cache.ver !== ver) { cache.ver = ver; cache.all = {}; cache.timeline = null; }
   const run = (spec, filter) => {
     const { sql, params } = where(filter, spec.skip);
     return db.prepare(`SELECT ${spec.cols}, COUNT(*) n FROM ads a WHERE ${sql} ${spec.extra}`).all(...params).map((r) => ({ ...r }));
@@ -215,7 +225,7 @@ function facets(db, f, cache = {}) {
     const counts = new Map(run(spec, f).map((r) => [rowKey(r), r.n]));
     out[name] = all.map((r) => ({ ...r, n: counts.get(rowKey(r)) || 0 }));
   }
-  out.timeline = timeline(db, f);
+  out.timeline = where(f).sql === '1' ? (cache.timeline ||= timeline(db, f)) : timeline(db, f);
   return out;
 }
 
@@ -273,9 +283,9 @@ function getAd(db, id) {
 }
 
 function info(db) {
-  const t = db.prepare('SELECT COUNT(*) n, MIN(pub_date) mn, MAX(pub_date) mx FROM ads').get();
+  const t = db.prepare('SELECT MIN(pub_date) mn, MAX(pub_date) mx FROM ads').get();
   const sources = db.prepare('SELECT name, ads, imported_at FROM sources ORDER BY name').all().map((r) => ({ ...r }));
-  return { total: t.n, min: t.mn, max: t.mx, sources };
+  return { total: totalAds(db), min: t.mn, max: t.mx, sources };
 }
 
 function removeSource(db, name) {
@@ -291,4 +301,4 @@ function removeSource(db, name) {
   }
 }
 
-module.exports = { open, toRow, INSERT_SQL, search, facets, getAd, info, removeSource };
+module.exports = { open, toRow, INSERT_SQL, search, count, facets, getAd, info, removeSource };

@@ -2,8 +2,10 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
+  appReady: () => ipcRenderer.send('app:ready'),
   info: () => ipcRenderer.invoke('db:info'),
-  search: (filters, offset, limit, wantTotal) => ipcRenderer.invoke('ads:search', filters, offset, limit, wantTotal),
+  search: (filters, offset, limit) => ipcRenderer.invoke('ads:search', filters, offset, limit),
+  count: (filters) => ipcRenderer.invoke('ads:count', filters),
   facets: (filters) => ipcRenderer.invoke('ads:facets', filters),
   get: (id) => ipcRenderer.invoke('ads:get', id),
   importDialog: () => ipcRenderer.invoke('import:dialog'),

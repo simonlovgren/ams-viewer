@@ -48,24 +48,11 @@
   /* ---------- filter state ---------- */
   const DEF = { terms: [], termMode: 'and', sel: [], loc: [], from: '', to: '', emp: '', hours: '', sort: 'newest' };
   let F = { ...DEF };
-  try { F = { ...DEF, ...JSON.parse(localStorage.getItem('filters') || '{}') }; } catch { /* ignore */ }
-  if (!Array.isArray(F.sel) || !Array.isArray(F.loc)) {
-    // migrate single-selection filters saved by earlier versions
-    const l = F.lbl || {};
-    F.sel = [];
-    F.loc = [];
-    if (F.occ) F.sel.push({ k: 'occ', id: F.occ, label: l.occ || F.occ, fi: F.field, gi: F.group });
-    else if (F.group) F.sel.push({ k: 'group', id: F.group, label: l.group || F.group, fi: F.field, gi: F.group });
-    else if (F.field) F.sel.push({ k: 'field', id: F.field, label: l.field || F.field, fi: F.field });
-    if (F.muni) F.loc.push({ k: 'muni', id: F.muni, label: F.muni, ri: F.region });
-    else if (F.region) F.loc.push({ k: 'region', id: F.region, label: F.region, ri: F.region });
-  }
-  for (const k of ['field', 'group', 'occ', 'region', 'muni', 'lbl']) delete F[k];
-  // The text being typed used to be a live filter (`q`); keep what an older version saved as an entry.
-  if (F.q && F.q.trim()) F.terms = [...F.terms, F.q.trim()];
-  delete F.q;
+  // Filters live only while the app is open (sessionStorage); they are not restored on the next start.
+  try { F = { ...DEF, ...JSON.parse(sessionStorage.getItem('filters') || '{}') }; } catch { /* ignore */ }
+  localStorage.removeItem('filters'); // stored by earlier versions
   const expanded = new Set(JSON.parse(localStorage.getItem('expanded') || '[]'));
-  const saveF = () => localStorage.setItem('filters', JSON.stringify(F));
+  const saveF = () => sessionStorage.setItem('filters', JSON.stringify(F));
   const saveExp = () => localStorage.setItem('expanded', JSON.stringify([...expanded]));
 
   let reloadTimer;
@@ -126,7 +113,7 @@
 
   /* ---------- list ---------- */
   const PAGE = 60;
-  let seq = 0, loaded = 0, loading = false, done = false, total = 0, fseq = 0;
+  let seq = 0, loaded = 0, loading = false, done = false, total = null, fseq = 0;
   const listEl = $('#list');
 
   function rowHtml(r) {
@@ -146,16 +133,15 @@
   }
 
   function updateCount() {
-    $('#count').textContent = total ? `${fmtNum(total)} ads` : '';
+    $('#count').textContent = total === null ? 'counting…' : total ? `${fmtNum(total)} ads` : '';
   }
 
   async function loadMore(first, s) {
     if (loading || done) return;
     loading = true;
     try {
-      const res = await api.search(F, loaded, PAGE, first);
-      if (s !== seq) return;
-      if (first) total = res.total;
+      const res = await api.search(F, loaded, PAGE);
+      if (s !== seq || res.stale) return;
       loaded += res.rows.length;
       if (res.rows.length < PAGE) done = true;
       listEl.insertAdjacentHTML('beforeend', res.rows.map(rowHtml).join(''));
@@ -175,15 +161,25 @@
   }
   $('#list-scroll').addEventListener('scroll', () => maybeMore(seq), { passive: true });
 
-  async function reload() {
+  // Rows, total count and filter counts are separate requests so a slow count never delays the list.
+  function reload() {
     const s = ++seq;
     loaded = 0; done = false; loading = false;
     listEl.innerHTML = '';
     $('#list-scroll').scrollTop = 0;
-    loadMore(true, s);
+    total = null;
+    updateCount();
+    const firstPage = loadMore(true, s);
+    api.count(F).then((r) => {
+      if (s !== seq || !r || r.stale) return;
+      total = r.total;
+      updateCount();
+    }).catch(() => {});
     const fs_ = ++fseq;
-    const data = await api.facets(F);
-    if (fs_ === fseq) renderFacets(data);
+    api.facets(F).then((data) => {
+      if (fs_ === fseq && data && !data.stale) renderFacets(data);
+    }).catch(() => {});
+    return firstPage;
   }
 
   listEl.addEventListener('click', (e) => {
@@ -809,9 +805,11 @@
   hydrateIcons();
   syncInputs();
   renderActive();
-  api.info().then((i) => {
-    $('#side-total').textContent = `${fmtNum(i.total)} ads`;
-    if (!i.total) nav('data');
-  });
-  reload();
+  Promise.allSettled([
+    api.info().then((i) => {
+      $('#side-total').textContent = `${fmtNum(i.total)} ads`;
+      if (!i.total) nav('data');
+    }),
+    reload(),
+  ]).then(() => api.appReady());
 })();
