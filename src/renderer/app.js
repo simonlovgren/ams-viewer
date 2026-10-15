@@ -175,12 +175,39 @@
       total = r.total;
       updateCount();
     }).catch(() => {});
-    const fs_ = ++fseq;
-    api.facets(F).then((data) => {
-      if (fs_ === fseq && data && !data.stale) renderFacets(data);
-    }).catch(() => {});
+    loadStats();
     return firstPage;
   }
+
+  // Filter options and the chart come from summary tables; while those are built (once, in the background) a message is shown.
+  let tseq = 0;
+  let summaryInfo = { state: 'unknown' };
+  function showBuilding(s) {
+    const msg = `<div class="empty-mini">${esc((s && s.text) || 'Statistics are being prepared (one-time)…')}</div>`;
+    for (const id of ['#tree-occ', '#tree-loc', '#chart']) $(id).innerHTML = msg;
+  }
+  function loadStats() {
+    const fs_ = ++fseq;
+    api.facets(F).then((data) => {
+      if (fs_ !== fseq || !data || data.stale) return;
+      if (data.building) { showBuilding(summaryInfo); return; }
+      summaryInfo = { state: 'ready' };
+      renderFacets(data);
+    }).catch(() => {});
+    const ts = ++tseq;
+    api.timeline(F).then((t) => {
+      if (ts !== tseq || !t || t.stale || t.building) return;
+      timelineData = t;
+      renderChart();
+    }).catch(() => {});
+  }
+  api.onSummary((s) => {
+    const wasReady = summaryInfo.state === 'ready';
+    summaryInfo = s;
+    if (s.state === 'ready') { if (!wasReady) loadStats(); }
+    else if (s.state === 'building') showBuilding(s);
+    else if (s.state === 'error') showBuilding({ text: `Statistics could not be built: ${s.text}` });
+  });
 
   listEl.addEventListener('click', (e) => {
     const row = e.target.closest('.row');
@@ -273,8 +300,6 @@
     );
     $('#chips-emp').innerHTML = chipsHtml(d.emp.filter((r) => r.v).map((r) => ({ v: r.v, label: r.v, n: r.n })), (i) => F.emp === i.v);
     $('#chips-hours').innerHTML = chipsHtml(d.hours.filter((r) => r.v).map((r) => ({ v: r.v, label: r.v, n: r.n })), (i) => F.hours === i.v);
-    timelineData = d.timeline;
-    renderChart();
   }
 
   /* ---------- ads-over-time chart ---------- */

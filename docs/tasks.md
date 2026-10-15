@@ -55,6 +55,7 @@ Priority order: T7 early (pure CSS, affects how everything else is judged), T8 b
 - Performance budget: must stay within NFR-003/NFR-005; measure on the full data set.
 
 ## T6. Full-scale performance of filtering, counts and statistics (NFR-003, NFR-004, NFR-005)
+- Update 2026-10-16: facet options, total, date-only counts and the chart now use summary tables (D23, NFR-010); remaining: filtered group-by cost on broad filters, deep OFFSET paging, cold-cache queries.
 - Status 2026-10-15: the startup and freeze problems at about 70 GB / 11 million ads are fixed (D22: reads in workers, splash, window shown in about 3 s). Priority lowered by the user. What remains is slow filtered counts, facet counts, timeline and cold queries; main process and list stay responsive meanwhile.
 - Follow the [full-scale performance plan](full-scale-performance-plan.md) (sections 1 and 2 are largely done by D22): measure first, optimize facets/counts/timeline, benchmark compact metadata storage, bound obsolete work and replace deep OFFSET paging.
 - Retain Electron + SQLite initially. Consider Rust or another engine only if profiling demonstrates a remaining bottleneck that warrants the change.

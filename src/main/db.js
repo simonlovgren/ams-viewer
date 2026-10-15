@@ -39,6 +39,16 @@ CREATE TABLE IF NOT EXISTS sources (
   ads INTEGER DEFAULT 0,
   imported_at TEXT
 );
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS sum_occ (
+  field_id TEXT NOT NULL, field TEXT, group_id TEXT NOT NULL, grp TEXT, occ_id TEXT NOT NULL, occ TEXT,
+  n INTEGER NOT NULL, PRIMARY KEY (field_id, group_id, occ_id)
+);
+CREATE TABLE IF NOT EXISTS sum_loc (region TEXT NOT NULL, muni TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (region, muni));
+CREATE TABLE IF NOT EXISTS sum_year (year INTEGER NOT NULL PRIMARY KEY, n INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS sum_emp (v TEXT NOT NULL PRIMARY KEY, n INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS sum_hours (v TEXT NOT NULL PRIMARY KEY, n INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS sum_day (day TEXT NOT NULL PRIMARY KEY, n INTEGER NOT NULL);
 `;
 
 function open(path) {
@@ -196,36 +206,137 @@ function totalAds(db) {
 function count(db, f) {
   const { sql, params } = where(f);
   if (sql === '1') return totalAds(db);
+  if (where(f, ['date']).sql === '1' && isBuilt(db)) {
+    return db.prepare('SELECT COALESCE(SUM(n), 0) n FROM sum_day WHERE day >= ? AND day <= ?').get(f.from || '0000', f.to || '9999').n;
+  }
   return db.prepare(`SELECT COUNT(*) n FROM ads a WHERE ${sql}`).get(...params).n;
 }
 
 const FACETS = {
-  occ: { cols: 'field_id fi, MAX(field) f, group_id gi, MAX(grp) g, occ_id oi, MAX(occ) o', skip: ['occ'], extra: 'GROUP BY field_id, group_id, occ_id' },
-  loc: { cols: 'region r, muni m', skip: ['loc'], extra: 'GROUP BY region, muni' },
-  year: { cols: 'year y', skip: ['date'], extra: 'GROUP BY year ORDER BY year DESC' },
-  emp: { cols: 'emp_type v', skip: ['emp'], extra: 'GROUP BY emp_type ORDER BY n DESC' },
-  hours: { cols: 'hours v', skip: ['hours'], extra: 'GROUP BY hours ORDER BY n DESC' },
+  occ: { cols: 'field_id fi, MAX(field) f, group_id gi, MAX(grp) g, occ_id oi, MAX(occ) o', skip: ['occ'], extra: 'GROUP BY field_id, group_id, occ_id', key: ['fi', 'gi', 'oi'] },
+  loc: { cols: 'region r, muni m', skip: ['loc'], extra: 'GROUP BY region, muni', key: ['r', 'm'] },
+  year: { cols: 'year y', skip: ['date'], extra: 'GROUP BY year ORDER BY year DESC', key: ['y'] },
+  emp: { cols: 'emp_type v', skip: ['emp'], extra: 'GROUP BY emp_type ORDER BY n DESC', key: ['v'] },
+  hours: { cols: 'hours v', skip: ['hours'], extra: 'GROUP BY hours ORDER BY n DESC', key: ['v'] },
 };
 
-const rowKey = (r) => JSON.stringify(Object.values(r).slice(0, -1));
+const keyOf = (spec, r) => JSON.stringify(spec.key.map((k) => r[k] ?? null));
+
+/* ---------- summary tables ----------
+ * Per-dimension counts of all ads, kept up to date by the importer and by source removal, so the filter
+ * options and the ads-over-time chart never need a scan of the whole ads table. */
+
+const isBuilt = (db) => {
+  const r = db.prepare("SELECT value FROM meta WHERE key = 'summary_version'").get();
+  return !!r && r.value === '1';
+};
+
+const nz = (v) => (v === null || v === undefined ? '' : v);
+const nul = (s) => (s === '' ? null : s);
+
+function newAcc() {
+  return { occ: new Map(), loc: new Map(), year: new Map(), emp: new Map(), hours: new Map(), day: new Map() };
+}
+function bump(m, key, row) {
+  const e = m.get(key);
+  if (e) e.n++; else m.set(key, { row, n: 1 });
+}
+// `v` has the column order of toRow().values.
+function accAdd(acc, v) {
+  bump(acc.occ, `${nz(v[8])}\u0001${nz(v[10])}\u0001${nz(v[12])}`, [nz(v[8]), v[9], nz(v[10]), v[11], nz(v[12]), v[13]]);
+  bump(acc.loc, `${nz(v[6])}\u0001${nz(v[7])}`, [nz(v[6]), nz(v[7])]);
+  bump(acc.year, String(v[3] || 0), [v[3] || 0]);
+  bump(acc.emp, nz(v[14]), [nz(v[14])]);
+  bump(acc.hours, nz(v[15]), [nz(v[15])]);
+  if (v[2]) bump(acc.day, v[2], [v[2]]);
+}
+
+const UPSERT = {
+  occ: 'INSERT INTO sum_occ(field_id,field,group_id,grp,occ_id,occ,n) VALUES (?,?,?,?,?,?,?) ON CONFLICT(field_id,group_id,occ_id) DO UPDATE SET n = n + excluded.n',
+  loc: 'INSERT INTO sum_loc(region,muni,n) VALUES (?,?,?) ON CONFLICT(region,muni) DO UPDATE SET n = n + excluded.n',
+  year: 'INSERT INTO sum_year(year,n) VALUES (?,?) ON CONFLICT(year) DO UPDATE SET n = n + excluded.n',
+  emp: 'INSERT INTO sum_emp(v,n) VALUES (?,?) ON CONFLICT(v) DO UPDATE SET n = n + excluded.n',
+  hours: 'INSERT INTO sum_hours(v,n) VALUES (?,?) ON CONFLICT(v) DO UPDATE SET n = n + excluded.n',
+  day: 'INSERT INTO sum_day(day,n) VALUES (?,?) ON CONFLICT(day) DO UPDATE SET n = n + excluded.n',
+};
+const SUM_TABLE = { occ: 'sum_occ', loc: 'sum_loc', year: 'sum_year', emp: 'sum_emp', hours: 'sum_hours', day: 'sum_day' };
+const stmtCache = new WeakMap();
+
+// Adds (sign 1) or subtracts (sign -1) the accumulated counts; call it inside the same transaction as the ads change.
+function accFlush(db, acc, sign = 1) {
+  let st = stmtCache.get(db);
+  if (!st) {
+    st = {};
+    for (const k of Object.keys(UPSERT)) st[k] = db.prepare(UPSERT[k]);
+    stmtCache.set(db, st);
+  }
+  for (const k of Object.keys(UPSERT)) {
+    for (const e of acc[k].values()) st[k].run(...e.row, e.n * sign);
+    acc[k].clear();
+    if (sign < 0) db.exec(`DELETE FROM ${SUM_TABLE[k]} WHERE n <= 0`);
+  }
+}
+
+const SCAN_SQL = 'SELECT NULL, NULL, pub_date, year, NULL, NULL, region, muni, field_id, field, group_id, grp, occ_id, occ, emp_type, hours, rowid FROM ads';
+function scanRows(db, sql, ...params) {
+  const st = db.prepare(sql);
+  st.setReturnArrays(true);
+  return st.iterate(...params);
+}
+
+// One pass over all ads; slow on millions of rows (minutes), so it runs once in the background.
+// Indexes for the employment and hours filters are created afterwards.
+function ensureSummary(db, onProgress = () => {}) {
+  if (isBuilt(db)) return { built: true, fresh: false };
+  const acc = newAcc();
+  const total = db.prepare('SELECT MAX(rowid) m FROM ads').get().m || 1;
+  let n = 0;
+  onProgress({ pct: 1, text: 'Building statistics (one-time): scanning ads…' });
+  for (const row of scanRows(db, SCAN_SQL)) {
+    accAdd(acc, row);
+    if (++n % 250000 === 0) onProgress({ pct: 1 + (88 * row[16]) / total, text: `Building statistics (one-time): ${Math.round((100 * row[16]) / total)}% of ads scanned…` });
+  }
+  db.exec('BEGIN');
+  try {
+    for (const t of Object.values(SUM_TABLE)) db.exec(`DELETE FROM ${t}`);
+    accFlush(db, acc, 1);
+    db.prepare("INSERT OR REPLACE INTO meta(key, value) VALUES ('summary_version', '1')").run();
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  onProgress({ pct: 90, text: 'Statistics ready; indexing employment and hours…', ready: true });
+  db.exec('CREATE INDEX IF NOT EXISTS ix_emp ON ads(emp_type); CREATE INDEX IF NOT EXISTS ix_hours ON ads(hours);');
+  return { built: true, fresh: true };
+}
+
+function summaryFacets(db) {
+  return {
+    occ: db.prepare('SELECT field_id fi, field f, group_id gi, grp g, occ_id oi, occ o, n FROM sum_occ').all()
+      .map((r) => ({ fi: nul(r.fi), f: r.f, gi: nul(r.gi), g: r.g, oi: nul(r.oi), o: r.o, n: r.n })),
+    loc: db.prepare('SELECT region r, muni m, n FROM sum_loc').all().map((r) => ({ r: nul(r.r), m: nul(r.m), n: r.n })),
+    year: db.prepare('SELECT year y, n FROM sum_year ORDER BY year DESC').all().map((r) => ({ y: r.y, n: r.n })),
+    emp: db.prepare('SELECT v, n FROM sum_emp ORDER BY n DESC').all().map((r) => ({ v: nul(r.v), n: r.n })),
+    hours: db.prepare('SELECT v, n FROM sum_hours ORDER BY n DESC').all().map((r) => ({ v: nul(r.v), n: r.n })),
+  };
+}
 
 // Every option in the data is returned; n is its count under the other active filters (0 = no match).
-// `cache` keeps the unfiltered option lists until another connection changes the database.
-function facets(db, f, cache = {}) {
-  const ver = db.prepare('PRAGMA data_version').get().data_version;
-  if (cache.ver !== ver) { cache.ver = ver; cache.all = {}; cache.timeline = null; }
-  const run = (spec, filter) => {
-    const { sql, params } = where(filter, spec.skip);
-    return db.prepare(`SELECT ${spec.cols}, COUNT(*) n FROM ads a WHERE ${sql} ${spec.extra}`).all(...params).map((r) => ({ ...r }));
-  };
+// The option lists and the unfiltered counts come from the summary tables; only filtered counts query the ads.
+function facets(db, f) {
+  if (!isBuilt(db)) return { building: true };
+  const universe = summaryFacets(db);
+  if (where(f).sql === '1') return universe;
   const out = {};
   for (const [name, spec] of Object.entries(FACETS)) {
-    const all = (cache.all[name] ||= run(spec, {}));
-    if (where(f, spec.skip).sql === '1') { out[name] = all; continue; }
-    const counts = new Map(run(spec, f).map((r) => [rowKey(r), r.n]));
-    out[name] = all.map((r) => ({ ...r, n: counts.get(rowKey(r)) || 0 }));
+    if (where(f, spec.skip).sql === '1') { out[name] = universe[name]; continue; }
+    const { sql, params } = where(f, spec.skip);
+    const counts = new Map(
+      db.prepare(`SELECT ${spec.cols}, COUNT(*) n FROM ads a WHERE ${sql} ${spec.extra}`).all(...params).map((r) => [keyOf(spec, r), r.n])
+    );
+    out[name] = universe[name].map((r) => ({ ...r, n: counts.get(keyOf(spec, r)) || 0 }));
   }
-  out.timeline = where(f).sql === '1' ? (cache.timeline ||= timeline(db, f)) : timeline(db, f);
   return out;
 }
 
@@ -234,7 +345,10 @@ const isoDate = (t) => new Date(t).toISOString().slice(0, 10);
 
 // Ads per bin over the selected period (or the whole data range); bin size follows the span.
 function timeline(db, f) {
-  const r = db.prepare('SELECT MIN(pub_date) a, MAX(pub_date) b FROM ads').get();
+  const built = isBuilt(db);
+  const r = built
+    ? db.prepare('SELECT MIN(day) a, MAX(day) b FROM sum_day').get()
+    : db.prepare('SELECT MIN(pub_date) a, MAX(pub_date) b FROM ads').get();
   if (!r.a) return { unit: 'month', from: null, to: null, points: [] };
   let from = f.from || r.a;
   let to = f.to || r.b;
@@ -242,16 +356,25 @@ function timeline(db, f) {
   const days = (Date.parse(to) - Date.parse(from)) / DAY + 1;
   const unit = days > 2200 ? 'year' : days > 150 ? 'month' : days > 45 ? 'week' : 'day';
   const expr = {
-    year: 'substr(a.pub_date,1,4)',
-    month: 'substr(a.pub_date,1,7)',
-    week: "date(a.pub_date,'weekday 0','-6 days')",
-    day: 'a.pub_date',
+    year: 'substr(%D,1,4)',
+    month: 'substr(%D,1,7)',
+    week: "date(%D,'weekday 0','-6 days')",
+    day: '%D',
   }[unit];
-  const { sql, params } = where(f);
-  const counts = new Map(
-    db.prepare(`SELECT ${expr} k, COUNT(*) n FROM ads a WHERE ${sql} AND a.pub_date IS NOT NULL GROUP BY k`)
-      .all(...params).map((x) => [x.k, x.n])
-  );
+  // Only a date filter (or none): bin the per-day summary instead of scanning the ads.
+  let counts;
+  if (built && where(f, ['date']).sql === '1') {
+    counts = new Map(
+      db.prepare(`SELECT ${expr.replaceAll('%D', 'day')} k, SUM(n) n FROM sum_day WHERE day >= ? AND day <= ? GROUP BY k`)
+        .all(f.from || '0000', f.to || '9999').map((x) => [x.k, x.n])
+    );
+  } else {
+    const { sql, params } = where(f);
+    counts = new Map(
+      db.prepare(`SELECT ${expr.replaceAll('%D', 'a.pub_date')} k, COUNT(*) n FROM ads a WHERE ${sql} AND a.pub_date IS NOT NULL GROUP BY k`)
+        .all(...params).map((x) => [x.k, x.n])
+    );
+  }
   const points = [];
   if (unit === 'year') {
     for (let y = +from.slice(0, 4); y <= +to.slice(0, 4); y++) points.push({ d: `${y}-01-01`, n: counts.get(String(y)) || 0 });
@@ -283,14 +406,22 @@ function getAd(db, id) {
 }
 
 function info(db) {
-  const t = db.prepare('SELECT MIN(pub_date) mn, MAX(pub_date) mx FROM ads').get();
+  const t = isBuilt(db)
+    ? db.prepare('SELECT MIN(day) mn, MAX(day) mx FROM sum_day').get()
+    : db.prepare('SELECT MIN(pub_date) mn, MAX(pub_date) mx FROM ads').get();
   const sources = db.prepare('SELECT name, ads, imported_at FROM sources ORDER BY name').all().map((r) => ({ ...r }));
   return { total: totalAds(db), min: t.mn, max: t.mx, sources };
 }
 
 function removeSource(db, name) {
+  const built = isBuilt(db);
   db.exec('BEGIN');
   try {
+    if (built) {
+      const acc = newAcc();
+      for (const row of scanRows(db, `${SCAN_SQL} WHERE source = ?`, name)) accAdd(acc, row);
+      accFlush(db, acc, -1);
+    }
     db.prepare('DELETE FROM ads_fts WHERE rowid IN (SELECT rowid FROM ads WHERE source = ?)').run(name);
     db.prepare('DELETE FROM ads WHERE source = ?').run(name);
     db.prepare('DELETE FROM sources WHERE name = ?').run(name);
@@ -301,4 +432,7 @@ function removeSource(db, name) {
   }
 }
 
-module.exports = { open, toRow, INSERT_SQL, search, count, facets, getAd, info, removeSource };
+module.exports = {
+  open, toRow, INSERT_SQL, search, count, facets, timeline, getAd, info, removeSource,
+  isBuilt, ensureSummary, newAcc, accAdd, accFlush,
+};

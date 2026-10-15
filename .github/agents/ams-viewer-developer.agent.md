@@ -24,7 +24,7 @@ You are the developer agent for **AMS Viewer** (`ams-viewer`), an Electron app f
 
 - **Main process** `src/main/main.js`: window, IPC handlers, worker management, input validation.
 - **`src/main/db.js`**: schema, row mapping, filter-to-SQL (`where()`), `search`, `facets`, `getAd`, `info`, `removeSource`. Shared by main and workers.
-- **Workers**: `import-worker.js` (streams files, batched inserts into `ads` + `ads_fts`) and `read-worker.js` (two instances: `list` for rows, single ads and the summary; `stats` for facets, counts and source removal; all database reads run here, never in the main process).
+- **Workers**: `import-worker.js` (streams files, batched inserts into `ads` + `ads_fts`) and `read-worker.js` (five lanes: `lists`, `counts`, `timelines`, `facets`, `build` for the one-time summary build and source removal; all database reads run here, never in the main process). Summary tables (`sum_*`, D23) must be kept current by any code that inserts or deletes ads.
 - **`src/main/preload.js`**: the only bridge (`window.api`) via `contextBridge`.
 - **Renderer** `src/renderer/` (`index.html`, `styles.css`, `app.js`): plain JS, no framework or bundler. Views: list (filters + results), ad, data sources. State in `F` (filters, kept in `sessionStorage`: only while the app is open); navigation via History API.
 - **Storage**: SQLite (`node:sqlite`, FTS5, WAL) at `~/.config/AMS Viewer/ads.db`. Flat `ads` table with promoted columns plus pruned JSON in `raw`; contentless `ads_fts`; `sources` table. Details in `docs/data-model.md`.

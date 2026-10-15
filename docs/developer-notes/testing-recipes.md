@@ -48,3 +48,6 @@ for(const r of db.prepare('SELECT raw FROM ads LIMIT ?').iterate(limit)) fs.writ
 fs.writeSync(fd,']');
 ```
 Import with the headless worker runner (set `dbPath` to a scratch file under `~/.cache/`, not `/tmp`, which may be RAM-backed) and print `process.resourceUsage().maxRSS` at exit. Reference: 511 MB / 100k ads in 29 s, max RSS 146 MB. Delete the scratch files afterwards.
+
+## Summary-table consistency (D23)
+On a scratch DB under `~/.cache/`: `open` + `ensureSummary` on the empty DB (so the incremental path is used), import two sample files (`head -n 20000` of real files) with the headless Worker runner, `removeSource` one, snapshot all `sum_*` tables, delete `meta.summary_version`, `ensureSummary` again, compare snapshots (must be equal). Verified 2026-10-16. Write the script to a file, not inline (`!` history expansion).

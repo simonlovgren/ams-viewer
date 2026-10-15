@@ -48,7 +48,7 @@ flowchart LR
 | `src/main/preload.js` | Exposes a minimal `window.api` via `contextBridge`. |
 | `src/main/db.js` | Schema, row mapping, filter → SQL builder, search, facets, ad lookup, source removal. Shared by main and workers. |
 | `src/main/import-worker.js` | Streams a file, maps records, inserts into `ads` and `ads_fts` in batched transactions, reports progress. |
-| `src/main/read-worker.js` | All database reads, on their own connections: a `list` instance (rows, single ad, summary) and a `stats` instance (facets, counts, source removal) so a slow count never delays the list. The main process only queues requests (a newer request of the same kind supersedes a queued older one). |
+| `src/main/read-worker.js` | All database reads, on their own connections: five instances (lanes): `lists` (rows, single ad, info), `counts`, `timelines`, `facets` and `build` (one-time summary build, source removal), so a slow request never delays another. The main process only queues requests (a newer request of the same kind supersedes a queued older one). |
 | `src/main/splash-preload.js`, `src/renderer/splash.*` | Splash window with progress bar shown while the database summary and first results load (UI-014). |
 | `src/renderer/app.js` | All UI logic: state, history, list, filter trees, ad rendering, data view. No framework. |
 
@@ -62,4 +62,4 @@ flowchart LR
 
 Each filter group's counts are computed with all *other* filters applied but its own ignored. This lets the user see alternatives within a group (e.g. other occupation fields) while still reflecting keyword, date and location choices.
 
-Options never disappear: every option present in the data is returned with its count (0 when no ad matches) and shown grayed out but selectable (SRC-015). The unfiltered option lists are cached in the stats worker and refreshed when the database changes.
+Options never disappear: every option present in the data is returned with its count (0 when no ad matches) and shown grayed out but selectable (SRC-015). The unfiltered option lists and the chart/total shortcuts come from the summary tables (D23), which the importer keeps current.

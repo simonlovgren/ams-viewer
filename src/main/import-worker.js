@@ -3,10 +3,13 @@ const { parentPort, workerData } = require('worker_threads');
 const fs = require('fs');
 const path = require('path');
 const { StringDecoder } = require('string_decoder');
-const { open, toRow, INSERT_SQL } = require('./db');
+const { open, toRow, INSERT_SQL, isBuilt, newAcc, accAdd, accFlush } = require('./db');
 
 const { dbPath, files } = workerData;
 const db = open(dbPath);
+// When the summary tables exist they are updated with every committed batch, so they always match the ads.
+const summary = isBuilt(db);
+const acc = newAcc();
 const insAd = db.prepare(INSERT_SQL);
 const insFts = db.prepare('INSERT INTO ads_fts(rowid, headline, employer, body) VALUES (?,?,?,?)');
 const BATCH = 2000;
@@ -96,12 +99,14 @@ async function importFile(file, fileIndex) {
       const r = insAd.run(...values);
       if (r.changes) {
         insFts.run(r.lastInsertRowid, ...fts);
+        if (summary) accAdd(acc, values);
         st.inserted++;
       } else st.skipped++;
     } catch {
       st.errors++;
     }
     if (++pending >= BATCH) {
+      if (summary) accFlush(db, acc);
       db.exec('COMMIT; BEGIN');
       pending = 0;
     }
@@ -118,9 +123,11 @@ async function importFile(file, fileIndex) {
       handle(d);
       if (st.lines % 200 === 0) { st.pct = Math.min(1, stream.bytesRead / size); emit(); }
     }
+    if (summary) accFlush(db, acc);
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
+    for (const m of Object.values(acc)) m.clear();
     throw e;
   }
   const n = db.prepare('SELECT COUNT(*) n FROM ads WHERE source = ?').get(name).n;

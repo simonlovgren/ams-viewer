@@ -40,3 +40,5 @@
 - `timeout N npx electron .` kills Electron with SIGTERM and may leave a `SIGTRAP` core dump; that is not an app crash.
 - The data folder `~/storage/ams_data` also contains `2018.json` and `2019.json` (3.6 / 3.5 GB single-line JSON arrays) next to the `.jsonl` files; these were the crash trigger. The streamed importer handles `2018.json` with ~210 MB peak RSS (683k ads in 188 s).
 - Source schemas differ by era (id-less ads, array-valued taxonomy, empty taxonomy before 2018); see "Source data generations" in `docs/data-model.md` and D20. Survey a new file with a quick script that reads the first ~2000 records before trusting `toRow()`.
+
+- Summary tables (`sum_*`, D23) are derived state: any new path that inserts or deletes ads must call `accAdd`/`accFlush` (import-worker) or the removal subtraction in `removeSource`, else counts drift. Fix: delete `meta.summary_version` and restart; the build recomputes everything. Facets/timeline return `{building:true}` until the build is done; import and removal are refused meanwhile.

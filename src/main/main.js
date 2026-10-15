@@ -36,6 +36,7 @@ function createWindow(show = true) {
 
 function startImport(files) {
   if (importing) return { ok: false, error: 'Import already running' };
+  if (buildBusy) return { ok: false, error: 'Statistics are being built (one-time); try again when it has finished.' };
   const valid = files.filter((f) => typeof f === 'string' && DATA_EXT.test(f));
   if (!valid.length) return { ok: false, error: 'No .jsonl/.ndjson/.json files' };
   importing = true;
@@ -47,6 +48,7 @@ function startImport(files) {
   let finished = false;
   w.on('message', (m) => {
     if (m.type === 'done' || m.type === 'error') { importing = false; finished = true; }
+    if (m.type === 'done') ensureSummary();
     send(m);
   });
   w.on('error', (e) => {
@@ -111,7 +113,11 @@ function lane() {
   return {
     start() {
       worker = new Worker(path.join(__dirname, 'read-worker.js'), { workerData: { dbPath: dbPath() } });
-      worker.on('message', ({ id, data, error }) => {
+      worker.on('message', ({ id, data, error, progress: prog }) => {
+        if (prog) {
+          if (cur && cur.id === id && cur.onProgress) cur.onProgress(prog);
+          return;
+        }
         if (!cur || cur.id !== id) return;
         const c = cur;
         cur = null;
@@ -122,7 +128,7 @@ function lane() {
       worker.on('exit', () => fail(new Error('Read worker stopped')));
     },
     // latest: a queued request of the same type is superseded (resolves as stale) so slow outdated work never piles up.
-    request(type, payload, latest = false) {
+    request(type, payload, latest = false, onProgress = null) {
       return new Promise((resolve, reject) => {
         if (dead) { reject(dead); return; }
         if (latest) {
@@ -130,14 +136,33 @@ function lane() {
             if (queue[i].type === type) { queue[i].resolve({ stale: true }); queue.splice(i, 1); }
           }
         }
-        queue.push({ id: ++seq, type, payload, resolve, reject });
+        queue.push({ id: ++seq, type, payload, resolve, reject, onProgress });
         next();
       });
     },
   };
 }
-const lists = lane(); // result rows, single ad, database summary: always fast
-const stats = lane(); // facets, counts, source removal: can take long on big data
+const lists = lane(); // result rows, single ad, database summary
+const counts = lane(); // total counts
+const timelines = lane(); // ads-over-time chart
+const facetLane = lane(); // filter option counts
+const build = lane(); // building the statistics tables, source removal
+
+// The summary tables (filter options, chart, totals) are built once in the background, then kept current by the importer.
+let summaryState = { state: 'unknown' };
+let buildBusy = false;
+const sendSummary = (s) => {
+  summaryState = s;
+  if (win && !win.isDestroyed()) win.webContents.send('summary:state', s);
+};
+function ensureSummary() {
+  if (buildBusy) return;
+  buildBusy = true;
+  build.request('ensure', {}, false, (p) => sendSummary({ state: p.ready ? 'ready' : 'building', pct: p.pct, text: p.text }))
+    .then(() => sendSummary({ state: 'ready' }))
+    .catch((e) => sendSummary({ state: 'error', text: String(e.message || e) }))
+    .finally(() => { buildBusy = false; });
+}
 
 app.whenReady().then(async () => {
   const t0 = Date.now();
@@ -153,7 +178,10 @@ app.whenReady().then(async () => {
     progress(5, 'Opening the database…');
     registerHandlers();
     lists.start();
-    stats.start();
+    counts.start();
+    timelines.start();
+    facetLane.start();
+    build.start();
     progress(15, 'Reading the database summary…');
     const info = await lists.request('info');
     lap(`summary read (${info.total} ads)`);
@@ -161,7 +189,7 @@ app.whenReady().then(async () => {
     await lists.request('search', { f: {}, offset: 0, limit: 1 });
     lap('first query done');
     progress(75, 'Loading the window…');
-    stats.request('facets', { f: {} }).catch(() => {}); // start the slow filter counts early
+    ensureSummary();
   } catch (e) {
     console.error('[startup] failed:', e);
   }
@@ -196,8 +224,10 @@ function registerHandlers() {
   ipcMain.handle('db:info', timed('info', () => lists.request('info')));
   ipcMain.handle('ads:search', timed('search', (_e, f, offset, limit) =>
     lists.request('search', { f: f || {}, offset: Math.max(0, offset | 0), limit: Math.min(200, Math.max(1, limit | 0)) }, true)));
-  ipcMain.handle('ads:count', timed('count', (_e, f) => stats.request('count', { f: f || {} }, true)));
-  ipcMain.handle('ads:facets', timed('facets', (_e, f) => stats.request('facets', { f: f || {} }, true)));
+  ipcMain.handle('ads:count', timed('count', (_e, f) => counts.request('count', { f: f || {} }, true)));
+  ipcMain.handle('ads:timeline', timed('timeline', (_e, f) => timelines.request('timeline', { f: f || {} }, true)));
+  ipcMain.handle('ads:facets', timed('facets', (_e, f) => facetLane.request('facets', { f: f || {} }, true)));
+  ipcMain.handle('summary:get', () => summaryState);
   ipcMain.handle('ads:get', (_e, id) => lists.request('get', { id }));
   ipcMain.handle('import:dialog', async () => {
     const r = await dialog.showOpenDialog(win, {
@@ -210,8 +240,9 @@ function registerHandlers() {
   ipcMain.handle('import:start', (_e, files) => (Array.isArray(files) ? startImport(files) : { ok: false }));
   ipcMain.handle('source:remove', async (_e, name) => {
     if (importing) return { ok: false, error: 'Import running' };
+    if (buildBusy) return { ok: false, error: 'Statistics are being built (one-time); try again when it has finished.' };
     try {
-      await stats.request('remove', { name: String(name) });
+      await build.request('remove', { name: String(name) });
       return { ok: true };
     } catch (e) {
       return { ok: false, error: String(e.message || e) };

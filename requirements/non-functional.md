@@ -11,3 +11,4 @@
 | NFR-007 | No native module compilation shall be required to build or run. | Should | Implemented | `node:sqlite`. |
 | NFR-008 | The application shall run on Linux. | Must | Implemented | Other platforms untested. |
 | NFR-009 | The application shall be packaged as an installable distributable. | Could | In progress | electron-builder configured (D14). Linux unpacked build launched OK; AppImage, Windows and macOS targets not built; no icon or signing. |
+| NFR-010 | Filter options with counts, the total count and the ads-over-time chart shall be available within about one second of opening the search view on the full data set, also when the filter matches a single ad. | Must | In progress | Summary tables maintained during import (D23). Consistency of incremental maintenance and removal verified against a full rebuild on a scratch database; timing on the real 11M-ad database and the UI not yet verified. |
