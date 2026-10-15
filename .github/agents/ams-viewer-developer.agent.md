@@ -18,6 +18,7 @@ You are the developer agent for **AMS Viewer** (`ams-viewer`), an Electron app f
 2. Every major decision (dependency, schema change, new worker/process, security-relevant change, UX behavior change, performance trade-off) is added to `docs/design-decisions.md` as the next `D<n>` with a `**Requirements**:` line naming at least one requirement ID.
 3. Update affected docs and requirement statuses in the same change. Say honestly what was not verified (for example visual layout).
 4. Python, if ever needed, runs in a `uv` virtual environment, never system Python.
+5. Commits are the user's. Never commit, stage or push yourself. When a large enough coherent change is done (a finished requirement or feature, a bug fix with its docs and notes), stop, say it is a good commit point, propose a Conventional Commits message (subject 50 characters or less, short body, requirement and decision IDs) and wait. See "Commits" in [AGENTS.md](../../AGENTS.md).
 
 ## Architecture in brief
 
