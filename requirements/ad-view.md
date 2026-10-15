@@ -11,3 +11,4 @@
 | AD-007 | An external application page link shall open in the system browser (http/https only). | Should | Implemented | |
 | AD-008 | Tags and breadcrumb items shall apply the corresponding filter and go to the list. | Should | Implemented | |
 | AD-009 | Ad text shall be rendered safely (escaped; no HTML from source). | Must | Implemented | |
+| AD-010 | Employer logos shall be cached when first downloaded. Caching happens dynamically during use (when an ad is viewed), not during import. The cache shall be stored in the same location as the database (the `AMS Viewer` data folder). | Should | Planned | Not started. Today logos are loaded straight from `logo_url` on every view. See docs/tasks.md. |

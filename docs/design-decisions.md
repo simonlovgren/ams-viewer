@@ -77,7 +77,7 @@ Format: decision, requirements it satisfies, rationale, consequences. Every deci
 
 ## D16. Free-text entries as chips inside the search input
 - **Requirements**: SRC-016, SRC-003, SRC-008
-- **Why**: several keywords should be combinable and individually removable. Enter commits the typed text to `terms`; the uncommitted text in `q` still filters live. Main joins `terms` + `q` and the FTS query ANDs every token, so each entry behaves as before (prefix match, `"phrases"`).
+- **Why**: several keywords should be combinable and individually removable. Enter commits the typed text to `terms`; the text still being typed is not a filter (SRC-021: a query per keystroke gave flickering results and wasted queries at scale). Each entry is turned into its own FTS expression (prefix match, `"phrases"`).
 - **Consequence**: Backspace in an empty-at-caret input removes the last entry; the native search-clear button is hidden. Terms are persisted with the other filters.
 
 ## D17. Layout state (menu collapse, filter width and collapse) kept in the renderer
@@ -91,7 +91,7 @@ Format: decision, requirements it satisfies, rationale, consequences. Every deci
 - **Consequence**: the chart is recomputed on every filter change (cheap without a date filter, ~0.8 s at 130k ads with a date filter because it runs a second grouped query; see constraints). Its width follows the resizable sidebar through a `ResizeObserver`. Inline SVG inherits the global icon stroke style, so the chart resets `stroke`.
 
 ## D19. Free-text entries combined with AND or OR via `ftsMatch()`
-- **Requirements**: SRC-018, SRC-016
+- **Requirements**: SRC-018, SRC-016, SRC-021
 - **Why**: each entry (committed term or text being typed) is turned into its own FTS expression (words AND-ed, prefix match, `"phrases"`), and the expressions are joined with explicit `AND` or `OR` according to `termMode`. Keeping entries as units makes OR predictable: `"a b" OR c` means (a and b) or c.
 - **Consequence**: words typed together in one entry are always AND-ed; to OR two words, enter them separately. The mode is stored in the filter object (`termMode`, default `and`).
 

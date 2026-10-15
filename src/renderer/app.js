@@ -46,7 +46,7 @@
   };
 
   /* ---------- filter state ---------- */
-  const DEF = { q: '', terms: [], termMode: 'and', sel: [], loc: [], from: '', to: '', emp: '', hours: '', sort: 'newest' };
+  const DEF = { terms: [], termMode: 'and', sel: [], loc: [], from: '', to: '', emp: '', hours: '', sort: 'newest' };
   let F = { ...DEF };
   try { F = { ...DEF, ...JSON.parse(localStorage.getItem('filters') || '{}') }; } catch { /* ignore */ }
   if (!Array.isArray(F.sel) || !Array.isArray(F.loc)) {
@@ -61,6 +61,9 @@
     else if (F.region) F.loc.push({ k: 'region', id: F.region, label: F.region, ri: F.region });
   }
   for (const k of ['field', 'group', 'occ', 'region', 'muni', 'lbl']) delete F[k];
+  // The text being typed used to be a live filter (`q`); keep what an older version saved as an entry.
+  if (F.q && F.q.trim()) F.terms = [...F.terms, F.q.trim()];
+  delete F.q;
   const expanded = new Set(JSON.parse(localStorage.getItem('expanded') || '[]'));
   const saveF = () => localStorage.setItem('filters', JSON.stringify(F));
   const saveExp = () => localStorage.setItem('expanded', JSON.stringify([...expanded]));
@@ -447,12 +450,13 @@
 
   $('#f-from').addEventListener('change', (e) => setF({ from: e.target.value }));
   $('#f-to').addEventListener('change', (e) => setF({ to: e.target.value }));
-  $('#q').addEventListener('input', (e) => setF({ q: e.target.value }, { immediate: false }));
   $('#q').addEventListener('keydown', (e) => {
     const t = e.target;
     if (e.key === 'Enter' && t.value.trim()) {
       e.preventDefault();
-      setF({ terms: [...F.terms, t.value.trim()], q: '' });
+      const term = t.value.trim();
+      t.value = '';
+      setF({ terms: [...F.terms, term] });
     } else if (e.key === 'Backspace' && F.terms.length && t.selectionStart === 0 && t.selectionEnd === 0) {
       e.preventDefault();
       setF({ terms: F.terms.slice(0, -1) });
@@ -465,10 +469,12 @@
   });
   $('#sort').addEventListener('change', (e) => setF({ sort: e.target.value }));
   $('#mode-toggle').addEventListener('click', () => setF({ termMode: F.termMode === 'or' ? 'and' : 'or' }));
-  $('#clear-all').addEventListener('click', () => setF({ ...DEF, sort: F.sort }));
+  $('#clear-all').addEventListener('click', () => {
+    $('#q').value = '';
+    setF({ ...DEF, sort: F.sort });
+  });
 
   function syncInputs() {
-    if ($('#q').value !== F.q) $('#q').value = F.q;
     $('#terms').innerHTML = F.terms.map((t, i) => `<span class="term">${esc(t)}<span class="x" data-i="${i}" title="Remove">${icon('x')}</span></span>`).join('');
     $('#q').placeholder = F.terms.length ? 'Add another keyword…' : 'Type a keyword and press Enter, e.g. sjuksköterska or "hemtjänst"   ( / )';
     const mb = $('#mode-toggle');
