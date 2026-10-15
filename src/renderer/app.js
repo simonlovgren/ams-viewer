@@ -565,8 +565,11 @@
 
   let adSpecs = [];
   function renderAd(d) {
+    const first = (x) => (Array.isArray(x) ? x.find(Boolean) : x);
     const co = (o) => (o && o.label ? { id: o.concept_id || o.label, label: o.label } : null);
-    const field = co(d.occupation_field), group = co(d.occupation_group), occ = co(d.occupation);
+    const field = co(first(d.occupation_field)), group = co(first(d.occupation_group)), occ = co(first(d.occupation));
+    const empType = [].concat(d.employment_type || []).map((x) => x && x.label).filter(Boolean).join(', ');
+    const hoursLabel = first(d.working_hours_type)?.label;
     const a = d.workplace_address || {};
     const emp = d.employer || {};
     const det = d.application_details || {};
@@ -589,14 +592,14 @@
       return `<a class="tag ${cls}" data-s="${adSpecs.length - 1}">${icon(ic)}${esc(label)}</a>`;
     };
     const scope = d.scope_of_work;
-    const hoursTxt = [d.working_hours_type?.label, scope && scope.max ? (scope.min === scope.max ? `${scope.max}%` : `${scope.min}–${scope.max}%`) : ''].filter(Boolean).join(' · ');
+    const hoursTxt = [hoursLabel, scope && scope.max ? (scope.min === scope.max ? `${scope.max}%` : `${scope.min}–${scope.max}%`) : ''].filter(Boolean).join(' · ');
     const tags = [
       a.municipality && tagA('t-loc', 'map-pin', a.municipality, { muni: a.municipality, region: a.region }),
       a.region && tagA('t-loc', 'map-pin', a.region, { region: a.region }),
       field && tagA('t-field', 'layers', field.label, { field }),
       group && tagA('t-group', 'users', group.label, { field, group }),
       occ && tagA('t-occ', 'tag', occ.label, { field, group, occ }),
-      d.employment_type?.label && `<span class="tag t-misc">${esc(d.employment_type.label)}</span>`,
+      empType && `<span class="tag t-misc">${esc(empType)}</span>`,
       hoursTxt && `<span class="tag t-misc">${icon('clock')}${esc(hoursTxt)}</span>`,
     ].filter(Boolean).join('');
 
@@ -642,7 +645,7 @@
           <div class="card"><h2>At a glance</h2><div class="facts">
             ${fact('calendar', 'Published', esc(fmtDate(d.publication_date, true)))}
             ${fact('clock', 'Last application date', esc(fmtDate(d.application_deadline, true)))}
-            ${fact('briefcase', 'Employment', esc(d.employment_type?.label))}
+            ${fact('briefcase', 'Employment', esc(empType))}
             ${fact('clock', 'Working hours', esc(hoursTxt))}
             ${fact('calendar', 'Duration', esc(d.duration?.label))}
             ${fact('banknote', 'Salary', salary)}

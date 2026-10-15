@@ -43,18 +43,28 @@ function startImport(files) {
   const send = (m) => win && !win.isDestroyed() && win.webContents.send('import:event', m);
   const w = new Worker(path.join(__dirname, 'import-worker.js'), {
     workerData: { dbPath: dbPath(), files: valid },
+    resourceLimits: { maxOldGenerationSizeMb: 3072 },
   });
+  let finished = false;
   w.on('message', (m) => {
-    if (m.type === 'done' || m.type === 'error') importing = false;
+    if (m.type === 'done' || m.type === 'error') { importing = false; finished = true; }
     send(m);
   });
   w.on('error', (e) => {
     importing = false;
+    finished = true;
     send({ type: 'error', message: String(e.message || e) });
+  });
+  w.on('exit', () => {
+    if (finished) return;
+    importing = false;
+    send({ type: 'error', message: 'Import worker stopped unexpectedly' });
   });
   return { ok: true, count: valid.length };
 }
 
+// Fixed folder: the default follows package.json (name vs productName) and once split the data across two folders.
+app.setPath('userData', path.join(app.getPath('appData'), 'AMS Viewer'));
 const dbPath = () => path.join(app.getPath('userData'), 'ads.db');
 
 app.whenReady().then(() => {

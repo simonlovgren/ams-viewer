@@ -15,7 +15,7 @@
 - Selecting a nullish id in a tree (`Unspecified` node) is intentionally ignored; an id of `null` in `IN (...)` would match nothing.
 
 ## Electron and renderer
-- `userData` folder follows `package.json` `name` (`~/.config/ams-viewer`). Renaming the package moves the DB location; migrate it manually (done once on 2026-10-15).
+- The data folder is pinned in `main.js` to `~/.config/AMS Viewer` (note the space; quote it in shells). Before it was pinned it followed `package.json`: adding `productName` for electron-builder silently switched `npm start` from `ams-viewer` to `AMS Viewer` and split the imports across two databases (2026-10-15). `~/.config/ams-viewer` is a stale leftover (only `2026-Q3`); scripts must use the `AMS Viewer` path.
 - CSP has `style-src 'unsafe-inline'` because markup uses inline `style` attributes; scripts remain locked to `'self'`. Do not add inline scripts or `onclick` attributes.
 - Everything dynamic in template strings must go through `esc()`.
 - Global `svg { fill: none; stroke: currentColor; stroke-width: 2 }` is meant for icons. Any other inline SVG (the chart) inherits it, and its text then looks bold/glowing; reset with `stroke: none` on that SVG (`#chart svg`).
@@ -28,3 +28,10 @@
 ## Packaging
 - Only `src/**` and `package.json` are bundled (`build.files`); the 770 MB data files in the project root must never be added.
 - `npm run pack` output goes to `dist/` (git-ignored). The unpacked Linux build starts; Wayland prints a harmless Vulkan/ozone warning.
+
+## Import crash (2026-10-15)
+- Importing large `.json` array files crashed the whole app (`SIGTRAP`, `realloc` in a WorkerThread, ~10 GB memory peak, nothing inserted) because the old importer did `JSON.parse(readFileSync(file))`. Fixed by streaming (`arrayItems()` in `import-worker.js`). Never read a whole data file into memory.
+- Diagnose with `coredumpctl list` / `coredumpctl info <pid>`: the crashing thread name (`WorkerThread`) and the memory peak in `journalctl` pointed at the import worker. The `GLib-GObject ... has no handler with id` and `wayland ... not compatible with Vulkan` lines printed at startup are harmless GTK/Chromium noise.
+- `timeout N npx electron .` kills Electron with SIGTERM and may leave a `SIGTRAP` core dump; that is not an app crash.
+- The data folder `~/storage/ams_data` also contains `2018.json` and `2019.json` (3.6 / 3.5 GB single-line JSON arrays) next to the `.jsonl` files; these were the crash trigger. The streamed importer handles `2018.json` with ~210 MB peak RSS (683k ads in 188 s).
+- Source schemas differ by era (id-less ads, array-valued taxonomy, empty taxonomy before 2018); see "Source data generations" in `docs/data-model.md` and D20. Survey a new file with a quick script that reads the first ~2000 records before trusting `toRow()`.

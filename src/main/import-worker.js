@@ -12,16 +12,55 @@ const insFts = db.prepare('INSERT INTO ads_fts(rowid, headline, employer, body) 
 const BATCH = 2000;
 
 // readline would also split on U+2028/2029, which occur inside ad texts.
+const MAX_LINE = 64 * 1024 * 1024;
 async function* linesOf(stream) {
   const dec = new StringDecoder('utf8');
   let tail = '';
   for await (const chunk of stream) {
     const parts = (tail + dec.write(chunk)).split('\n');
     tail = parts.pop();
+    if (tail.length > MAX_LINE) throw new Error('A line is larger than 64 MB; the file is not line-delimited JSON');
     yield* parts;
   }
   tail += dec.end();
   if (tail) yield tail;
+}
+
+// Yields the text of each top-level object of a JSON array without loading the whole file.
+async function* arrayItems(stream) {
+  const dec = new StringDecoder('utf8');
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  let parts = [];
+  let size = 0;
+  for await (const chunk of stream) {
+    const s = dec.write(chunk);
+    let seg = depth >= 2 ? 0 : -1;
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      if (inStr) {
+        if (esc) esc = false;
+        else if (c === 92) esc = true;
+        else if (c === 34) inStr = false;
+      } else if (c === 34) inStr = true;
+      else if (c === 123 || c === 91) {
+        if (++depth === 2) seg = i;
+      } else if (c === 125 || c === 93) {
+        if (--depth === 1 && seg >= 0) {
+          yield parts.join('') + s.slice(seg, i + 1);
+          parts = [];
+          size = 0;
+          seg = -1;
+        }
+      }
+    }
+    if (depth >= 2 && seg >= 0) {
+      parts.push(s.slice(seg));
+      size += s.length - seg;
+      if (size > MAX_LINE) throw new Error('A JSON array element is larger than 64 MB');
+    }
+  }
 }
 
 function firstChar(file) {
@@ -52,7 +91,7 @@ async function importFile(file, fileIndex) {
   const handle = (d) => {
     st.lines++;
     try {
-      if (!d || d.id === undefined || d.id === null) throw new Error('no id');
+      if (!d || typeof d !== 'object') throw new Error('not an object');
       const { values, fts } = toRow(d, name);
       const r = insAd.run(...values);
       if (r.changes) {
@@ -70,21 +109,14 @@ async function importFile(file, fileIndex) {
 
   db.exec('BEGIN');
   try {
-    if (firstChar(file) === '[') {
-      const arr = JSON.parse(fs.readFileSync(file, 'utf8'));
-      for (const d of arr) {
-        handle(d);
-        if (st.lines % 500 === 0) { st.pct = st.lines / arr.length; emit(); }
-      }
-    } else {
-      const stream = fs.createReadStream(file);
-      for await (const line of linesOf(stream)) {
-        if (!line.trim()) continue;
-        let d = null;
-        try { d = JSON.parse(line); } catch { /* counted as error in handle */ }
-        handle(d);
-        if (st.lines % 200 === 0) { st.pct = stream.bytesRead / size; emit(); }
-      }
+    const stream = fs.createReadStream(file);
+    const items = firstChar(file) === '[' ? arrayItems(stream) : linesOf(stream);
+    for await (const text of items) {
+      if (!text.trim()) continue;
+      let d = null;
+      try { d = JSON.parse(text); } catch { /* counted as error in handle */ }
+      handle(d);
+      if (st.lines % 200 === 0) { st.pct = Math.min(1, stream.bytesRead / size); emit(); }
     }
     db.exec('COMMIT');
   } catch (e) {

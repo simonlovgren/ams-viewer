@@ -68,3 +68,15 @@ Dates are `YYYY-MM-DD` strings compared lexicographically. `sort` is `newest | o
 2. Handle it in `where()` and add a facet query in `facets()`.
 3. Add UI in `index.html`/`app.js` and include it in `DEF`, `renderActive()`.
 4. Re-import the data (existing rows are skipped by id, so remove the source first).
+
+## Source data generations (files in `~/storage/ams_data`, checked 2026-10-15)
+
+| Years | Format | `id` | Taxonomy (field/group/occupation) | Location | Other |
+|---|---|---|---|---|---|
+| 2006–2016 | `.jsonl` | null (synthetic `h-<sha1>`) | empty | empty | dates `YYYY-MM-DD`; hours present |
+| 2017 | `.jsonl` | string `0017-nnnnnn` | empty | empty | |
+| 2018, 2019 | `.json` array (3.5–3.6 GB, one line) | number | present | municipality and region present | dates `YYYY-MM-DD HH:MM:SS,000000000`; `*_municipality_patched.zip` exist (not used) |
+| 2020–2022 | `.jsonl` | string | present, objects | municipality in ~52% (2020) to ~98% | |
+| 2023–2026 | `.jsonl` | 40-char hash | arrays of objects | present | employment type is an array; first element stored |
+
+The folder also holds `.zip`/`.zst` copies, which the importer does not accept. `publication_date` is cut to its first 10 characters, which works for both date formats.

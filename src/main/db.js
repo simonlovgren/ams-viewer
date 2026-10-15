@@ -1,5 +1,6 @@
 'use strict';
 const { DatabaseSync } = require('node:sqlite');
+const crypto = require('crypto');
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS ads (
@@ -65,14 +66,25 @@ function prune(v) {
 
 const lbl = (o) => (o && o.label) || null;
 const cid = (o) => (o && (o.concept_id || o.label)) || null;
+// From 2023 the source holds arrays for occupation and employment type; the first entry is used.
+const one = (x) => (Array.isArray(x) ? x.find(Boolean) || null : x);
+
+// 2006-2016 ads have no id; derive a stable one from their content so re-imports are skipped.
+const contentId = (d) =>
+  'h-' + crypto.createHash('sha1')
+    .update([d.headline, d.publication_date, d.application_deadline, d.employer && d.employer.name, JSON.stringify(d.workplace_address), d.number_of_vacancies, ((d.description && d.description.text) || '').slice(0, 4000)].join('\u0001'))
+    .digest('hex');
 
 // Maps one raw ad to the flat columns + FTS body.
 function toRow(d, source) {
   const addr = d.workplace_address || {};
   const pub = String(d.publication_date || '').slice(0, 10) || null;
+  const field = one(d.occupation_field);
+  const group = one(d.occupation_group);
+  const occ = one(d.occupation);
   return {
     values: [
-      String(d.id),
+      d.id === null || d.id === undefined || d.id === '' ? contentId(d) : String(d.id),
       d.headline || '',
       pub,
       pub ? Number(pub.slice(0, 4)) : null,
@@ -80,11 +92,11 @@ function toRow(d, source) {
       (d.employer && (d.employer.name || d.employer.workplace)) || null,
       addr.region || null,
       addr.municipality || null,
-      cid(d.occupation_field), lbl(d.occupation_field),
-      cid(d.occupation_group), lbl(d.occupation_group),
-      cid(d.occupation), lbl(d.occupation),
-      lbl(d.employment_type),
-      lbl(d.working_hours_type),
+      cid(field), lbl(field),
+      cid(group), lbl(group),
+      cid(occ), lbl(occ),
+      lbl(one(d.employment_type)),
+      lbl(one(d.working_hours_type)),
       source,
       JSON.stringify(prune(d) || {}),
     ],

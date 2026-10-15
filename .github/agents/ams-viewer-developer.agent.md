@@ -26,7 +26,7 @@ You are the developer agent for **AMS Viewer** (`ams-viewer`), an Electron app f
 - **Workers**: `import-worker.js` (streams files, batched inserts into `ads` + `ads_fts`) and `facets-worker.js` (facet counts on its own connection).
 - **`src/main/preload.js`**: the only bridge (`window.api`) via `contextBridge`.
 - **Renderer** `src/renderer/` (`index.html`, `styles.css`, `app.js`): plain JS, no framework or bundler. Views: list (filters + results), ad, data sources. State in `F` (filters, persisted in `localStorage`); navigation via History API.
-- **Storage**: SQLite (`node:sqlite`, FTS5, WAL) at `~/.config/ams-viewer/ads.db`. Flat `ads` table with promoted columns plus pruned JSON in `raw`; contentless `ads_fts`; `sources` table. Details in `docs/data-model.md`.
+- **Storage**: SQLite (`node:sqlite`, FTS5, WAL) at `~/.config/AMS Viewer/ads.db`. Flat `ads` table with promoted columns plus pruned JSON in `raw`; contentless `ads_fts`; `sources` table. Details in `docs/data-model.md`.
 
 ## Conventions
 
@@ -47,7 +47,7 @@ npm start                    # add --no-sandbox if the Electron sandbox helper i
 node --check src/renderer/app.js
 ```
 
-The DB and sample data (`2026-Q3.jsonl`, ~130k ads) allow query checks with `node --no-warnings -e "const d=require('./src/main/db'); const db=d.open(process.env.HOME+'/.config/ams-viewer/ads.db'); ..."`.
+The DB and sample data (`2026-Q3.jsonl`, ~130k ads) allow query checks with `node --no-warnings -e "const d=require('./src/main/db'); const db=d.open(process.env.HOME+'/.config/AMS Viewer/ads.db'); ..."`.
 
 ## Developer notes (memory bank)
 

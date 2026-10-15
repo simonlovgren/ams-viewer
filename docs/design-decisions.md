@@ -25,7 +25,7 @@ Format: decision, requirements it satisfies, rationale, consequences. Every deci
 ## D5. Import in a worker thread, line splitting on `\n` only
 - **Requirements**: DAT-004, DAT-005, DAT-006, DAT-008, NFR-004
 - **Why**: keeps the UI responsive. Node's `readline` also splits on U+2028/U+2029, which occur inside ad texts and corrupted 61 records, so a custom splitter is used.
-- **Consequence**: JSON array files (`[...]`) are supported but read fully into memory; prefer JSONL for large files.
+- **Consequence**: JSON array files (`[...]`) are streamed element by element (`arrayItems()`), so memory stays flat for any file size; the format is detected from the first non-blank character. A single line or array element above 64 MB is rejected with an error. The worker has a 3 GB heap limit and the main process reports an unexpected worker exit as an import error instead of leaving the UI waiting.
 
 ## D6. Facet counts computed in a separate worker, excluding the facet's own filter
 - **Requirements**: SRC-009, NFR-003, NFR-004, NFR-005
@@ -94,3 +94,13 @@ Format: decision, requirements it satisfies, rationale, consequences. Every deci
 - **Requirements**: SRC-018, SRC-016
 - **Why**: each entry (committed term or text being typed) is turned into its own FTS expression (words AND-ed, prefix match, `"phrases"`), and the expressions are joined with explicit `AND` or `OR` according to `termMode`. Keeping entries as units makes OR predictable: `"a b" OR c` means (a and b) or c.
 - **Consequence**: words typed together in one entry are always AND-ed; to OR two words, enter them separately. The mode is stored in the filter object (`termMode`, default `and`).
+
+## D20. Tolerate every source generation: synthetic ids, first array element, streamed arrays
+- **Requirements**: DAT-012, DAT-005, DAT-007
+- **Why**: the real files differ by era (see data-model.md). Ads from 2006–2016 have `id: null`, so `toRow()` derives `h-<sha1>` from headline, dates, employer, address, vacancies and the first 4000 characters of the text; the same ad then dedupes on re-import (about 1% of 2006 ads collapse as true duplicates). From 2023 occupation field/group/occupation and employment type are arrays; the first element of each is stored in the flat columns (they are parallel lists), so only the first occupation of a multi-occupation ad is filterable. `.json` array files (2018, 2019) are streamed (D5).
+- **Consequence**: ads with several occupations are found only under the first one; the full raw record keeps all of them and the ad view uses the first for the breadcrumb. Making all occupations filterable would need a link table (`ad_occ`) and a re-import. 2006–2017 ads have no occupation, location or employment type, so those filters only cover 2018 onwards.
+
+## D21. Data folder pinned to `AMS Viewer`
+- **Requirements**: DAT-003
+- **Why**: Electron derives the `userData` folder from `package.json`; adding `productName` (for packaging, D14) silently moved `npm start` from `ams-viewer` to `AMS Viewer` and split the imported data across two databases. `main.js` now sets the folder explicitly, matching the folder that holds the user's imports.
+- **Consequence**: the path no longer depends on package metadata and is the same for development and packaged builds. The old `~/.config/ams-viewer` folder (only `2026-Q3`, 1.1 GB) is an unused leftover that the user can delete.

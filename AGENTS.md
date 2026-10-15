@@ -31,7 +31,7 @@ AMS Viewer: Electron app for browsing historical Swedish job ads. Start with [do
 - **Stack**: Electron + `node:sqlite` (FTS5) + worker threads + plain JS/HTML/CSS. No build step.
 - **Security**: keep `contextIsolation`, `sandbox`, no `nodeIntegration`, CSP. Escape every dynamic value in the renderer with `esc()`; never inject source-ad HTML. Validate all IPC input in the main process (file extensions, `http(s)` URLs).
 - **Performance**: keep long-running DB work (import, facets) off the main thread. Interactive queries must stay in the low-millisecond range at ~130k ads and scale to all years (NFR-005).
-- **Data**: the DB is a derived copy of the source files in `~/.config/ams-viewer/ads.db`. Do not commit data files or the database. Schema changes need a migration or a documented re-import.
+- **Data**: the DB is a derived copy of the source files in `~/.config/AMS Viewer/ads.db`. Do not commit data files or the database. Schema changes need a migration or a documented re-import.
 - **UI language** is English; ad content is Swedish. Tag colors are fixed by meaning (LST-002, UI-004): location teal, field blue, group purple, occupation pink, other grey.
 - **Python**: if a script needs Python, use a virtual environment created with `uv`; do not use system Python.
 - **Style**: keep changes minimal and focused; comments only where code cannot explain itself.

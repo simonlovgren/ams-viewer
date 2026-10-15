@@ -15,7 +15,7 @@ Desktop app for browsing historical Swedish job ads (Arbetsförmedlingen / JobTe
 | Jump to a filter from an ad | Click a tag or breadcrumb item |
 | Remove imported data | Data sources → Remove |
 
-Filters are remembered when you open an ad and when you restart the app. Data is stored locally in `~/.config/ams-viewer/ads.db` (the path differs on Windows/macOS); the source files are not needed after import.
+Filters are remembered when you open an ad and when you restart the app. Data is stored locally in `~/.config/AMS Viewer/ads.db` (macOS: `~/Library/Application Support/AMS Viewer/`, Windows: `%APPDATA%\AMS Viewer\`); the source files are not needed after import.
 
 ## Running as a developer
 
@@ -49,7 +49,7 @@ AGENTS.md       Rules for working in the project (also used by the Copilot agent
 ```bash
 node --no-warnings -e "
 const d=require('./src/main/db');
-const db=d.open(process.env.HOME+'/.config/ams-viewer/ads.db');
+const db=d.open(process.env.HOME+'/.config/AMS Viewer/ads.db');
 console.log(d.info(db), d.search(db,{q:'sjuksköterska'},0,5,true));"
 ```
 
