@@ -1,6 +1,6 @@
 # Tasks (what is in the pipe)
 
-Planned work that is specified but not started. Each task links to its requirements; when work starts, set the requirement to `In progress`, record decisions in [design-decisions.md](design-decisions.md) and remove or tick the task here. Last updated 2026-10-15.
+Planned work that is specified but not started. Each task links to its requirements; when work starts, set the requirement to `In progress`, record decisions in [design-decisions.md](design-decisions.md) and remove or tick the task here. Last updated 2026-10-16.
 
 | # | Task | Requirements | Size |
 |---|---|---|---|
@@ -14,6 +14,7 @@ Planned work that is specified but not started. Each task links to its requireme
 | T8 | Statistics bar on the right (collapsible, hosts the graphs) | UI-013, UI-011, SRC-017 | M |
 | T9 | Top-30 employers widget | SRC-020 | M |
 | T10 | Employer logo cache | AD-010 | M |
+| T11 | Favorite lists and star-action popover | LST-009, LST-010, LST-011, LST-012, LST-013 | M |
 
 Priority order: T7 early (pure CSS, affects how everything else is judged), T8 before T2 (so one collapsible-widget mechanism serves both bars), then T2 and T1 together, T3 with T4 (same view), then T9 and T5 (both live in the statistics bar); T10 is independent and can slot in anywhere. T6 follows the [full-scale performance plan](full-scale-performance-plan.md) when filtered use at full scale feels slow, and before T9 and T5 if their queries make it worse.
 
@@ -93,6 +94,17 @@ Priority order: T7 early (pure CSS, affects how everything else is judged), T8 b
 - Many ads share one employer logo URL, so the cache is small compared to the database; still decide whether to bound its size (suggest: no limit at first, show size on the Data sources page, offer "clear cache").
 - Privacy and offline: first view of each logo contacts the host once; afterwards it works offline. Mention this in the README/constraints.
 - Decisions to record: where files live and how they are served, security limits, negative caching. Update `system-description.md` (new data flow) and `constraints.md`.
+
+## T11. Favorite lists and star-action popover (LST-009–LST-013)
+- Status: planned only; no app implementation yet. Priority relative to existing tasks is not assigned.
+- [ ] Provide one default list named "Favorites".
+- [ ] Allow creation of custom-named lists and deletion of custom lists.
+- [ ] Add a star-icon action for ads. Clicking it opens a bubble/popover with the available lists; choosing a list adds the current ad to it.
+- [ ] Keep a plus (+) control as the last popover entry. Clicking it replaces that entry with a new-list name input and an "Add" button on the right.
+- [ ] On "Add", create the named list and add the pending ad to it in the same workflow, without asking the user to star the ad again.
+- Before implementation, settle: where saved lists are browsed and managed; star placement in results and/or ad detail; persistence across restarts and re-imports; handling source removal; whether the default list can be deleted; name validation and duplicate names; removing ads from lists and membership in multiple lists.
+- Verification: default list available; custom list creation/deletion; adding an ad to an existing list; plus-to-input transition and button placement; creating a list from the popover also adds the original ad. Include keyboard operation, cancellation and failure handling when implementing.
+- Docs: planned interaction recorded in D24. Record storage/schema and navigation decisions before implementation; update affected requirements, data model, system description, constraints and developer notes as needed.
 
 ## Other open items (not requirements yet)
 - Re-import `2016.jsonl` (shows 0 ads) and import the remaining files.
