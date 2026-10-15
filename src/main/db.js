@@ -198,7 +198,56 @@ function facets(db, f, cache = {}) {
     const counts = new Map(run(spec, f).map((r) => [rowKey(r), r.n]));
     out[name] = all.map((r) => ({ ...r, n: counts.get(rowKey(r)) || 0 }));
   }
+  out.timeline = timeline(db, f);
   return out;
+}
+
+const DAY = 864e5;
+const isoDate = (t) => new Date(t).toISOString().slice(0, 10);
+
+// Ads per bin over the selected period (or the whole data range); bin size follows the span.
+function timeline(db, f) {
+  const r = db.prepare('SELECT MIN(pub_date) a, MAX(pub_date) b FROM ads').get();
+  if (!r.a) return { unit: 'month', from: null, to: null, points: [] };
+  let from = f.from || r.a;
+  let to = f.to || r.b;
+  if (from > to) [from, to] = [to, from];
+  const days = (Date.parse(to) - Date.parse(from)) / DAY + 1;
+  const unit = days > 2200 ? 'year' : days > 150 ? 'month' : days > 45 ? 'week' : 'day';
+  const expr = {
+    year: 'substr(a.pub_date,1,4)',
+    month: 'substr(a.pub_date,1,7)',
+    week: "date(a.pub_date,'weekday 0','-6 days')",
+    day: 'a.pub_date',
+  }[unit];
+  const { sql, params } = where(f);
+  const counts = new Map(
+    db.prepare(`SELECT ${expr} k, COUNT(*) n FROM ads a WHERE ${sql} AND a.pub_date IS NOT NULL GROUP BY k`)
+      .all(...params).map((x) => [x.k, x.n])
+  );
+  const points = [];
+  if (unit === 'year') {
+    for (let y = +from.slice(0, 4); y <= +to.slice(0, 4); y++) points.push({ d: `${y}-01-01`, n: counts.get(String(y)) || 0 });
+  } else if (unit === 'month') {
+    let y = +from.slice(0, 4);
+    let m = +from.slice(5, 7);
+    const ye = +to.slice(0, 4);
+    const me = +to.slice(5, 7);
+    while (y < ye || (y === ye && m <= me)) {
+      const k = `${y}-${String(m).padStart(2, '0')}`;
+      points.push({ d: `${k}-01`, n: counts.get(k) || 0 });
+      if (++m > 12) { m = 1; y++; }
+    }
+  } else {
+    const t0 = Date.parse(from);
+    const step = unit === 'week' ? 7 : 1;
+    let t = unit === 'week' ? t0 - ((new Date(t0).getUTCDay() + 6) % 7) * DAY : t0;
+    for (; t <= Date.parse(to); t += step * DAY) {
+      const k = isoDate(t);
+      points.push({ d: k, n: counts.get(k) || 0 });
+    }
+  }
+  return { unit, from, to, points };
 }
 
 function getAd(db, id) {

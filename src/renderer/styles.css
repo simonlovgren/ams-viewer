@@ -78,6 +78,20 @@ input.mini { width: 100%; margin-bottom: 6px; padding: 5px 9px; font-size: 12px;
 .kids { margin-left: 14px; border-left: 1px solid var(--line); padding-left: 4px; }
 .empty-mini { color: var(--muted); font-size: 12px; padding: 4px; }
 
+/* chart */
+#chart { position: relative; }
+#chart svg { display: block; width: 100%; height: auto; stroke: none; stroke-width: 1; }
+.chart-sub { color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+.ch-grid { stroke: var(--line); stroke-dasharray: 3 4; }
+.ch-base { stroke: #35415f; }
+.ch-tick { stroke: #35415f; }
+.ch-lab { fill: var(--muted); font-size: 10px; stroke: none; }
+.ch-lab.dim { fill: #566086; }
+.ch-dot { fill: var(--panel); stroke: var(--purple); stroke-width: 1.2; }
+.ch-guide { stroke: var(--purple); stroke-opacity: .6; }
+.ch-hl { fill: var(--pink); stroke: var(--bg2); stroke-width: 2; }
+.chart-tip { display: none; position: absolute; pointer-events: none; background: var(--panel2); border: 1px solid var(--purple); border-radius: 8px; padding: 3px 8px; font-size: 12px; white-space: nowrap; z-index: 2; }
+
 /* chips */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); color: #c6cde6; font-size: 12px; cursor: pointer; user-select: none; }

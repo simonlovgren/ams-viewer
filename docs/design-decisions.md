@@ -84,3 +84,8 @@ Format: decision, requirements it satisfies, rationale, consequences. Every deci
 - **Requirements**: UI-007, UI-008, UI-009
 - **Why**: pure presentation state; stored in `localStorage` (`menuCollapsed`, `filtersCollapsed`, `filterW`) and applied through a body/view class and the `--filter-w` CSS variable, so no IPC or framework is needed. The resize handle uses pointer events with pointer capture; the filter width is clamped to 310 px (previous fixed width) up to min(720 px, 60% of the window).
 - **Consequence**: the collapsed menu hides text only via CSS; nav items carry `title` tooltips for accessibility. The menu is collapsed by default (`menuCollapsed` unset); an explicit choice is stored as `1`/`0`.
+
+## D18. Ads-over-time chart: server-side binning, hand-built SVG
+- **Requirements**: SRC-017, SRC-009, NFR-003
+- **Why**: the chart must follow every active filter and adapt its resolution to the period. `timeline()` in `db.js` groups matching ads by year/month/week/day (SQL `substr` / `date(..,'weekday 0','-6 days')`), fills empty bins and returns the unit and bounds; it is part of the facets result, so it runs in the facets worker and costs no extra IPC. The renderer draws an SVG with no charting library (no new dependency); axis labels are chosen by priority (first bin, then year/month landmarks, then fillers such as months, week numbers or days) and dropped when they would overlap.
+- **Consequence**: the chart is recomputed on every filter change (cheap without a date filter, ~0.8 s at 130k ads with a date filter because it runs a second grouped query; see constraints). Its width follows the resizable sidebar through a `ResizeObserver`. Inline SVG inherits the global icon stroke style, so the chart resets `stroke`.

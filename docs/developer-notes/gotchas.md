@@ -18,6 +18,7 @@
 - `userData` folder follows `package.json` `name` (`~/.config/ams-viewer`). Renaming the package moves the DB location; migrate it manually (done once on 2026-10-15).
 - CSP has `style-src 'unsafe-inline'` because markup uses inline `style` attributes; scripts remain locked to `'self'`. Do not add inline scripts or `onclick` attributes.
 - Everything dynamic in template strings must go through `esc()`.
+- Global `svg { fill: none; stroke: currentColor; stroke-width: 2 }` is meant for icons. Any other inline SVG (the chart) inherits it, and its text then looks bold/glowing; reset with `stroke: none` on that SVG (`#chart svg`).
 - The list view stays mounted (hidden) while an ad is open; scrollTop is saved/restored manually in `show()`.
 - Stale async results are dropped with counters (`seq`, `fseq`, `adSeq`); keep using them for new async UI.
 - Filter state lives in `F`, persisted as `localStorage.filters`. When changing its shape, add a migration next to the existing one at the top of `app.js` (old shapes: `field/group/occ/region/muni/lbl`).

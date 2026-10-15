@@ -13,6 +13,7 @@
 - Database size is roughly 1.3× the source data; 20 years of data will need tens of GB of disk.
 - A single writer: only one import runs at a time. Removing a source is blocked during import, and runs on the main thread, so large removals may briefly freeze the UI.
 - Search and ad lookup run on the main thread; they are fast (ms) but a pathological query could delay IPC. Facet counting is offloaded.
+- The ads-over-time chart adds one grouped query per update; with an active date filter the combined facets+chart update took ~0.8 s at 130k ads (warm cache).
 - Facet cost scales with matching rows. At 130k rows it takes ~280 ms; at multi-million rows expect seconds unless a summary table or caching is added.
 - List paging uses `LIMIT/OFFSET`; deep scrolling in very large result sets becomes slower (keyset paging would be the fix).
 - No auto-update, code signing or custom app icon. Packaging uses electron-builder (`npm run dist`); only the Linux unpacked build has been tried.

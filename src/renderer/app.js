@@ -25,6 +25,7 @@
     filter: '<path d="M22 3H2l8 9.5V19l4 2v-8.5L22 3Z"/>',
     car: '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>',
     'panel-left': '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
+    'trending-up': '<path d="m22 7-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/>',
     check: '<path d="M20 6 9 17l-5-5"/>',
     mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-10 6L2 7"/>',
     phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z"/>',
@@ -273,7 +274,121 @@
     );
     $('#chips-emp').innerHTML = chipsHtml(d.emp.filter((r) => r.v).map((r) => ({ v: r.v, label: r.v, n: r.n })), (i) => F.emp === i.v);
     $('#chips-hours').innerHTML = chipsHtml(d.hours.filter((r) => r.v).map((r) => ({ v: r.v, label: r.v, n: r.n })), (i) => F.hours === i.v);
+    timelineData = d.timeline;
+    renderChart();
   }
+
+  /* ---------- ads-over-time chart ---------- */
+  let timelineData = null;
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const dparts = (s) => s.split('-').map(Number);
+  const addDays = (s, n) => new Date(Date.parse(s) + n * 864e5).toISOString().slice(0, 10);
+  const isoWeek = (s) => {
+    const d = new Date(Date.parse(s));
+    d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7) + 3);
+    const jan4 = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+    return 1 + Math.round(((d - jan4) / 864e5 - 3 + ((jan4.getUTCDay() + 6) % 7)) / 7);
+  };
+  const compact = (n) => (n >= 10000 ? Math.round(n / 1000) + 'k' : n >= 1000 ? (n / 1000).toFixed(1).replace('.0', '') + 'k' : String(n));
+
+  // Axis label for a bin: pri 0 = first bin, 1 = calendar landmark (year/month), 2 = filler (month, week, day).
+  function axisLabel(p, i, pts, unit) {
+    const [y, m, d] = dparts(p.d);
+    const first = i === 0;
+    if (unit === 'year') return { text: String(y), pri: 1 };
+    if (unit === 'month') {
+      if (m === 1) return { text: String(y), pri: first ? 0 : 1 };
+      if (first) return { text: `${MON[m - 1]} ${y}`, pri: 0 };
+      return pts.length <= 40 ? { text: MON[m - 1], pri: 2 } : null;
+    }
+    if (unit === 'week') {
+      const [, m2] = dparts(addDays(p.d, 6));
+      const [y2] = dparts(addDays(p.d, 6));
+      if (first) return { text: `${d} ${MON[m - 1]}`, pri: 0 };
+      if (d === 1 || m2 !== m) return { text: m2 === 1 ? String(y2) : MON[m2 - 1], pri: 1 };
+      return { text: 'w' + isoWeek(p.d), pri: 2 };
+    }
+    if (first) return { text: `${d} ${MON[m - 1]}`, pri: 0 };
+    if (d === 1) return { text: m === 1 ? String(y) : MON[m - 1], pri: 1 };
+    return { text: String(d), pri: 2 };
+  }
+
+  function pointTitle(p, unit) {
+    const [y, m, d] = dparts(p.d);
+    if (unit === 'year') return String(y);
+    if (unit === 'month') return `${MON[m - 1]} ${y}`;
+    const base = `${d} ${MON[m - 1]} ${y}`;
+    return unit === 'week' ? `Week ${isoWeek(p.d)} (from ${base})` : new Date(Date.parse(p.d)).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' }) + ' ' + base;
+  }
+
+  function renderChart() {
+    const box = $('#chart');
+    const t = timelineData;
+    const W = Math.max(160, box.clientWidth);
+    if (!t || !t.points.length) { box.innerHTML = '<div class="empty-mini">No data</div>'; return; }
+    const H = 132, L = 34, R = 10, T = 10, B = 22;
+    const pts = t.points;
+    const n = pts.length;
+    const max = Math.max(1, ...pts.map((p) => p.n));
+    const total = pts.reduce((s, p) => s + p.n, 0);
+    const xs = (i) => (n === 1 ? (L + W - R) / 2 : L + (i * (W - L - R)) / (n - 1));
+    const ys = (v) => T + (1 - v / max) * (H - T - B);
+    const line = pts.map((p, i) => `${i ? 'L' : 'M'}${xs(i).toFixed(1)},${ys(p.n).toFixed(1)}`).join('');
+    const area = `${line}L${xs(n - 1).toFixed(1)},${H - B}L${xs(0).toFixed(1)},${H - B}Z`;
+
+    const cands = pts.map((p, i) => ({ i, ...axisLabel(p, i, pts, t.unit) })).filter((c) => c.text);
+    const placed = [];
+    const fits = (x, w) => placed.every((q) => Math.abs(q.x - x) >= (q.w + w) / 2 + 6);
+    for (const pri of [0, 1, 2]) {
+      for (const c of cands.filter((q) => q.pri === pri)) {
+        const w = c.text.length * 6.2;
+        const x = xs(c.i);
+        if (x - w / 2 >= 0 && x + w / 2 <= W && fits(x, w)) placed.push({ x, w, text: c.text, pri });
+      }
+    }
+    const labels = placed.map((q) => `<line class="ch-tick" x1="${q.x.toFixed(1)}" x2="${q.x.toFixed(1)}" y1="${H - B}" y2="${H - B + 3}"/><text class="ch-lab${q.pri === 2 ? ' dim' : ''}" x="${q.x.toFixed(1)}" y="${H - 6}" text-anchor="middle">${esc(q.text)}</text>`).join('');
+    const dots = n <= 40 ? pts.map((p, i) => `<circle class="ch-dot" cx="${xs(i).toFixed(1)}" cy="${ys(p.n).toFixed(1)}" r="2.2"/>`).join('') : '';
+
+    box.innerHTML = `<div class="chart-sub">${esc(fmtNum(total))} ads · per ${t.unit} · ${esc(t.from)} → ${esc(t.to)}</div>
+      <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
+        <defs>
+          <linearGradient id="cg-line" gradientUnits="userSpaceOnUse" x1="${L}" x2="${W - R}" y1="0" y2="0"><stop offset="0" stop-color="#2dd4bf"/><stop offset=".35" stop-color="#60a5fa"/><stop offset=".7" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472b6"/></linearGradient>
+          <linearGradient id="cg-area" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#a78bfa" stop-opacity=".35"/><stop offset="1" stop-color="#a78bfa" stop-opacity="0"/></linearGradient>
+        </defs>
+        <line class="ch-grid" x1="${L}" x2="${W - R}" y1="${ys(max)}" y2="${ys(max)}"/>
+        <line class="ch-grid" x1="${L}" x2="${W - R}" y1="${ys(max / 2)}" y2="${ys(max / 2)}"/>
+        <line class="ch-base" x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}"/>
+        <text class="ch-lab" x="${L - 5}" y="${ys(max) + 3.5}" text-anchor="end">${compact(max)}</text>
+        <text class="ch-lab" x="${L - 5}" y="${H - B + 3.5}" text-anchor="end">0</text>
+        <path d="${area}" fill="url(#cg-area)"/>
+        <path d="${line}" fill="none" stroke="url(#cg-line)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+        ${dots}${labels}
+        <line id="ch-guide" class="ch-guide" x1="0" x2="0" y1="${T}" y2="${H - B}" visibility="hidden"/>
+        <circle id="ch-hl" class="ch-hl" r="4" visibility="hidden"/>
+        <rect id="ch-hit" x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent"/>
+      </svg><div id="chart-tip" class="chart-tip"></div>`;
+
+    const hit = $('#ch-hit');
+    const tip = $('#chart-tip');
+    hit.addEventListener('mousemove', (e) => {
+      const rect = hit.getBoundingClientRect();
+      const i = n === 1 ? 0 : Math.max(0, Math.min(n - 1, Math.round(((e.clientX - rect.left) / rect.width) * (n - 1))));
+      const x = xs(i);
+      $('#ch-guide').setAttribute('x1', x); $('#ch-guide').setAttribute('x2', x); $('#ch-guide').setAttribute('visibility', 'visible');
+      const hl = $('#ch-hl');
+      hl.setAttribute('cx', x); hl.setAttribute('cy', ys(pts[i].n)); hl.setAttribute('visibility', 'visible');
+      tip.textContent = `${pointTitle(pts[i], t.unit)}: ${fmtNum(pts[i].n)} ads`;
+      tip.style.display = 'block';
+      tip.style.left = Math.min(Math.max(0, x - tip.offsetWidth / 2), W - tip.offsetWidth) + 'px';
+      tip.style.top = '22px';
+    });
+    hit.addEventListener('mouseleave', () => {
+      $('#ch-guide').setAttribute('visibility', 'hidden');
+      $('#ch-hl').setAttribute('visibility', 'hidden');
+      tip.style.display = 'none';
+    });
+  }
+  new ResizeObserver(() => { if (timelineData) renderChart(); }).observe($('#chart'));
 
   function treeClick(e) {
     const el = e.target.closest('.node');
