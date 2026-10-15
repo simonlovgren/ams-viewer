@@ -11,10 +11,11 @@
   <aside id="sidebar">
     <div class="brand"><span class="logo" data-i="briefcase"></span><div><b>AMS Viewer</b><small>Historical job ads</small></div></div>
     <nav>
-      <a class="nav" data-view="list" tabindex="0"><span data-i="search"></span>Search ads</a>
-      <a class="nav" data-view="data" tabindex="0"><span data-i="database"></span>Data sources</a>
+      <a class="nav" data-view="list" tabindex="0" title="Search ads"><span data-i="search"></span><span class="t">Search ads</span></a>
+      <a class="nav" data-view="data" tabindex="0" title="Data sources"><span data-i="database"></span><span class="t">Data sources</span></a>
     </nav>
-    <div class="side-foot"><span data-i="layers"></span><span id="side-total">0 ads</span></div>
+    <div class="side-foot" title="Ads stored"><span data-i="layers"></span><span id="side-total">0 ads</span></div>
+    <button id="menu-toggle" class="icon-btn" title="Collapse menu"><span data-i="panel-left"></span></button>
   </aside>
 
   <main>
@@ -52,11 +53,14 @@
           <div id="chips-hours" class="chips"></div>
         </div>
       </div>
+      <div id="filters-resizer" title="Drag to resize filters"></div>
 
       <div id="results">
         <div class="topbar">
+          <button id="filters-toggle" class="icon-btn" title="Hide filters"><span data-i="panel-left"></span></button>
           <div class="searchbox"><span data-i="search"></span>
-            <input id="q" type="search" placeholder='Search keywords, e.g. sjuksköterska "hemtjänst"   ( / )' autocomplete="off" />
+            <div id="terms"></div>
+            <input id="q" type="search" autocomplete="off" />
           </div>
           <select id="sort">
             <option value="newest">Newest first</option>

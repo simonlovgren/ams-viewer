@@ -43,9 +43,14 @@ npm install     # dependencies
 npm start       # run the app (add --no-sandbox if the Electron sandbox helper is missing)
 ```
 
+## Developer notes
+
+`docs/developer-notes/` is a memory bank for future sessions: read it first, and add gotchas, verified recipes, project state and user preferences when you learn something useful. See its [README](docs/developer-notes/README.md).
+
 ## Definition of done
 
 - Related requirement IDs exist and statuses are current.
 - Major decisions are recorded with requirement IDs.
 - Affected docs are updated.
+- Developer notes updated with anything useful for future sessions.
 - Behavior verified, and unverified parts stated.

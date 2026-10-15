@@ -107,13 +107,16 @@ function ftsQuery(q) {
   return parts.join(' ');
 }
 
+// Committed terms and the text still being typed are AND-ed by the FTS query.
+const queryText = (f) => [...(Array.isArray(f.terms) ? f.terms : []), f.q].filter(Boolean).join(' ');
+
 // skip: dimensions whose filters are ignored (used for facet counts).
 function where(f, skip = []) {
   const w = [];
   const p = [];
   const has = (s) => !skip.includes(s);
-  if (has('q') && f.q) {
-    const m = ftsQuery(f.q);
+  if (has('q') && queryText(f)) {
+    const m = ftsQuery(queryText(f));
     if (m) {
       w.push('a.rowid IN (SELECT rowid FROM ads_fts WHERE ads_fts MATCH ?)');
       p.push(m);
@@ -128,9 +131,12 @@ function where(f, skip = []) {
     }
     if (parts.length) w.push(`(${parts.join(' OR ')})`);
   }
-  if (has('loc')) {
-    if (f.muni) { w.push('a.muni = ? AND a.region = ?'); p.push(f.muni, f.region || ''); }
-    else if (f.region) { w.push('a.region = ?'); p.push(f.region); }
+  if (has('loc') && Array.isArray(f.loc) && f.loc.length) {
+    const parts = [];
+    const regs = f.loc.filter((s) => s.k === 'region').map((s) => s.id);
+    if (regs.length) { parts.push(`a.region IN (${regs.map(() => '?').join(',')})`); p.push(...regs); }
+    for (const s of f.loc.filter((x) => x.k === 'muni')) { parts.push('(a.muni = ? AND a.region = ?)'); p.push(s.id, s.ri ?? ''); }
+    w.push(`(${parts.join(' OR ')})`);
   }
   if (has('date')) {
     if (f.from) { w.push('a.pub_date >= ?'); p.push(f.from); }
@@ -145,12 +151,12 @@ const LIST_COLS = 'a.ad_id, a.headline, a.pub_date, a.employer, a.region, a.muni
 
 function search(db, f, offset, limit, wantTotal) {
   let rows;
-  if (f.sort === 'relevance' && f.q && ftsQuery(f.q)) {
+  if (f.sort === 'relevance' && ftsQuery(queryText(f))) {
     const { sql, params } = where(f, ['q']);
     rows = db.prepare(
       `SELECT ${LIST_COLS} FROM ads_fts JOIN ads a ON a.rowid = ads_fts.rowid
        WHERE ads_fts MATCH ? AND ${sql} ORDER BY bm25(ads_fts, 10, 3, 1) LIMIT ? OFFSET ?`
-    ).all(ftsQuery(f.q), ...params, limit, offset);
+    ).all(ftsQuery(queryText(f)), ...params, limit, offset);
   } else {
     const { sql, params } = where(f);
     const dir = f.sort === 'oldest' ? 'ASC' : 'DESC';
@@ -166,21 +172,33 @@ function search(db, f, offset, limit, wantTotal) {
   return { total, rows: rows.map((r) => ({ ...r })) };
 }
 
-function facets(db, f) {
-  const q = (cols, skip, extra = '') => {
-    const { sql, params } = where(f, skip);
-    return db
-      .prepare(`SELECT ${cols}, COUNT(*) n FROM ads a WHERE ${sql} ${extra}`)
-      .all(...params)
-      .map((r) => ({ ...r }));
+const FACETS = {
+  occ: { cols: 'field_id fi, MAX(field) f, group_id gi, MAX(grp) g, occ_id oi, MAX(occ) o', skip: ['occ'], extra: 'GROUP BY field_id, group_id, occ_id' },
+  loc: { cols: 'region r, muni m', skip: ['loc'], extra: 'GROUP BY region, muni' },
+  year: { cols: 'year y', skip: ['date'], extra: 'GROUP BY year ORDER BY year DESC' },
+  emp: { cols: 'emp_type v', skip: ['emp'], extra: 'GROUP BY emp_type ORDER BY n DESC' },
+  hours: { cols: 'hours v', skip: ['hours'], extra: 'GROUP BY hours ORDER BY n DESC' },
+};
+
+const rowKey = (r) => JSON.stringify(Object.values(r).slice(0, -1));
+
+// Every option in the data is returned; n is its count under the other active filters (0 = no match).
+// `cache` keeps the unfiltered option lists until another connection changes the database.
+function facets(db, f, cache = {}) {
+  const ver = db.prepare('PRAGMA data_version').get().data_version;
+  if (cache.ver !== ver) { cache.ver = ver; cache.all = {}; }
+  const run = (spec, filter) => {
+    const { sql, params } = where(filter, spec.skip);
+    return db.prepare(`SELECT ${spec.cols}, COUNT(*) n FROM ads a WHERE ${sql} ${spec.extra}`).all(...params).map((r) => ({ ...r }));
   };
-  return {
-    occ: q('field_id fi, MAX(field) f, group_id gi, MAX(grp) g, occ_id oi, MAX(occ) o', ['occ'], 'GROUP BY field_id, group_id, occ_id'),
-    loc: q('region r, muni m', ['loc'], 'GROUP BY region, muni'),
-    year: q('year y', ['date'], 'GROUP BY year ORDER BY year DESC'),
-    emp: q('emp_type v', ['emp'], 'GROUP BY emp_type ORDER BY n DESC'),
-    hours: q('hours v', ['hours'], 'GROUP BY hours ORDER BY n DESC'),
-  };
+  const out = {};
+  for (const [name, spec] of Object.entries(FACETS)) {
+    const all = (cache.all[name] ||= run(spec, {}));
+    if (where(f, spec.skip).sql === '1') { out[name] = all; continue; }
+    const counts = new Map(run(spec, f).map((r) => [rowKey(r), r.n]));
+    out[name] = all.map((r) => ({ ...r, n: counts.get(rowKey(r)) || 0 }));
+  }
+  return out;
 }
 
 function getAd(db, id) {

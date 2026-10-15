@@ -1,0 +1,29 @@
+# Gotchas
+
+## Data and import
+- **Never use `readline` for JSONL.** It also splits on U+2028/U+2029, which occur inside ad texts; 61 of ~130k records broke. The importer uses a custom `\n`-only splitter (`linesOf` in `import-worker.js`).
+- Sample file `2026-Q3.jsonl`: 129,721 non-empty lines, all with unique ids. `description.text_formatted` is always null, so only `description.text` is used. Some ads have no `hours` (working hours) value; some have a null region.
+- Re-importing a file skips existing ids, so a code change in `toRow()` does not update stored rows. Remove the source in the Data sources view (or delete the DB) and re-import.
+- Import of the sample takes ~33 s; the DB ends up ~1.1 GB.
+
+## Database and queries
+- `node:sqlite` returns rows as null-prototype objects; spread (`{ ...r }`) before sending over IPC.
+- The contentless FTS table needs `contentless_delete=1` to delete rows; deleting a source removes FTS rows by rowid first.
+- Facets: `facets()` returns every option with its count under the other filters (0 = grayed out, SRC-015). Unfiltered lists are cached in the worker and invalidated by `PRAGMA data_version`. A filter dimension that is added must be added to `FACETS` in `db.js`.
+- `where(f, skip)` is used for both list and facet queries; `skip` names the dimension excluded for its own facet (`occ`, `loc`, `date`, `emp`, `hours`, `q`).
+- Free text: committed `terms` plus the live `q` are joined and AND-ed (`queryText()`); never read `f.q` directly in new code.
+- Selecting a nullish id in a tree (`Unspecified` node) is intentionally ignored; an id of `null` in `IN (...)` would match nothing.
+
+## Electron and renderer
+- `userData` folder follows `package.json` `name` (`~/.config/ams-viewer`). Renaming the package moves the DB location; migrate it manually (done once on 2026-10-15).
+- CSP has `style-src 'unsafe-inline'` because markup uses inline `style` attributes; scripts remain locked to `'self'`. Do not add inline scripts or `onclick` attributes.
+- Everything dynamic in template strings must go through `esc()`.
+- The list view stays mounted (hidden) while an ad is open; scrollTop is saved/restored manually in `show()`.
+- Stale async results are dropped with counters (`seq`, `fseq`, `adSeq`); keep using them for new async UI.
+- Filter state lives in `F`, persisted as `localStorage.filters`. When changing its shape, add a migration next to the existing one at the top of `app.js` (old shapes: `field/group/occ/region/muni/lbl`).
+- Mouse back/forward = DOM `mouseup` buttons 3/4 (Linux). Backspace navigates back except in inputs; the search input has its own Backspace handler (removes the last free-text entry).
+- Tool edits applied in the same batch as a read may not be visible to that read; re-check with grep after multi-edit batches.
+
+## Packaging
+- Only `src/**` and `package.json` are bundled (`build.files`); the 770 MB data files in the project root must never be added.
+- `npm run pack` output goes to `dist/` (git-ignored). The unpacked Linux build starts; Wayland prints a harmless Vulkan/ozone warning.

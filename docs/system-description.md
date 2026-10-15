@@ -60,3 +60,5 @@ flowchart LR
 ## Facet semantics
 
 Each filter group's counts are computed with all *other* filters applied but its own ignored. This lets the user see alternatives within a group (e.g. other occupation fields) while still reflecting keyword, date and location choices.
+
+Options never disappear: every option present in the data is returned with its count (0 when no ad matches) and shown grayed out but selectable (SRC-015). The unfiltered option lists are cached in the facets worker and refreshed when the database changes.

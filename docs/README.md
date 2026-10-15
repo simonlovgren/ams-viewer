@@ -9,6 +9,7 @@ Desktop application for browsing historical Swedish job ads (Arbetsförmedlingen
 | [design-decisions.md](design-decisions.md) | Key design decisions with rationale and alternatives |
 | [constraints.md](constraints.md) | Technical, data and scope constraints, known limitations |
 | [data-model.md](data-model.md) | Source record format, database schema, indexes |
+| [developer-notes/](developer-notes/README.md) | Memory bank for future sessions: gotchas, testing recipes, project state |
 
 ## Quick start
 

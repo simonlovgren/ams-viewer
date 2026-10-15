@@ -32,10 +32,10 @@ Format: decision, requirements it satisfies, rationale, consequences. Every deci
 - **Why**: counts need full-group scans (~280 ms at 130k rows) and must not block the main thread; excluding the own filter keeps alternatives visible.
 - **Consequence**: counts may lag the list by a short moment. Covering indexes on `(field_id, group_id, occ_id, field, grp, occ)` and `(region, muni)` speed this up. For many millions of rows a pre-aggregated summary table would be the next step.
 
-## D7. Occupation filter is a multi-select list of nodes (`sel`), OR-combined
-- **Requirements**: SRC-001, SRC-010, SRC-014
-- **Why**: users need several fields/groups/occupations at once. Each selection is `{k, id, label, fi, gi}` (kind, own id, ancestor field/group ids), so chips and de-duplication need no lookups. Selecting a narrower node removes its wider ancestors (the wider pick would otherwise still match everything); selecting a wider node removes its now-redundant descendants; other branches stay.
-- **Consequence**: query is `field_id IN (..) OR group_id IN (..) OR occ_id IN (..)`. Clicking a selected node deselects only it. Filters saved by earlier versions (`field/group/occ`) are migrated on load.
+## D7. Hierarchical filters (occupation, location) are multi-select lists of nodes, OR-combined
+- **Requirements**: SRC-001, SRC-002, SRC-010, SRC-014
+- **Why**: users need several nodes per filter. Occupation selections live in `sel` as `{k, id, label, fi, gi}`, location selections in `loc` as `{k, id, label, ri}` (kind, own id, ancestor ids), so chips and de-duplication need no lookups. Selecting a narrower node removes its wider ancestors (the wider pick would otherwise still match everything); selecting a wider node removes its now-redundant descendants; other branches stay.
+- **Consequence**: query is `field_id IN (..) OR group_id IN (..) OR occ_id IN (..)` and `region IN (..) OR (muni = ? AND region = ?)`. Clicking a selected node deselects only it. Filters saved by earlier versions (`field/group/occ/region/muni`) are migrated on load. A future multi-layer filter should reuse the same pattern.
 
 ## D8. No framework; single `app.js`
 - **Requirements**: UI-001, NFR-001, NFR-007
@@ -69,3 +69,18 @@ Format: decision, requirements it satisfies, rationale, consequences. Every deci
 - **Requirements**: NFR-009
 - **Why**: widely used, configured in `package.json` (`build`), produces AppImage/NSIS/dmg without extra project files. Only `src/**` and `package.json` are packaged so that data files (`*.jsonl`, ~770 MB each) in the project folder are never bundled; `node:sqlite` needs no native rebuild.
 - **Consequence**: new dev dependency; no code signing, auto-update or custom icon yet. Output goes to `dist/` (git-ignored).
+
+## D15. Facets return all options with filtered counts; unfiltered lists cached
+- **Requirements**: SRC-015, SRC-009, NFR-003
+- **Why**: options must stay visible (grayed at count 0) so the filter panel does not jump around. The facets worker runs the unfiltered group-by once per dimension (cached, invalidated via `PRAGMA data_version`), runs the filtered group-by only when relevant filters are active, and merges counts onto the full list.
+- **Consequence**: payload always contains every option (~2.5k occupations, ~300 municipalities at one quarter; more with all years). Cold start of the cache costs ~300 ms; filtered updates ~60 ms. During imports the cache is rebuilt often.
+
+## D16. Free-text entries as chips inside the search input
+- **Requirements**: SRC-016, SRC-003, SRC-008
+- **Why**: several keywords should be combinable and individually removable. Enter commits the typed text to `terms`; the uncommitted text in `q` still filters live. Main joins `terms` + `q` and the FTS query ANDs every token, so each entry behaves as before (prefix match, `"phrases"`).
+- **Consequence**: Backspace in an empty-at-caret input removes the last entry; the native search-clear button is hidden. Terms are persisted with the other filters.
+
+## D17. Layout state (menu collapse, filter width and collapse) kept in the renderer
+- **Requirements**: UI-007, UI-008, UI-009
+- **Why**: pure presentation state; stored in `localStorage` (`menuCollapsed`, `filtersCollapsed`, `filterW`) and applied through a body/view class and the `--filter-w` CSS variable, so no IPC or framework is needed. The resize handle uses pointer events with pointer capture; the filter width is clamped to 310 px (previous fixed width) up to min(720 px, 60% of the window).
+- **Consequence**: the collapsed menu hides text only via CSS; nav items carry `title` tooltips for accessibility. The menu is collapsed by default (`menuCollapsed` unset); an explicit choice is stored as `1`/`0`.

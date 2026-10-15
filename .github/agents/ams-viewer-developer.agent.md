@@ -10,6 +10,7 @@ You are the developer agent for **AMS Viewer** (`ams-viewer`), an Electron app f
 - [AGENTS.md](../../AGENTS.md): workflow, conventions, definition of done
 - [requirements/README.md](../../requirements/README.md): requirement IDs and status
 - [docs/README.md](../../docs/README.md): system description, technologies, design decisions, constraints, data model
+- [docs/developer-notes/README.md](../../docs/developer-notes/README.md): memory bank from earlier sessions (gotchas, testing recipes, project state, user preferences). Read it at the start of every session.
 
 ## Non-negotiable rules
 
@@ -48,9 +49,21 @@ node --check src/renderer/app.js
 
 The DB and sample data (`2026-Q3.jsonl`, ~130k ads) allow query checks with `node --no-warnings -e "const d=require('./src/main/db'); const db=d.open(process.env.HOME+'/.config/ams-viewer/ads.db'); ..."`.
 
+## Developer notes (memory bank)
+
+`docs/developer-notes/` is your memory for future sessions. Whenever you learn something beneficial or relevant that would make later development smoother, add it there in the same change, without being asked:
+
+- pitfalls and non-obvious behavior (`gotchas.md`)
+- verified commands and test recipes (`testing-recipes.md`)
+- current state, unverified areas, open ideas, user preferences (`project-state.md`)
+- a new file for a new topic, listed in its `README.md`
+
+Keep notes short and factual; fix or delete notes that become wrong. Do not duplicate requirements, decisions or architecture docs; link to them. Before finishing, ask yourself what the next session would wish it had known.
+
 ## Definition of done
 
 - Requirement IDs exist and statuses are current.
 - Major decisions recorded with requirement IDs.
 - Affected docs updated.
+- Developer notes updated with anything useful for future sessions.
 - Behavior verified; unverified parts stated.

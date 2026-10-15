@@ -24,6 +24,7 @@
     external: '<path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
     filter: '<path d="M22 3H2l8 9.5V19l4 2v-8.5L22 3Z"/>',
     car: '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>',
+    'panel-left': '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
     check: '<path d="M20 6 9 17l-5-5"/>',
     mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-10 6L2 7"/>',
     phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z"/>',
@@ -44,18 +45,21 @@
   };
 
   /* ---------- filter state ---------- */
-  const DEF = { q: '', sel: [], region: '', muni: '', from: '', to: '', emp: '', hours: '', sort: 'newest', lbl: {} };
+  const DEF = { q: '', terms: [], sel: [], loc: [], from: '', to: '', emp: '', hours: '', sort: 'newest' };
   let F = { ...DEF };
   try { F = { ...DEF, ...JSON.parse(localStorage.getItem('filters') || '{}') }; } catch { /* ignore */ }
-  if (!Array.isArray(F.sel)) {
+  if (!Array.isArray(F.sel) || !Array.isArray(F.loc)) {
     // migrate single-selection filters saved by earlier versions
     const l = F.lbl || {};
     F.sel = [];
+    F.loc = [];
     if (F.occ) F.sel.push({ k: 'occ', id: F.occ, label: l.occ || F.occ, fi: F.field, gi: F.group });
     else if (F.group) F.sel.push({ k: 'group', id: F.group, label: l.group || F.group, fi: F.field, gi: F.group });
     else if (F.field) F.sel.push({ k: 'field', id: F.field, label: l.field || F.field, fi: F.field });
+    if (F.muni) F.loc.push({ k: 'muni', id: F.muni, label: F.muni, ri: F.region });
+    else if (F.region) F.loc.push({ k: 'region', id: F.region, label: F.region, ri: F.region });
   }
-  delete F.field; delete F.group; delete F.occ;
+  for (const k of ['field', 'group', 'occ', 'region', 'muni', 'lbl']) delete F[k];
   const expanded = new Set(JSON.parse(localStorage.getItem('expanded') || '[]'));
   const saveF = () => localStorage.setItem('filters', JSON.stringify(F));
   const saveExp = () => localStorage.setItem('expanded', JSON.stringify([...expanded]));
@@ -224,8 +228,8 @@
 
   const isSel = (n) => {
     if (n.k === 'field' || n.k === 'group' || n.k === 'occ') return F.sel.some((s) => s.k === n.k && s.id === n.id);
-    if (n.k === 'region') return !!F.region && !F.muni && F.region === n.id;
-    return !!F.muni && F.muni === n.id && F.region === n.path.region;
+    if (n.k === 'region') return F.loc.some((s) => s.k === 'region' && s.id === n.id);
+    return F.loc.some((s) => s.k === 'muni' && s.id === n.id && s.ri === n.path.region);
   };
 
   function treeHtml(nodes, filter, depth = 0) {
@@ -239,7 +243,7 @@
       nodeIndex.set(key, n);
       const open = f ? kidsMatch : expanded.has(key);
       const hasKids = n.kids.length > 0;
-      out += `<div class="node${isSel(n) ? ' sel' : ''}" data-key="${esc(key)}">
+      out += `<div class="node${isSel(n) ? ' sel' : ''}${n.n ? '' : ' zero'}" data-key="${esc(key)}">
         <span class="tg${hasKids ? '' : ' none'}">${icon(open ? 'chev-d' : 'chev-r')}</span>
         <span class="lbl" title="${esc(n.label)}">${esc(n.label)}</span><span class="cnt">${fmtNum(n.n)}</span></div>`;
       if (open && hasKids) out += `<div class="kids">${treeHtml(n.kids, f && !self ? filter : '', depth + 1)}</div>`;
@@ -257,7 +261,7 @@
   }
 
   function chipsHtml(items, isOn) {
-    return items.map((i) => `<span class="chip${isOn(i) ? ' on' : ''}" data-v="${esc(i.v)}">${esc(i.label)} <small>${fmtNum(i.n)}</small></span>`).join('');
+    return items.map((i) => `<span class="chip${isOn(i) ? ' on' : ''}${i.n ? '' : ' zero'}" data-v="${esc(i.v)}">${esc(i.label)} <small>${fmtNum(i.n)}</small></span>`).join('');
   }
 
   function renderFacets(d) {
@@ -286,26 +290,26 @@
     if (n.id === null || n.id === undefined) return;
     const was = isSel(n);
     if (n.kids.length) { expanded.add(key); saveExp(); }
-    if (n.k === 'region' || n.k === 'muni') {
-      const p = n.path;
-      const target = was ? (n.k === 'muni' ? { region: p.region } : {}) : p;
-      setF({ region: target.region || '', muni: target.muni || '', lbl: { ...F.lbl, region: target.region || '', muni: target.muni || '' } });
-    } else {
-      const fi = n.path.field?.id;
-      const gi = n.path.group?.id;
-      let sel;
-      if (was) sel = F.sel.filter((s) => !(s.k === n.k && s.id === n.id));
-      else {
-        // Narrower pick replaces its wider ancestors; wider pick replaces its narrower descendants.
-        const drop = (s) =>
-          (n.k !== 'field' && s.k === 'field' && s.id === fi) ||
-          (n.k === 'occ' && s.k === 'group' && s.id === gi) ||
-          (n.k === 'field' && s.fi === n.id) ||
-          (n.k === 'group' && s.gi === n.id);
-        sel = [...F.sel.filter((s) => !drop(s)), { k: n.k, id: n.id, label: n.label, fi, gi }];
-      }
-      setF({ sel });
+    const isOcc = n.k === 'field' || n.k === 'group' || n.k === 'occ';
+    const list = isOcc ? 'sel' : 'loc';
+    const fi = n.path.field?.id;
+    const gi = n.path.group?.id;
+    const ri = n.path.region;
+    const same = (s) => s.k === n.k && s.id === n.id && (n.k !== 'muni' || s.ri === ri);
+    let next;
+    if (was) next = F[list].filter((s) => !same(s));
+    else {
+      // Narrower pick replaces its wider ancestors; wider pick replaces its narrower descendants.
+      const drop = isOcc
+        ? (s) =>
+            (n.k !== 'field' && s.k === 'field' && s.id === fi) ||
+            (n.k === 'occ' && s.k === 'group' && s.id === gi) ||
+            (n.k === 'field' && s.fi === n.id) ||
+            (n.k === 'group' && s.gi === n.id)
+        : (s) => (n.k === 'muni' && s.k === 'region' && s.id === ri) || (n.k === 'region' && s.k === 'muni' && s.ri === n.id);
+      next = [...F[list].filter((s) => !drop(s)), { k: n.k, id: n.id, label: n.label, fi, gi, ri }];
     }
+    setF({ [list]: next });
   }
   $('#tree-occ').addEventListener('click', treeClick);
   $('#tree-loc').addEventListener('click', treeClick);
@@ -329,22 +333,37 @@
   $('#f-from').addEventListener('change', (e) => setF({ from: e.target.value }));
   $('#f-to').addEventListener('change', (e) => setF({ to: e.target.value }));
   $('#q').addEventListener('input', (e) => setF({ q: e.target.value }, { immediate: false }));
+  $('#q').addEventListener('keydown', (e) => {
+    const t = e.target;
+    if (e.key === 'Enter' && t.value.trim()) {
+      e.preventDefault();
+      setF({ terms: [...F.terms, t.value.trim()], q: '' });
+    } else if (e.key === 'Backspace' && F.terms.length && t.selectionStart === 0 && t.selectionEnd === 0) {
+      e.preventDefault();
+      setF({ terms: F.terms.slice(0, -1) });
+    }
+  });
+  $('#terms').addEventListener('click', (e) => {
+    const x = e.target.closest('.x');
+    if (x) setF({ terms: F.terms.filter((_, i) => i !== +x.dataset.i) });
+    $('#q').focus();
+  });
   $('#sort').addEventListener('change', (e) => setF({ sort: e.target.value }));
-  $('#clear-all').addEventListener('click', () => setF({ ...DEF, sort: F.sort, lbl: {} }));
+  $('#clear-all').addEventListener('click', () => setF({ ...DEF, sort: F.sort }));
 
   function syncInputs() {
     if ($('#q').value !== F.q) $('#q').value = F.q;
+    $('#terms').innerHTML = F.terms.map((t, i) => `<span class="term">${esc(t)}<span class="x" data-i="${i}" title="Remove">${icon('x')}</span></span>`).join('');
+    $('#q').placeholder = F.terms.length ? 'Add another keyword…' : 'Type a keyword and press Enter, e.g. sjuksköterska or "hemtjänst"   ( / )';
     $('#f-from').value = F.from;
     $('#f-to').value = F.to;
     $('#sort').value = F.sort;
   }
 
   function renderActive() {
-    const l = F.lbl || {};
     const items = [];
-    if (F.sel.length) F.sel.forEach((s) => items.push([s.k, { field: 'layers', group: 'users', occ: 'tag' }[s.k], s.label, ['sel:' + s.k + ':' + s.id]]));
-    if (F.region) items.push(['region', 'map-pin', l.region || F.region, ['region', 'muni']]);
-    if (F.muni) items.push(['muni', 'map-pin', F.muni, ['muni']]);
+    F.sel.forEach((s, i) => items.push([s.k, { field: 'layers', group: 'users', occ: 'tag' }[s.k], s.label, ['sel#' + i]]));
+    F.loc.forEach((s, i) => items.push([s.k, 'map-pin', s.label, ['loc#' + i]]));
     if (F.from || F.to) items.push(['date', 'calendar', `${F.from || '…'} → ${F.to || '…'}`, ['from', 'to']]);
     if (F.emp) items.push(['emp', 'briefcase', F.emp, ['emp']]);
     if (F.hours) items.push(['hours', 'clock', F.hours, ['hours']]);
@@ -356,12 +375,13 @@
       if (!c) return;
       const clear = items[+c.dataset.i][3];
       const patch = {};
-      let sel = F.sel;
+      const drop = { sel: new Set(), loc: new Set() };
       clear.forEach((k) => {
-        if (k.startsWith('sel:')) sel = sel.filter((s) => `${s.k}:${s.id}` !== k.slice(4));
+        const m = /^(sel|loc)#(\d+)$/.exec(k);
+        if (m) drop[m[1]].add(+m[2]);
         else patch[k] = '';
       });
-      if (sel !== F.sel) patch.sel = sel;
+      for (const l of ['sel', 'loc']) if (drop[l].size) patch[l] = F[l].filter((_, i) => !drop[l].has(i));
       setF(patch);
     };
   }
@@ -402,14 +422,13 @@
   const tagList = (arr, cls) => arr.map((x) => `<span class="tag ${cls}">${esc(x)}</span>`).join('');
 
   function applyHier(spec) {
-    const l = { ...F.lbl };
     const patch = {};
     if ('field' in spec) patch.sel = [{ k: 'field', id: spec.field.id, label: spec.field.label, fi: spec.field.id }];
     if ('group' in spec) patch.sel = [{ k: 'group', id: spec.group.id, label: spec.group.label, fi: spec.field?.id, gi: spec.group.id }];
     if ('occ' in spec) patch.sel = [{ k: 'occ', id: spec.occ.id, label: spec.occ.label, fi: spec.field?.id, gi: spec.group?.id }];
-    if ('region' in spec) { patch.region = spec.region; patch.muni = ''; l.region = spec.region; }
-    if ('muni' in spec) { patch.muni = spec.muni; patch.region = spec.region; l.muni = spec.muni; l.region = spec.region; }
-    setF({ ...patch, lbl: l });
+    if ('muni' in spec) patch.loc = [{ k: 'muni', id: spec.muni, label: spec.muni, ri: spec.region }];
+    else if ('region' in spec) patch.loc = [{ k: 'region', id: spec.region, label: spec.region, ri: spec.region }];
+    setF(patch);
     nav('list');
   }
 
@@ -613,6 +632,49 @@
     const paths = [...e.dataTransfer.files].map((f) => api.pathFor(f)).filter(Boolean);
     if (paths.length) { if (curView !== 'data') nav('data'); startImport(api.importFiles(paths)); }
   });
+
+  /* ---------- layout: menu collapse, filter resize/collapse ---------- */
+  const FILTER_MIN = 310;
+  const clampFilterW = (w) => Math.max(FILTER_MIN, Math.min(Math.min(720, window.innerWidth * 0.6), w));
+  let filterW = clampFilterW(+localStorage.getItem('filterW') || FILTER_MIN);
+  const applyFilterW = () => document.documentElement.style.setProperty('--filter-w', clampFilterW(filterW) + 'px');
+  applyFilterW();
+  window.addEventListener('resize', applyFilterW);
+
+  const resizer = $('#filters-resizer');
+  resizer.addEventListener('pointerdown', (e) => {
+    const startX = e.clientX;
+    const startW = $('#filters').getBoundingClientRect().width;
+    resizer.setPointerCapture(e.pointerId);
+    resizer.classList.add('drag');
+    document.body.style.userSelect = 'none';
+    const move = (ev) => { filterW = clampFilterW(startW + ev.clientX - startX); applyFilterW(); };
+    const up = () => {
+      resizer.classList.remove('drag');
+      document.body.style.userSelect = '';
+      resizer.removeEventListener('pointermove', move);
+      resizer.removeEventListener('pointerup', up);
+      localStorage.setItem('filterW', String(filterW));
+    };
+    resizer.addEventListener('pointermove', move);
+    resizer.addEventListener('pointerup', up);
+  });
+
+  const setFiltersCollapsed = (c) => {
+    $('#view-list').classList.toggle('filters-collapsed', c);
+    $('#filters-toggle').title = c ? 'Show filters' : 'Hide filters';
+    localStorage.setItem('filtersCollapsed', c ? '1' : '');
+  };
+  $('#filters-toggle').addEventListener('click', () => setFiltersCollapsed(!$('#view-list').classList.contains('filters-collapsed')));
+  setFiltersCollapsed(!!localStorage.getItem('filtersCollapsed'));
+
+  const setMenuCollapsed = (c) => {
+    document.body.classList.toggle('menu-collapsed', c);
+    $('#menu-toggle').title = c ? 'Expand menu' : 'Collapse menu';
+    localStorage.setItem('menuCollapsed', c ? '1' : '0');
+  };
+  $('#menu-toggle').addEventListener('click', () => setMenuCollapsed(!document.body.classList.contains('menu-collapsed')));
+  setMenuCollapsed(localStorage.getItem('menuCollapsed') !== '0');
 
   /* ---------- init ---------- */
   hydrateIcons();
