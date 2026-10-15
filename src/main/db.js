@@ -107,16 +107,21 @@ function ftsQuery(q) {
   return parts.join(' ');
 }
 
-// Committed terms and the text still being typed are AND-ed by the FTS query.
-const queryText = (f) => [...(Array.isArray(f.terms) ? f.terms : []), f.q].filter(Boolean).join(' ');
+// Each entry (committed term or text being typed) is one unit: its words are AND-ed;
+// entries are combined with AND or OR (f.termMode).
+function ftsMatch(f) {
+  const parts = [...(Array.isArray(f.terms) ? f.terms : []), f.q].map(ftsQuery).filter(Boolean);
+  if (parts.length < 2) return parts[0] || '';
+  return parts.map((p) => `(${p})`).join(f.termMode === 'or' ? ' OR ' : ' AND ');
+}
 
 // skip: dimensions whose filters are ignored (used for facet counts).
 function where(f, skip = []) {
   const w = [];
   const p = [];
   const has = (s) => !skip.includes(s);
-  if (has('q') && queryText(f)) {
-    const m = ftsQuery(queryText(f));
+  if (has('q') && ftsMatch(f)) {
+    const m = ftsMatch(f);
     if (m) {
       w.push('a.rowid IN (SELECT rowid FROM ads_fts WHERE ads_fts MATCH ?)');
       p.push(m);
@@ -151,12 +156,12 @@ const LIST_COLS = 'a.ad_id, a.headline, a.pub_date, a.employer, a.region, a.muni
 
 function search(db, f, offset, limit, wantTotal) {
   let rows;
-  if (f.sort === 'relevance' && ftsQuery(queryText(f))) {
+  if (f.sort === 'relevance' && ftsMatch(f)) {
     const { sql, params } = where(f, ['q']);
     rows = db.prepare(
       `SELECT ${LIST_COLS} FROM ads_fts JOIN ads a ON a.rowid = ads_fts.rowid
        WHERE ads_fts MATCH ? AND ${sql} ORDER BY bm25(ads_fts, 10, 3, 1) LIMIT ? OFFSET ?`
-    ).all(ftsQuery(queryText(f)), ...params, limit, offset);
+    ).all(ftsMatch(f), ...params, limit, offset);
   } else {
     const { sql, params } = where(f);
     const dir = f.sort === 'oldest' ? 'ASC' : 'DESC';

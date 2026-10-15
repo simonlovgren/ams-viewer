@@ -112,6 +112,9 @@ input.mini { width: 100%; margin-bottom: 6px; padding: 5px 9px; font-size: 12px;
 .searchbox input { flex: 1; min-width: 140px; background: none; border: 0; box-shadow: none; padding: 7px 0; font-size: 15px; }
 .searchbox input::-webkit-search-cancel-button { display: none; }
 #terms { display: contents; }
+.mode-btn { margin-left: auto; align-self: center; flex: none; padding: 3px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel2); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; letter-spacing: .04em; }
+.mode-btn:hover { border-color: var(--purple); }
+.mode-btn.or { border-color: var(--pink); color: var(--pink); }
 .term { display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px 3px 10px; border-radius: 8px; background: linear-gradient(120deg, rgba(45,212,191,.25), rgba(167,139,250,.25)); border: 1px solid var(--teal); color: #fff; font-size: 13px; }
 .term .x { display: inline-flex; cursor: pointer; color: #c6cde6; border-radius: 5px; }
 .term .x:hover { color: var(--pink); }

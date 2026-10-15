@@ -46,7 +46,7 @@
   };
 
   /* ---------- filter state ---------- */
-  const DEF = { q: '', terms: [], sel: [], loc: [], from: '', to: '', emp: '', hours: '', sort: 'newest' };
+  const DEF = { q: '', terms: [], termMode: 'and', sel: [], loc: [], from: '', to: '', emp: '', hours: '', sort: 'newest' };
   let F = { ...DEF };
   try { F = { ...DEF, ...JSON.parse(localStorage.getItem('filters') || '{}') }; } catch { /* ignore */ }
   if (!Array.isArray(F.sel) || !Array.isArray(F.loc)) {
@@ -464,12 +464,17 @@
     $('#q').focus();
   });
   $('#sort').addEventListener('change', (e) => setF({ sort: e.target.value }));
+  $('#mode-toggle').addEventListener('click', () => setF({ termMode: F.termMode === 'or' ? 'and' : 'or' }));
   $('#clear-all').addEventListener('click', () => setF({ ...DEF, sort: F.sort }));
 
   function syncInputs() {
     if ($('#q').value !== F.q) $('#q').value = F.q;
     $('#terms').innerHTML = F.terms.map((t, i) => `<span class="term">${esc(t)}<span class="x" data-i="${i}" title="Remove">${icon('x')}</span></span>`).join('');
     $('#q').placeholder = F.terms.length ? 'Add another keyword…' : 'Type a keyword and press Enter, e.g. sjuksköterska or "hemtjänst"   ( / )';
+    const mb = $('#mode-toggle');
+    mb.textContent = F.termMode === 'or' ? 'OR' : 'AND';
+    mb.classList.toggle('or', F.termMode === 'or');
+    mb.title = F.termMode === 'or' ? 'Match any entry (OR). Click to require all entries (AND)' : 'Match all entries (AND). Click to match any entry (OR)';
     $('#f-from').value = F.from;
     $('#f-to').value = F.to;
     $('#sort').value = F.sort;

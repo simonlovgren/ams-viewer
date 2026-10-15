@@ -11,7 +11,7 @@
 - The contentless FTS table needs `contentless_delete=1` to delete rows; deleting a source removes FTS rows by rowid first.
 - Facets: `facets()` returns every option with its count under the other filters (0 = grayed out, SRC-015). Unfiltered lists are cached in the worker and invalidated by `PRAGMA data_version`. A filter dimension that is added must be added to `FACETS` in `db.js`.
 - `where(f, skip)` is used for both list and facet queries; `skip` names the dimension excluded for its own facet (`occ`, `loc`, `date`, `emp`, `hours`, `q`).
-- Free text: committed `terms` plus the live `q` are joined and AND-ed (`queryText()`); never read `f.q` directly in new code.
+- Free text: committed `terms` plus the live `q` are combined by `ftsMatch()` (AND or OR per `termMode`); never read `f.q` directly in new code.
 - Selecting a nullish id in a tree (`Unspecified` node) is intentionally ignored; an id of `null` in `IN (...)` would match nothing.
 
 ## Electron and renderer

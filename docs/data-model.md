@@ -56,10 +56,10 @@ sources(name TEXT PRIMARY KEY, path TEXT, ads INTEGER, imported_at TEXT)
 ## Filter object (renderer ↔ main)
 
 ```js
-{ q, terms, sel, loc, from, to, emp, hours, sort }
+{ q, terms, termMode, sel, loc, from, to, emp, hours, sort }
 ```
 
-`terms` is an array of committed free-text entries and `q` the text still being typed; the main process joins them and the FTS query ANDs all tokens. `sel` is an array of `{ k: 'field'|'group'|'occ', id, label, fi, gi }` (occupation selections) and `loc` an array of `{ k: 'region'|'muni', id, label, ri }` (location selections); each list is OR-combined.
+`terms` is an array of committed free-text entries and `q` the text still being typed; `termMode` (`and` | `or`) selects how entries are combined; each entry is an AND of its own words (see `ftsMatch()` in `db.js`). `sel` is an array of `{ k: 'field'|'group'|'occ', id, label, fi, gi }` (occupation selections) and `loc` an array of `{ k: 'region'|'muni', id, label, ri }` (location selections); each list is OR-combined.
 Dates are `YYYY-MM-DD` strings compared lexicographically. `sort` is `newest | oldest | relevance`.
 
 ## Adding a new filter dimension
