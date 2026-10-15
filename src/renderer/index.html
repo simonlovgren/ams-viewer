@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self'" />
+  <title>AMS Viewer</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <aside id="sidebar">
+    <div class="brand"><span class="logo" data-i="briefcase"></span><div><b>AMS Viewer</b><small>Historical job ads</small></div></div>
+    <nav>
+      <a class="nav" data-view="list" tabindex="0"><span data-i="search"></span>Search ads</a>
+      <a class="nav" data-view="data" tabindex="0"><span data-i="database"></span>Data sources</a>
+    </nav>
+    <div class="side-foot"><span data-i="layers"></span><span id="side-total">0 ads</span></div>
+  </aside>
+
+  <main>
+    <!-- LIST VIEW -->
+    <section id="view-list" class="view">
+      <div id="filters">
+        <div class="f-head"><span data-i="filter"></span>Filters<button id="clear-all" class="link">Clear all</button></div>
+
+        <div class="f-sec">
+          <h4><span data-i="calendar"></span>Published</h4>
+          <div class="date-row">
+            <input type="date" id="f-from" /><span>–</span><input type="date" id="f-to" />
+          </div>
+          <div id="chips-year" class="chips"></div>
+        </div>
+
+        <div class="f-sec grow">
+          <h4><span data-i="layers"></span>Occupation</h4>
+          <input type="search" id="tf-occ" class="mini" placeholder="Find field, group or occupation…" />
+          <div id="tree-occ" class="tree"></div>
+        </div>
+
+        <div class="f-sec grow">
+          <h4><span data-i="map-pin"></span>Location</h4>
+          <input type="search" id="tf-loc" class="mini" placeholder="Find region or municipality…" />
+          <div id="tree-loc" class="tree"></div>
+        </div>
+
+        <div class="f-sec">
+          <h4><span data-i="briefcase"></span>Employment</h4>
+          <div id="chips-emp" class="chips"></div>
+        </div>
+        <div class="f-sec">
+          <h4><span data-i="clock"></span>Working hours</h4>
+          <div id="chips-hours" class="chips"></div>
+        </div>
+      </div>
+
+      <div id="results">
+        <div class="topbar">
+          <div class="searchbox"><span data-i="search"></span>
+            <input id="q" type="search" placeholder='Search keywords, e.g. sjuksköterska "hemtjänst"   ( / )' autocomplete="off" />
+          </div>
+          <select id="sort">
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="relevance">Relevance</option>
+          </select>
+        </div>
+        <div class="active-row"><span id="count"></span><div id="active" class="chips"></div></div>
+        <div id="list-scroll"><div id="list"></div><div id="sentinel"></div></div>
+      </div>
+    </section>
+
+    <!-- AD VIEW -->
+    <section id="view-ad" class="view hidden">
+      <div class="crumbbar">
+        <button id="back" class="icon-btn" title="Back (Backspace)"><span data-i="arrow-left"></span></button>
+        <nav id="crumbs"></nav>
+      </div>
+      <div id="ad-scroll"><div id="ad"></div></div>
+    </section>
+
+    <!-- DATA VIEW -->
+    <section id="view-data" class="view hidden">
+      <div id="data-scroll"><div id="data"></div></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

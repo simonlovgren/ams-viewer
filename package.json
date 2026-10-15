@@ -1,0 +1,46 @@
+{
+  "name": "ams-viewer",
+  "version": "1.0.0",
+  "description": "Browser for historical job ads (JobTech open data)",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^44.7.2",
+    "electron-builder": "^26.15.3"
+  },
+  "productName": "AMS Viewer",
+  "author": "AMS Viewer",
+  "build": {
+    "appId": "se.amsviewer.app",
+    "productName": "AMS Viewer",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.utilities"
+    }
+  }
+}
