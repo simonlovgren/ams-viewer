@@ -230,6 +230,52 @@ test('collapse all clears every tree level independently, preserves selections a
   }
 });
 
+test('facet refresh replaces pending counts and ignores superseded responses', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const elements = Object.fromEntries(['#tf-occ', '#tf-loc', '#tree-occ', '#tree-loc', '#chips-year', '#chips-emp', '#chips-hours'].map(selector => [selector, { value: '', innerHTML: '' }]));
+  const requests = [];
+  const evaluate = rendererContext({ querySelectorAll: () => [] }, {
+    $: selector => elements[selector],
+    api: {
+      facets: () => new Promise(resolve => requests.push(resolve)),
+      timeline: async () => ({ stale: true }),
+      onSummary() {},
+    },
+  });
+  evaluate(source.slice(source.indexOf('  let tseq ='), source.indexOf("  listEl.addEventListener('click'")));
+  evaluate('loadStats(); loadStats()');
+  const data = { occ: [], loc: [{ r: 'Region', m: 'Town', n: 7 }], year: [{ y: 2026, n: 7 }], emp: [{ v: 'Permanent', n: 7 }], hours: [{ v: 'Full time', n: 7 }] };
+  requests[0](data);
+  await Promise.resolve();
+  assert.equal(evaluate('facetPending'), true);
+  requests[1](data);
+  await Promise.resolve();
+  assert.equal(evaluate('facetPending'), false);
+  for (const selector of ['#tree-loc', '#chips-year', '#chips-emp', '#chips-hours']) {
+    assert.match(elements[selector].innerHTML, /title="7">7/);
+    assert.doesNotMatch(elements[selector].innerHTML, /Updating counts/);
+  }
+});
+
+test('facet refresh failures report the underlying error', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const failure = new Error('Facet worker failed');
+  const errors = [];
+  const evaluate = rendererContext({ querySelectorAll: () => [] }, {
+    console: { error: (...args) => errors.push(args) },
+    api: {
+      facets: async () => { throw failure; },
+      timeline: async () => ({ stale: true }),
+      onSummary() {},
+    },
+  });
+  evaluate(source.slice(source.indexOf('  let tseq ='), source.indexOf("  listEl.addEventListener('click'")));
+  evaluate('loadStats()');
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(errors, [['Failed to update filter counts:', failure]]);
+});
+
 test('pending counts hide stale values and zero styling, including rebuilt trees', () => {
   const count = { textContent: '0', title: '0' };
   let zeroRemoved = false;

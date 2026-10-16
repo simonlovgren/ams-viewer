@@ -414,7 +414,7 @@
       if (data.building) { showBuilding(summaryInfo); return; }
       summaryInfo = { state: 'ready' };
       renderFacets(data);
-    }).catch(() => {});
+    }).catch((error) => console.error('Failed to update filter counts:', error));
     const ts = ++tseq;
     api.timeline(F).then((t) => {
       if (ts !== tseq || !t || t.stale || t.building) return;
