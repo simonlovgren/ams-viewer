@@ -61,6 +61,9 @@ main { flex: 1; min-width: 0; display: flex; }
 .f-head { display: flex; align-items: center; gap: 8px; font-weight: 600; }
 .link { margin-left: auto; background: none; border: 0; color: var(--blue); cursor: pointer; font: inherit; font-size: 12px; }
 .link:hover { color: var(--pink); }
+.f-sec { position: relative; }
+.f-sec + .f-sec { margin-top: 20px; }
+.f-sec + .f-sec::before { content: ""; position: absolute; top: -16px; right: 0; left: 0; height: 1px; background: var(--line); }
 .f-sec h4 { margin: 0 0 8px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: flex; gap: 6px; align-items: center; }
 .f-head, .f-sec { flex-shrink: 0; min-width: 0; }
 .f-sec.grow { display: flex; flex-direction: column; }
