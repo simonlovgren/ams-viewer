@@ -10,13 +10,14 @@ Planned work that is specified but not started. Each task links to its requireme
 | T3 | Live-updating import file list | DAT-013 | S |
 | T4 | Import statistics per file (time, duplicates, errors) | DAT-014 | M |
 | T5 | Geographical hotspot view | SRC-019 | L |
-| T7 | Monospace "data inspection" typography | UI-012 | S |
+| T7 | Done: monospace typography and top-level Settings | UI-012, UI-016, NAV-009 | S |
 | T8 | Statistics bar on the right (collapsible, hosts the graphs) | UI-013, UI-011, SRC-017 | M |
 | T9 | Top-30 employers widget | SRC-020 | M |
 | T10 | Employer logo cache | AD-010 | M |
 | T11 | Favorite lists and star-action popover | LST-009, LST-010, LST-011, LST-012, LST-013 | M |
+| T12 | Enrich older ads from newer taxonomy and geographic data | DAT-015, DAT-016 | L |
 
-Priority order: T7 early (pure CSS, affects how everything else is judged), T8 before T2 (so one collapsible-widget mechanism serves both bars), then T2 and T1 together, T3 with T4 (same view), then T9 and T5 (both live in the statistics bar); T10 is independent and can slot in anywhere. T6 follows the [full-scale performance plan](full-scale-performance-plan.md) when filtered use at full scale feels slow, and before T9 and T5 if their queries make it worse.
+Priority order: T7 is complete (D26). T8 before T2 (so one collapsible-widget mechanism serves both bars), then T2 and T1 together, T3 with T4 (same view), then T9 and T5 (both live in the statistics bar); T10 is independent and can slot in anywhere. T6 follows the [full-scale performance plan](full-scale-performance-plan.md) when filtered use at full scale feels slow, and before T9 and T5 if their queries make it worse.
 
 ## T1. Resizable hierarchical filter boxes (UI-010)
 - The occupation and location trees currently have a fixed `max-height: 240px` (`.tree` in `styles.css`).
@@ -62,13 +63,11 @@ Priority order: T7 early (pure CSS, affects how everything else is judged), T8 b
 - Retain Electron + SQLite initially. Consider Rust or another engine only if profiling demonstrates a remaining bottleneck that warrants the change.
 - Existing measurements at 926k ads are not a full-scale baseline; remeasure startup, list, keyword, exact counts, facets, timeline and detail lookup on the full dataset.
 
-## T7. Monospace typography (UI-012)
-- Today the UI uses a sans-serif stack (`Inter`, `Segoe UI`, `system-ui`) set on `body` in `styles.css`; there are no bundled fonts and the CSP allows only `font-src 'self'`.
-- Fonts must work offline: use a system monospace stack (for example `"JetBrains Mono", "Fira Code", "DejaVu Sans Mono", ui-monospace, monospace`) or bundle a font file in `src/renderer/` (licence noted, plus a decision for the new asset).
-- Decide scope with the user: everything, or only data-like text (dates, counts, ids, tags, chart labels, filter tree, data-source table) while ad body text and headings stay proportional for readability. Ad descriptions in monospace may hurt reading long texts.
-- Implement through a CSS variable (`--font-mono`, optionally `--font-ui`) so the choice is one switch; check the tag, date box, chart (SVG text) and tree widths, since monospace is wider and may need size or padding tweaks.
-- Optional: a setting to toggle monospace on/off (would need its own requirement).
-- Docs: UI requirement status, a decision (typography and font source), developer notes (unverified visual result).
+## T7. Done: monospace typography and Settings (UI-012, UI-016, NAV-009)
+- Completed 2026-10-16; D26. User selected monospace for all main-window text, including ad descriptions.
+- Offline system font stacks controlled by CSS variables. Settings > Appearance offers an immediate, persistent on/off checkbox; monospace defaults on.
+- Settings is a separate sidebar view with browser-style history; search context stays alive. Future settings can use additional sections; light/dark mode is not part of T7.
+- Renderer regression tests, browser fixture layout/keyboard/history/reload checks and Electron startup passed. Actual Electron quit/relaunch retention was not manually tested.
 
 ## T8. Statistics bar (UI-013)
 - New right-hand column in the search view (`#view-list`), next to `#results`; collapsible with a toggle like the filter bar (`UI-008`, `D17`) and with a remembered state; a resizable width is optional.
@@ -105,6 +104,16 @@ Priority order: T7 early (pure CSS, affects how everything else is judged), T8 b
 - Before implementation, settle: where saved lists are browsed and managed; star placement in results and/or ad detail; persistence across restarts and re-imports; handling source removal; whether the default list can be deleted; name validation and duplicate names; removing ads from lists and membership in multiple lists.
 - Verification: default list available; custom list creation/deletion; adding an ad to an existing list; plus-to-input transition and button placement; creating a list from the popover also adds the original ad. Include keyboard operation, cancellation and failure handling when implementing.
 - Docs: planned interaction recorded in D24. Record storage/schema and navigation decisions before implementation; update affected requirements, data model, system description, constraints and developer notes as needed.
+
+## T12. Legacy taxonomy and geographic enrichment (DAT-015, DAT-016)
+- Status: planned only; priority relative to existing tasks is not assigned.
+- Inspect representative older and newer records first. Older datasets contain occupation `legacy_taxonomy_id`; survey whether other taxonomy fields also expose usable legacy identifiers. Check which fields under `workplace_address` carry usable location information across dataset generations.
+- Cross-reference legacy occupation identifiers with the newest available dataset containing both legacy identifiers and modern taxonomy information. Use reliable matches to fill missing occupation labels and hierarchy so older ads display and filter like newer ads. Assess other taxonomy fields after confirming their mappings.
+- Similarly, cross-reference available `workplace_address` fields with the newest available geographic data to fill missing location labels and hierarchy. Do not assume names alone identify a unique place or that historical administrative boundaries match current ones.
+- Preserve existing populated values and original source data. Keep ambiguous, conflicting or unmatched mappings unresolved rather than guessing; define mapping provenance and report matched, unmatched and ambiguous coverage.
+- Before implementation, decide mapping keys and conflict rules, reference-dataset selection, offline persistence, import-time versus backfill enrichment, and how newly imported reference data updates previously imported ads. Keep expensive work off the main thread and update affected search indexes and summary tables consistently.
+- Verification: fixtures from older and newer generations; resolved occupation hierarchy and location displayed in list/detail and available in filters; ambiguous and unmatched cases unchanged; existing values preserved; import-order independence and repeat-run stability. Measure coverage and full-dataset processing cost.
+- Docs: record implementation decisions with DAT-015/DAT-016; update the data model and migration/backfill procedure, data flow, constraints and developer notes as needed. Coordinate geographic coverage findings with T5.
 
 ## Other open items (not requirements yet)
 - Re-import `2016.jsonl` (shows 0 ads) and import the remaining files.

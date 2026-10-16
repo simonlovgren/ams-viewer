@@ -15,8 +15,9 @@ Browse, filter and read historical job ads offline. Source data is published as 
   - Active filters shown as removable chips; "Clear all".
 - **Ad view**: job-ad style presentation (hero header, formatted description, requirements, how to apply, at-a-glance facts, employer info), with a clickable breadcrumb and clickable tags that apply filters.
 - **Data sources view**: import (file picker or drag & drop, multiple files), progress, per-source removal, totals.
+- **Settings view**: separate sidebar destination with an Appearance section; monospace typography for all main-window text defaults on and can be toggled immediately. Additional settings can be added here (D26).
 - **Navigation**: sidebar menu; Backspace, mouse back/forward buttons and Alt+←/→ move through view history; `/` focuses search.
-- **Persistence of state**: filters are kept in `sessionStorage` (only while the app is open); tree expansion and layout are saved in `localStorage`; the list view is kept alive (hidden) while an ad is open, preserving scroll position.
+- **Persistence of state**: filters are kept in `sessionStorage` (only while the app is open); tree expansion, layout and application settings are saved in `localStorage`; the list view is kept alive (hidden) while another view is open, preserving scroll position.
 
 ## Architecture
 

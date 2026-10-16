@@ -3,6 +3,8 @@
 Last updated: 2026-10-15.
 
 ## User preferences
+- 2026-10-16: Settings on/off controls should use slider-style switches, not plain checkboxes. The monospace switch retains native checkbox keyboard behavior and exposes `role="switch"`; browser click/Space behavior and focus styling verified.
+- 2026-10-16: monospace applies to all main-window text, including headings and ad descriptions; user can disable it in top-level Settings > Appearance (D26). Keep future application preferences here, outside search/ad controls.
 - Answers short and technical; the caveman skill is always used in chat (code, commits and docs are written normally).
 - The user wants requirements first (IDs in `requirements/`), decisions traced to requirements, docs updated in the same change.
 - Python only via `uv` virtual environments.

@@ -2,6 +2,11 @@
 
 Count logic has headless regression tests; visual layout still needs manual review.
 
+## Settings and typography (D26)
+`node --test src/renderer/app.test.js` covers default-on typography, boolean validation, malformed/unavailable storage, immediate changes, persistence across renderer restart and Settings navigation preserving list scroll. Seven renderer tests passed 2026-10-16.
+
+Browser checks with a fixture `window.api` verified checkbox and Space activation, proportional/monospace switching, reload persistence, ad-body inheritance, Backspace/forward history and Settings/search fit at 960x600 and 1400x900. Settings screenshot reviewed at minimum window size. Fixture checks do not exercise real IPC or Electron quit/relaunch. `timeout 12s npm start -- --no-sandbox` separately opened the real 11.25M-ad app in ~4.6 s; only environmental Wayland/GPU warnings, expected SIGTERM on timeout.
+
 ## Facet and compact-count regressions (D25)
 ```bash
 node --test src/main/db.test.js src/renderer/app.test.js

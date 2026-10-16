@@ -32,6 +32,7 @@
     banknote: '<rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>',
     hash: '<path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/>',
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+    settings: '<path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/>',
   };
   const icon = (n) => `<svg viewBox="0 0 24 24">${ICONS[n] || ''}</svg>`;
   const hydrateIcons = (root = document) =>
@@ -74,6 +75,24 @@
     reloadTimer = setTimeout(reload, immediate ? 0 : 180);
   }
 
+  /* ---------- settings ---------- */
+  const settings = { monospace: true };
+  try {
+    const saved = JSON.parse(localStorage.getItem('settings') || '{}');
+    if (typeof saved?.monospace === 'boolean') settings.monospace = saved.monospace;
+  } catch { /* ignore */ }
+
+  function applySettings() {
+    document.documentElement.dataset.monospace = String(settings.monospace);
+    $('#setting-monospace').checked = settings.monospace;
+  }
+  $('#setting-monospace').addEventListener('change', (event) => {
+    settings.monospace = event.target.checked;
+    applySettings();
+    try { localStorage.setItem('settings', JSON.stringify(settings)); } catch { /* ignore */ }
+  });
+  applySettings();
+
   /* ---------- navigation / history ---------- */
   let idx = 0;
   let curView = 'list';
@@ -82,7 +101,7 @@
   function show(view, id) {
     if (curView === 'list') listScroll = $('#list-scroll').scrollTop;
     curView = view;
-    for (const v of ['list', 'ad', 'data']) $('#view-' + v).classList.toggle('hidden', v !== view);
+    for (const v of ['list', 'ad', 'data', 'settings']) $('#view-' + v).classList.toggle('hidden', v !== view);
     document.querySelectorAll('.nav').forEach((n) => n.classList.toggle('active', n.dataset.view === (view === 'ad' ? 'list' : view)));
     if (view === 'list') $('#list-scroll').scrollTop = listScroll;
     if (view === 'ad') loadAd(id);
@@ -116,7 +135,7 @@
   document.querySelectorAll('.nav').forEach((n) => {
     const go = () => nav(n.dataset.view);
     n.addEventListener('click', go);
-    n.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+    n.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
   });
   $('#back').addEventListener('click', back);
 

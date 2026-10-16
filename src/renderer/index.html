@@ -13,6 +13,7 @@
     <nav>
       <a class="nav" data-view="list" tabindex="0" title="Search ads"><span data-i="search"></span><span class="t">Search ads</span></a>
       <a class="nav" data-view="data" tabindex="0" title="Data sources"><span data-i="database"></span><span class="t">Data sources</span></a>
+      <a class="nav" data-view="settings" tabindex="0" role="button" title="Settings"><span data-i="settings"></span><span class="t">Settings</span></a>
     </nav>
     <div class="side-foot" title="Ads stored"><span data-i="layers"></span><span id="side-total">0 ads</span></div>
     <button id="menu-toggle" class="icon-btn" title="Collapse menu"><span data-i="panel-left"></span></button>
@@ -91,6 +92,21 @@
     <!-- DATA VIEW -->
     <section id="view-data" class="view hidden">
       <div id="data-scroll"><div id="data"></div></div>
+    </section>
+
+    <section id="view-settings" class="view hidden" aria-labelledby="settings-title">
+      <div id="settings-scroll">
+        <div id="settings">
+          <h1 id="settings-title">Settings</h1>
+          <section class="settings-section" aria-labelledby="appearance-title">
+            <h2 id="appearance-title">Appearance</h2>
+            <label class="setting-row" for="setting-monospace">
+              <span>Monospace font</span>
+              <input id="setting-monospace" class="setting-switch" type="checkbox" role="switch" checked />
+            </label>
+          </section>
+        </div>
+      </div>
     </section>
   </main>
 

@@ -43,3 +43,76 @@ test('pending counts hide stale values and zero styling, including rebuilt trees
   evaluate('facetPending = false');
   assert.match(evaluate(chips), /chip zero/);
 });
+
+function settingsContext(saved, storageFails = false) {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const root = { dataset: {} };
+  const checkbox = { addEventListener: (name, listener) => { checkbox.change = listener; } };
+  const stored = new Map(saved === undefined ? [] : [['settings', saved]]);
+  const context = vm.createContext({
+    document: { documentElement: root },
+    $: () => checkbox,
+    localStorage: {
+      getItem: key => { if (storageFails) throw new Error('Storage unavailable'); return stored.get(key); },
+      setItem: (key, value) => { if (storageFails) throw new Error('Storage unavailable'); stored.set(key, value); },
+    },
+  });
+  vm.runInContext(source.slice(source.indexOf('  /* ---------- settings'), source.indexOf('  /* ---------- navigation')), context);
+  return { root, checkbox, stored };
+}
+
+test('monospace defaults on and validates saved settings', () => {
+  for (const saved of [undefined, '{', 'null', '{}', '{"monospace":"false"}']) {
+    const { root, checkbox } = settingsContext(saved);
+    assert.equal(root.dataset.monospace, 'true');
+    assert.equal(checkbox.checked, true);
+  }
+  const { root, checkbox } = settingsContext('{"monospace":false}');
+  assert.equal(root.dataset.monospace, 'false');
+  assert.equal(checkbox.checked, false);
+});
+
+test('monospace changes apply immediately and survive renderer restart', () => {
+  const { root, checkbox, stored } = settingsContext();
+  checkbox.change({ target: { checked: false } });
+  assert.equal(root.dataset.monospace, 'false');
+  assert.equal(checkbox.checked, false);
+  assert.equal(settingsContext(stored.get('settings')).checkbox.checked, false);
+  checkbox.change({ target: { checked: true } });
+  assert.equal(root.dataset.monospace, 'true');
+  assert.equal(settingsContext(stored.get('settings')).checkbox.checked, true);
+});
+
+test('monospace remains usable if settings storage is unavailable', () => {
+  const { root, checkbox } = settingsContext(undefined, true);
+  checkbox.change({ target: { checked: false } });
+  assert.equal(root.dataset.monospace, 'false');
+});
+
+test('Settings joins history navigation without losing list scroll', () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const views = new Map(['list', 'ad', 'data', 'settings'].map(view => [view, new Set()]));
+  const links = [...views.keys()].filter(view => view !== 'ad').map(view => ({
+    dataset: { view }, classList: { toggle: (name, active) => { links.find(link => link.dataset.view === view).active = active; } },
+  }));
+  const listScroll = { scrollTop: 240 };
+  const states = [];
+  const context = vm.createContext({
+    $: selector => selector === '#list-scroll' ? listScroll : {
+      classList: { toggle: (name, hidden) => { if (hidden) views.get(selector.slice(6)).add(name); else views.get(selector.slice(6)).delete(name); } },
+    },
+    document: { querySelectorAll: () => links },
+    history: { pushState: state => states.push(state) },
+    loadAd: () => {}, renderData: () => {},
+  });
+  vm.runInContext(source.slice(source.indexOf('  let idx ='), source.indexOf('  function back()')), context);
+  vm.runInContext("nav('settings')", context);
+  assert.equal(states[0].view, 'settings');
+  assert.equal(views.get('settings').has('hidden'), false);
+  assert.equal(views.get('list').has('hidden'), true);
+  assert.equal(links.find(link => link.dataset.view === 'settings').active, true);
+  listScroll.scrollTop = 0;
+  vm.runInContext("show('list')", context);
+  assert.equal(listScroll.scrollTop, 240);
+  assert.equal(views.get('settings').has('hidden'), true);
+});

@@ -10,3 +10,4 @@
 | NAV-006 | The mouse back button shall navigate back; the forward button forward. | Must | Implemented | Verified by code only. |
 | NAV-007 | Navigation shall follow browser-style history across list, ad and data views. | Should | Implemented | History API. |
 | NAV-008 | Alt+Left/Right shall navigate back/forward; `/` shall focus the search box. | Could | Implemented | |
+| NAV-009 | The side menu shall provide a top-level Settings page, separate from search and ad views, supporting browser-style back/forward navigation and future application settings. | Must | Implemented | D26: Appearance section with UI-016. Existing History API and hidden views preserve search context; renderer tests and browser keyboard/history checks passed. |
