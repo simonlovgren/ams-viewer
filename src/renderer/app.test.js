@@ -340,7 +340,7 @@ function widgetContext(saved, storageFails = false, heights) {
       fire: (name, values = {}) => listeners.get(name)?.({ button: 0, pointerId: 1, clientY: 100, preventDefault() {}, ...values }),
     };
   };
-  const widgets = ['timeline', 'published', 'occupation', 'location', 'employment', 'hours'].map(key => {
+  const widgets = ['timeline', 'published', 'occupation', 'location', 'employment', 'hours', 'geography', 'employers'].map(key => {
     const attributes = new Map([['aria-controls', 'widget-' + key]]);
     const button = {
       setAttribute: (name, value) => attributes.set(name, value),
@@ -436,7 +436,7 @@ test('widget collapse persists independently and preserves active filters', () =
   for (const widget of widgets) widget.button.click();
   assert.ok(widgets.every(widget => widget.body.hidden));
   assert.equal(widgets[2].button.getAttribute('aria-expanded'), 'false');
-  assert.deepEqual(widgets.map(widget => widget.badge.textContent), ['0', '2', '2', '1', '1', '1']);
+  assert.deepEqual(widgets.map(widget => widget.badge.textContent), ['0', '2', '2', '1', '1', '1', '0', '0']);
   assert.equal(widgets[0].badge.hidden, true);
   assert.equal(widgets[2].badge.hidden, false);
   const restored = widgetContext(stored.get('collapsedWidgets'));
@@ -450,4 +450,176 @@ test('widget collapse persists independently and preserves active filters', () =
   update();
   assert.equal(widgets[3].badge.hidden, true);
   assert.equal(widgets[3].body.hidden, true);
+});
+
+function columnContext({ width = 1400, filterWidth = 310, statisticsWidth = 280, menuCollapsed = true, saved = {}, storageFails = false } = {}) {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const stored = new Map(Object.entries(saved));
+  const classes = new Set();
+  const buttons = Object.fromEntries(['filters', 'statistics'].map(name => [name, {
+    attributes: new Map(),
+    setAttribute(key, value) { this.attributes.set(key, value); },
+    addEventListener(event, listener) { this[event] = listener; },
+  }]));
+  const view = { classList: {
+    contains: name => classes.has(name),
+    toggle: (name, collapsed) => { if (collapsed) classes.add(name); else classes.delete(name); },
+  } };
+  let resize;
+  const window = { innerWidth: width, addEventListener: (event, listener) => { resize = listener; } };
+  const context = vm.createContext({
+    window,
+    document: {
+      body: { classList: { contains: () => menuCollapsed } },
+      documentElement: { style: { getPropertyValue: name => String(name === '--statistics-w' ? statisticsWidth : filterWidth) } },
+    },
+    $: selector => selector === '#view-list' ? view : selector === '#filters'
+      ? { getBoundingClientRect: () => ({ width: classes.has('filters-collapsed') ? 0 : filterWidth }) }
+      : buttons[selector.slice(1, -7)],
+    localStorage: {
+      getItem(key) { if (storageFails) throw new Error('Storage unavailable'); return stored.get(key); },
+      setItem(key, value) { if (storageFails) throw new Error('Storage unavailable'); stored.set(key, value); },
+    },
+  });
+  vm.runInContext(source.slice(source.indexOf('  /* ---------- layout: column collapse'),
+    source.indexOf('  /* ---------- layout: menu collapse')) + '\napplyColumns();', context);
+  return { buttons, classes, stored, resize: width => { window.innerWidth = width; resize(); } };
+}
+
+test('column toggles persist independently with accessible state and tolerate unavailable storage', () => {
+  const state = columnContext();
+  assert.equal(state.buttons.statistics.attributes.get('aria-expanded'), 'true');
+  state.buttons.filters.click();
+  assert.equal(state.buttons.filters.title, 'Show filters');
+  assert.equal(state.buttons.filters.attributes.get('aria-label'), 'Show filters');
+  assert.equal(state.buttons.filters.attributes.get('aria-expanded'), 'false');
+  assert.equal(state.buttons.statistics.attributes.get('aria-expanded'), 'true');
+  state.buttons.statistics.click();
+  const restored = columnContext({ saved: Object.fromEntries(state.stored) });
+  assert.equal(restored.classes.has('filters-collapsed'), true);
+  assert.equal(restored.classes.has('statistics-collapsed'), true);
+  restored.buttons.filters.click();
+  assert.equal(restored.classes.has('statistics-collapsed'), true);
+  for (const options of [{ storageFails: true }, { saved: { filtersCollapsed: 'bad', statisticsCollapsed: 'false' } }]) {
+    const fallback = columnContext(options);
+    assert.equal(fallback.classes.size, 0);
+    fallback.buttons.statistics.click();
+    assert.equal(fallback.classes.has('statistics-collapsed'), true);
+  }
+});
+
+test('narrow columns preserve wide preferences and opening either column keeps results usable', () => {
+  const state = columnContext();
+  state.resize(960);
+  assert.equal(state.classes.has('statistics-collapsed'), true);
+  assert.equal(state.stored.size, 0);
+  state.buttons.statistics.click();
+  assert.equal(state.classes.has('statistics-collapsed'), false);
+  assert.equal(state.classes.has('filters-collapsed'), true);
+  assert.equal(state.stored.has('filtersCollapsed'), false);
+  state.buttons.filters.click();
+  assert.equal(state.classes.has('filters-collapsed'), false);
+  assert.equal(state.classes.has('statistics-collapsed'), true);
+  state.resize(1400);
+  assert.equal(state.classes.size, 0);
+  state.buttons.statistics.click();
+  state.resize(960);
+  state.resize(1400);
+  assert.equal(state.classes.has('statistics-collapsed'), true);
+  assert.equal(state.stored.get('statisticsCollapsed'), '1');
+});
+
+test('large filters and expanded menu cannot squeeze results between both columns', () => {
+  for (const options of [{ width: 1200, menuCollapsed: false }, { filterWidth: 720 }, { statisticsWidth: 720 }]) {
+    const state = columnContext(options);
+    assert.equal(state.classes.has('statistics-collapsed'), true);
+    state.buttons.statistics.click();
+    assert.equal(state.classes.has('filters-collapsed'), true);
+    assert.equal(state.classes.has('statistics-collapsed'), false);
+    state.buttons.statistics.click();
+    assert.equal(state.classes.has('filters-collapsed'), false);
+    assert.equal(state.stored.has('filtersCollapsed'), false);
+  }
+});
+
+function statisticsResizeContext(saved, storageFails = false) {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const stored = new Map(saved === undefined ? [] : [['statisticsW', saved]]);
+  const styles = new Map();
+  const attributes = new Map();
+  const listeners = new Map();
+  const handle = {
+    classList: { add() {}, remove() {} },
+    setAttribute: (name, value) => attributes.set(name, value),
+    addEventListener: (name, listener) => listeners.set(name, listener),
+    removeEventListener: name => listeners.delete(name),
+    setPointerCapture() {}, hasPointerCapture: () => true, releasePointerCapture() {},
+    fire: (name, values = {}) => listeners.get(name)?.({ button: 0, pointerId: 1, clientX: 500, preventDefault() {}, ...values }),
+  };
+  let resize;
+  const window = { innerWidth: 1400, addEventListener: (name, listener) => { resize = listener; } };
+  const context = vm.createContext({
+    window, columnPriority: 'filters', applyColumns() {},
+    document: {
+      body: { classList: { contains: () => true } },
+      documentElement: { style: { setProperty: (name, value) => styles.set(name, value) } },
+    },
+    $: selector => selector === '#statistics-resizer' ? handle : selector === '#view-list'
+      ? { classList: { contains: () => false } }
+      : { getBoundingClientRect: () => ({ width: parseFloat(styles.get('--statistics-w')) }) },
+    localStorage: {
+      getItem(key) { if (storageFails) throw new Error('Storage unavailable'); return stored.get(key); },
+      setItem(key, value) { if (storageFails) throw new Error('Storage unavailable'); stored.set(key, value); },
+    },
+  });
+  vm.runInContext(source.slice(source.indexOf('  const STATISTICS_MIN ='), source.indexOf('  const setMenuCollapsed =')), context);
+  return { handle, stored, attributes, width: () => parseFloat(styles.get('--statistics-w')),
+    resize: width => { window.innerWidth = width; resize(); } };
+}
+
+test('statistics width follows its left divider and saves only the captured pointer on completion', () => {
+  const state = statisticsResizeContext();
+  assert.equal(state.width(), 280);
+  state.handle.fire('pointerdown', { button: 2 });
+  state.handle.fire('pointermove', { clientX: 400 });
+  assert.equal(state.width(), 280);
+  state.handle.fire('pointerdown');
+  state.handle.fire('pointermove', { pointerId: 2, clientX: 400 });
+  assert.equal(state.width(), 280);
+  state.handle.fire('pointermove', { clientX: 400 });
+  assert.equal(state.width(), 380);
+  state.handle.fire('pointerup', { pointerId: 2 });
+  assert.equal(state.stored.has('statisticsW'), false);
+  state.handle.fire('pointercancel');
+  assert.equal(state.stored.get('statisticsW'), '380');
+  state.handle.fire('pointermove', { clientX: 200 });
+  assert.equal(state.width(), 380);
+  assert.equal(statisticsResizeContext(state.stored.get('statisticsW')).width(), 380);
+});
+
+test('statistics keyboard bounds and viewport clamping retain the preferred width', () => {
+  const state = statisticsResizeContext('400');
+  state.handle.fire('keydown', { key: 'ArrowLeft' });
+  assert.equal(state.width(), 420);
+  state.handle.fire('keydown', { key: 'ArrowRight' });
+  assert.equal(state.width(), 400);
+  state.handle.fire('keydown', { key: 'Home' });
+  state.handle.fire('keydown', { key: 'ArrowRight' });
+  assert.equal(state.width(), 280);
+  state.handle.fire('keydown', { key: 'End' });
+  assert.equal(state.width(), 720);
+  state.resize(960);
+  assert.equal(state.width(), 467);
+  assert.equal(state.attributes.get('aria-valuenow'), '467');
+  assert.equal(state.stored.get('statisticsW'), '720');
+  const restored = statisticsResizeContext(state.stored.get('statisticsW'));
+  assert.equal(restored.width(), 720);
+  state.resize(1400);
+  assert.equal(state.width(), 720);
+  for (const saved of ['bad', 'Infinity', '-10', '0', 'null']) {
+    assert.equal(statisticsResizeContext(saved).width(), 280);
+  }
+  const unavailable = statisticsResizeContext(undefined, true);
+  unavailable.handle.fire('keydown', { key: 'ArrowLeft' });
+  assert.equal(unavailable.width(), 300);
 });

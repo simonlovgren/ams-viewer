@@ -11,7 +11,7 @@ Planned work that is specified but not started. Each task links to its requireme
 | T4 | Import statistics per file (time, duplicates, errors) | DAT-014 | M |
 | T5 | Geographical hotspot view | SRC-019 | L |
 | T7 | Done: monospace typography and top-level Settings | UI-012, UI-016, NAV-009 | S |
-| T8 | Statistics bar on the right (collapsible, hosts map and employers) | UI-013, UI-011 | M |
+| T8 | Done: matching, resizable statistics widgets and collapsible columns | UI-013, UI-011, UI-019, UI-020, UI-021 | M |
 | T9 | Top-30 employers widget | SRC-020 | M |
 | T10 | Employer logo cache | AD-010 | M |
 | T11 | Favorite lists and star-action popover | LST-009, LST-010, LST-011, LST-012, LST-013 | M |
@@ -19,7 +19,7 @@ Planned work that is specified but not started. Each task links to its requireme
 | T13 | Done: Find and navigate text matches in the ad view | AD-011 | S |
 | T14 | Done: Contextual keyboard-shortcut help modal | NAV-011, NAV-010, UI-001 | S |
 
-Priority order: T7, T2, T13, T14 and T1 are complete (D26, D27, D28, D31, D34). T8 will reuse T2's collapsible-widget helper, then T9 and T5 (both live in the statistics bar). T3 goes with T4 (same view); T10 is independent and can slot in anywhere. T6 follows the [full-scale performance plan](full-scale-performance-plan.md) when filtered use at full scale feels slow, and before T9 and T5 if their queries make it worse.
+Priority order: T7, T2, T13, T14, T1 and T8 are complete (D26, D27, D28, D31, D34, D35). Next are T9 and T5 (both live in the statistics bar). T3 goes with T4 (same view); T10 is independent and can slot in anywhere. T6 follows the [full-scale performance plan](full-scale-performance-plan.md) when filtered use at full scale feels slow, and before T9 and T5 if their queries make it worse.
 
 ## T1. Done: vertically resizable filter widgets (UI-010)
 - Completed 2026-10-16; D34. Scope broadened to all six filter widgets at the user's request. Drag each bottom divider to resize the widget above; keyboard Up/Down and Home/End also work.
@@ -69,13 +69,10 @@ Priority order: T7, T2, T13, T14 and T1 are complete (D26, D27, D28, D31, D34). 
 - Settings is a separate sidebar view with browser-style history; search context stays alive. Future settings can use additional sections; light/dark mode is not part of T7.
 - Renderer regression tests, browser fixture layout/keyboard/history/reload checks and Electron startup passed. Actual Electron quit/relaunch retention was not manually tested.
 
-## T8. Statistics bar (UI-013)
-- New right-hand column in the search view (`#view-list`), next to `#results`; collapsible with a toggle like the filter bar (`UI-008`, `D17`) and with a remembered state; a resizable width is optional.
-- Keep the ads-over-time chart (`#chart`, `renderChart()`) in the filter column beside time filtering (SRC-017, D27). The statistics bar hosts the map (T5) and employers (T9); it need not be built for T2.
-- Each statistics widget is a titled section that collapses on title click (reuse the `data-widget` markup and helper from T2).
-- Layout: the list needs a sensible minimum width, so decide what happens on narrow windows (suggest: auto-collapse the statistics bar below about 1200 px).
-- Data: timeline already has its own worker request/lane (D23); choose requests for new statistics based on measured T6 costs, without blocking filter facets.
-- Docs: new decision (layout), `system-description.md` (UI structure), developer notes.
+## T8. Done: statistics bar (UI-013, UI-011, UI-019, UI-020, UI-021)
+- Completed 2026-10-16; D35, D36. Right-hand column starts at 280 px and resizes in width through its left divider, with independent persistence, pointer capture and Left/Right/Home/End keyboard controls. It hosts Geography and Top employers shells, using the same title buttons, saved collapse state and vertically resizable bottom dividers as filters. Map/employer data stays in T5/T9; the timeline stays beside time filters.
+- Filter and statistics columns have independent remembered icon toggles with accessible names and expanded states, consistent with the menu. Statistics starts hidden below 1200 px; opening a column takes priority when both cannot leave 420 px for results, without overwriting the other column's preference. Preferred filter width returns after narrowing/reload/widening.
+- All 23 renderer tests and syntax checks passed. Browser fixture passed both statistics-widget pointer drags, keyboard resize/title collapse, column toggles, reload persistence, sidebar-width restoration and non-overlapping layout at 960x600 and 1400x900 in both fonts. Sidebar-width follow-up verified real 280-to-400 px dragging, keyboard resizing and collapse/reload retention; saved 720 px width clamps to 467 px at minimum size, leaving 420 px for results, then restores on widening. Statistics screenshot reviewed within the browser's visible area. Initial T8 Electron startup opened 11.25M ads in 578 ms; native interaction/resize and actual quit/relaunch persistence not manually tested.
 
 ## T9. Top-30 employers widget (SRC-020)
 - Query: group the filtered ads by employer name (`ads.employer`) and return the 30 most frequent, as part of the facets worker (`facets()` in `db.js`, like `timeline()`), following all active filters.

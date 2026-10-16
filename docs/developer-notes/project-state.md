@@ -3,7 +3,7 @@
 Last updated: 2026-10-16.
 
 ## User preferences
-- 2026-10-16: all filter widgets resize vertically by grabbing their bottom divider, not only hierarchical trees (D34). T1 is complete; T8 remains planned.
+- 2026-10-16: all filter and statistics widgets resize vertically by grabbing their bottom divider, not only hierarchical trees (D34, D35). T1/T8 are complete; statistics data remains T5/T9. Filter/statistics columns collapse independently like the menu; both also resize in width, with statistics using its left divider (D36). Saved preferences survive automatic narrow-layout hiding and viewport clamping.
 - 2026-10-16: ads-over-time chart stays in the filter column beside publication-date filters, not in the planned statistics bar (D27). T2 is complete.
 - 2026-10-16: Settings on/off controls should use slider-style switches, not plain checkboxes. The monospace switch retains native checkbox keyboard behavior and exposes `role="switch"`; browser click/Space behavior and focus styling verified.
 - 2026-10-16: monospace applies to all main-window text, including headings and ad descriptions; user can disable it in top-level Settings > Appearance (D26). Keep future application preferences here, outside search/ad controls.

@@ -26,6 +26,7 @@
     filter: '<path d="M22 3H2l8 9.5V19l4 2v-8.5L22 3Z"/>',
     car: '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>',
     'panel-left': '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
+    'panel-right': '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/>',
     'trending-up': '<path d="m22 7-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/>',
     check: '<path d="M20 6 9 17l-5-5"/>',
     mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-10 6L2 7"/>',
@@ -1107,11 +1108,55 @@
     if (paths.length) { if (curView !== 'data') nav('data'); startImport(api.importFiles(paths)); }
   });
 
-  /* ---------- layout: menu collapse, filter resize/collapse ---------- */
+  /* ---------- layout: column collapse ---------- */
+  const columns = { filters: false, statistics: false };
+  for (const name of Object.keys(columns)) {
+    try { columns[name] = localStorage.getItem(name + 'Collapsed') === '1'; } catch { /* ignore */ }
+  }
+  let narrowStatisticsOpen = false;
+  let columnPriority = 'filters';
+  function applyColumns() {
+    let filtersCollapsed = columns.filters;
+    let statisticsCollapsed = columns.statistics || (window.innerWidth < 1200 && !narrowStatisticsOpen);
+    const menuWidth = document.body.classList.contains('menu-collapsed') ? 68 : 210;
+    const filterWidth = $('#filters').getBoundingClientRect().width || parseFloat(document.documentElement.style.getPropertyValue('--filter-w')) || 310;
+    const statisticsWidth = parseFloat(document.documentElement.style.getPropertyValue('--statistics-w')) || 280;
+    if (!filtersCollapsed && !statisticsCollapsed && window.innerWidth - menuWidth - filterWidth - statisticsWidth - 10 < 420) {
+      if (columnPriority === 'statistics') filtersCollapsed = true;
+      else statisticsCollapsed = true;
+    }
+    for (const [name, collapsed] of [['filters', filtersCollapsed], ['statistics', statisticsCollapsed]]) {
+      $('#view-list').classList.toggle(name + '-collapsed', collapsed);
+      const button = $('#' + name + '-toggle');
+      button.title = `${collapsed ? 'Show' : 'Hide'} ${name}`;
+      button.setAttribute('aria-label', button.title);
+      button.setAttribute('aria-expanded', String(!collapsed));
+    }
+  }
+  for (const name of Object.keys(columns)) {
+    $('#' + name + '-toggle').addEventListener('click', () => {
+      const collapsed = !$('#view-list').classList.contains(name + '-collapsed');
+      columns[name] = collapsed;
+      if (name === 'statistics') narrowStatisticsOpen = !collapsed;
+      if (!collapsed) columnPriority = name;
+      try { localStorage.setItem(name + 'Collapsed', collapsed ? '1' : ''); } catch { /* ignore */ }
+      applyColumns();
+    });
+  }
+  window.addEventListener('resize', () => {
+    if (window.innerWidth >= 1200) narrowStatisticsOpen = false;
+    applyColumns();
+  });
+
+  /* ---------- layout: menu collapse, filter resize ---------- */
   const FILTER_MIN = 310;
-  const clampFilterW = (w) => Math.max(FILTER_MIN, Math.min(Math.min(720, window.innerWidth * 0.6), w));
-  let filterW = clampFilterW(+localStorage.getItem('filterW') || FILTER_MIN);
-  const applyFilterW = () => document.documentElement.style.setProperty('--filter-w', clampFilterW(filterW) + 'px');
+  const clampFilterW = (w) => Math.max(FILTER_MIN, Math.min(720, window.innerWidth * 0.6,
+    window.innerWidth - (document.body.classList.contains('menu-collapsed') ? 68 : 210) - 425, w));
+  let filterW = +localStorage.getItem('filterW') || FILTER_MIN;
+  const applyFilterW = () => {
+    document.documentElement.style.setProperty('--filter-w', clampFilterW(filterW) + 'px');
+    applyColumns();
+  };
   applyFilterW();
   window.addEventListener('resize', applyFilterW);
 
@@ -1134,18 +1179,77 @@
     resizer.addEventListener('pointerup', up);
   });
 
-  const setFiltersCollapsed = (c) => {
-    $('#view-list').classList.toggle('filters-collapsed', c);
-    $('#filters-toggle').title = c ? 'Show filters' : 'Hide filters';
-    localStorage.setItem('filtersCollapsed', c ? '1' : '');
+  const STATISTICS_MIN = 280;
+  let statisticsW = STATISTICS_MIN;
+  try {
+    const saved = Number(localStorage.getItem('statisticsW'));
+    if (Number.isFinite(saved) && saved >= STATISTICS_MIN) statisticsW = saved;
+  } catch { /* ignore */ }
+  const statisticsResizer = $('#statistics-resizer');
+  const statisticsMaxW = () => Math.max(STATISTICS_MIN, Math.min(720, window.innerWidth * 0.6,
+    window.innerWidth - (document.body.classList.contains('menu-collapsed') ? 68 : 210) - 425));
+  const clampStatisticsW = (width) => Math.round(Math.max(STATISTICS_MIN, Math.min(statisticsMaxW(), width)));
+  const applyStatisticsW = () => {
+    const width = clampStatisticsW(statisticsW);
+    document.documentElement.style.setProperty('--statistics-w', width + 'px');
+    statisticsResizer.setAttribute('aria-valuemin', String(STATISTICS_MIN));
+    statisticsResizer.setAttribute('aria-valuemax', String(Math.floor(statisticsMaxW())));
+    statisticsResizer.setAttribute('aria-valuenow', String(width));
+    applyColumns();
   };
-  $('#filters-toggle').addEventListener('click', () => setFiltersCollapsed(!$('#view-list').classList.contains('filters-collapsed')));
-  setFiltersCollapsed(!!localStorage.getItem('filtersCollapsed'));
+  const saveStatisticsW = () => {
+    try { localStorage.setItem('statisticsW', String(statisticsW)); } catch { /* ignore */ }
+  };
+  statisticsResizer.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || $('#view-list').classList.contains('statistics-collapsed')) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = $('#statistics').getBoundingClientRect().width;
+    statisticsResizer.setPointerCapture(event.pointerId);
+    statisticsResizer.classList.add('drag');
+    const move = (next) => {
+      if (next.pointerId !== event.pointerId) return;
+      statisticsW = clampStatisticsW(startWidth + startX - next.clientX);
+      columnPriority = 'statistics';
+      applyStatisticsW();
+    };
+    const stop = (next) => {
+      if (next.pointerId !== event.pointerId) return;
+      statisticsResizer.classList.remove('drag');
+      statisticsResizer.removeEventListener('pointermove', move);
+      statisticsResizer.removeEventListener('pointerup', stop);
+      statisticsResizer.removeEventListener('pointercancel', stop);
+      statisticsResizer.removeEventListener('lostpointercapture', stop);
+      if (statisticsResizer.hasPointerCapture(event.pointerId)) statisticsResizer.releasePointerCapture(event.pointerId);
+      saveStatisticsW();
+    };
+    statisticsResizer.addEventListener('pointermove', move);
+    statisticsResizer.addEventListener('pointerup', stop);
+    statisticsResizer.addEventListener('pointercancel', stop);
+    statisticsResizer.addEventListener('lostpointercapture', stop);
+  });
+  statisticsResizer.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const width = clampStatisticsW(statisticsW);
+    statisticsW = clampStatisticsW(event.key === 'Home' ? STATISTICS_MIN : event.key === 'End' ? statisticsMaxW()
+      : width + (event.key === 'ArrowLeft' ? 20 : -20));
+    columnPriority = 'statistics';
+    applyStatisticsW();
+    saveStatisticsW();
+  });
+  applyStatisticsW();
+  window.addEventListener('resize', applyStatisticsW);
 
   const setMenuCollapsed = (c) => {
     document.body.classList.toggle('menu-collapsed', c);
     $('#menu-toggle').title = c ? 'Expand menu' : 'Collapse menu';
+    $('#menu-toggle').setAttribute('aria-label', $('#menu-toggle').title);
+    $('#menu-toggle').setAttribute('aria-expanded', String(!c));
+    $('#menu-toggle').setAttribute('aria-controls', 'sidebar');
     localStorage.setItem('menuCollapsed', c ? '1' : '0');
+    applyFilterW();
+    applyStatisticsW();
   };
   $('#menu-toggle').addEventListener('click', () => setMenuCollapsed(!document.body.classList.contains('menu-collapsed')));
   setMenuCollapsed(localStorage.getItem('menuCollapsed') !== '0');

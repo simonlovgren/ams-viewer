@@ -31,7 +31,7 @@ svg { width: 1.15em; height: 1.15em; stroke: currentColor; fill: none; stroke-wi
 ::-webkit-scrollbar-thumb:hover { background: #3a4876; background-clip: content-box; border: 2px solid transparent; }
 
 /* sidebar */
-#sidebar { width: 210px; background: var(--bg2); border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 16px 12px; gap: 18px; }
+#sidebar { width: 210px; flex: none; background: var(--bg2); border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 16px 12px; gap: 18px; }
 .brand { display: flex; gap: 10px; align-items: center; padding: 4px 6px; }
 .brand b { display: block; font-size: 15px; }
 .brand small { color: var(--muted); font-size: 11px; }
@@ -46,12 +46,19 @@ main { flex: 1; min-width: 0; display: flex; }
 .view { flex: 1; min-width: 0; display: flex; height: 100vh; }
 
 /* filters */
-#filters { width: var(--filter-w, 310px); min-width: 310px; flex: none; background: var(--bg2); padding: 14px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
-#filters-resizer { width: 5px; flex: none; cursor: col-resize; background: var(--line); transition: background .12s; }
-#filters-resizer:hover, #filters-resizer.drag { background: var(--teal); }
+#filters, #statistics { flex: none; background: var(--bg2); padding: 14px 14px 28px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+#filters { width: var(--filter-w, 310px); min-width: 310px; }
+#statistics { width: var(--statistics-w, 280px); min-width: 280px; }
+.statistics-body { height: 200px; overflow: auto; }
+.statistics-collapsed #statistics, .statistics-collapsed #statistics-resizer { display: none; }
+#filters-resizer, #statistics-resizer { width: 5px; flex: none; cursor: col-resize; background: var(--line); transition: background .12s; }
+#filters-resizer:hover, #filters-resizer.drag, #statistics-resizer:hover, #statistics-resizer.drag, #statistics-resizer:focus-visible { background: var(--teal); }
+#statistics-resizer { touch-action: none; user-select: none; }
+#statistics-resizer:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
 .filters-collapsed #filters, .filters-collapsed #filters-resizer { display: none; }
-#filters-toggle { flex: none; align-self: center; height: 46px; width: 42px; border-radius: 12px; }
-.filters-collapsed #filters-toggle { color: var(--teal); border-color: var(--teal); }
+#filters-toggle, #statistics-toggle { flex: none; align-self: center; height: 46px; width: 42px; border-radius: 8px; }
+.filters-collapsed #filters-toggle, .statistics-collapsed #statistics-toggle { color: var(--teal); border-color: var(--teal); }
+.filters-collapsed #filters-toggle svg, .statistics-collapsed #statistics-toggle svg { transform: scaleX(-1); }
 .menu-collapsed #sidebar { width: 68px; padding: 16px 8px; align-items: center; }
 .menu-collapsed .brand div:last-child, .menu-collapsed nav .nav .t, .menu-collapsed #side-total { display: none; }
 .menu-collapsed nav .nav { justify-content: center; padding: 10px; }
@@ -133,8 +140,8 @@ input.mini { width: 100%; margin-bottom: 6px; padding: 5px 9px; font-size: 12px;
 
 /* results */
 #results { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.topbar { display: flex; flex-wrap: wrap; gap: 10px; padding: 14px 18px 8px; }
-.searchbox { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px 14px; min-height: 46px; color: var(--muted); }
+.topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 14px 18px 8px; }
+.searchbox { flex: 1 1 240px; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px 14px; min-height: 46px; color: var(--muted); }
 .searchbox:focus-within { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(45,212,191,.16); }
 .searchbox input { flex: 1; min-width: 140px; background: none; border: 0; box-shadow: none; padding: 7px 0; font-size: 15px; }
 .searchbox input::-webkit-search-cancel-button { display: none; }

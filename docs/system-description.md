@@ -6,12 +6,13 @@ Browse, filter and read historical job ads offline. Source data is published as 
 
 ## Functional overview
 
-- **Search view**: filter panel (left) + keyword box, sort and result list (right).
+- **Search view**: filter panel (left), keyword box/sort/result list (center), and statistics column (right).
   - Keyword search (headline, employer, description), with `"phrases"` and prefix matching.
   - Hierarchical filters: occupation field → group → occupation; region → municipality.
   - Date range and one-click year chips; employment type; working hours.
   - Ads-over-time chart stays above publication-date filters in the left column. All six filter/chart widgets collapse independently using their title buttons; collapsed filters show active-selection counts (D27). Sections scroll without shrinking into overlapping titles or inputs.
   - Every filter widget resizes vertically through its bottom divider, with independent remembered body heights and keyboard-accessible separators. Resizing moves subsequent widgets down; overflowing content scrolls within the body. Collapse and Clear all preserve dimensions (D34).
+  - The statistics column uses the same title collapse and vertical-resize helpers for Geography and Top employers; these are unavailable shells until T5/T9 supply data (D35). Its left divider resizes width from an initial/minimum 280 px, with pointer and keyboard controls and an independently saved preference (D36). Filter and statistics columns have independent remembered icon toggles. Statistics auto-hides below 1200 px; when space cannot accommodate both columns and 420 px of results, the most recently opened/resized column wins without overwriting the other's saved preference. Both preferred sidebar widths are temporarily clamped on smaller windows and restored when space returns.
   - Sort: newest, oldest, relevance (keyword only).
   - Results update live while typing/selecting; the list loads incrementally while scrolling.
   - Active filters shown as removable chips; "Clear all".

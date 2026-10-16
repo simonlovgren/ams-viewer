@@ -19,10 +19,11 @@
 - No auto-update, code signing or custom app icon. Packaging uses electron-builder (`npm run dist`); only the Linux unpacked build has been tried.
 - Linux tested only. Mouse back/forward buttons are handled via DOM `mouseup` buttons 3 and 4; behaviour may differ on other platforms.
 - Electron may require `--no-sandbox` on systems where the `chrome-sandbox` helper is not set up.
-- Resized filter-widget bodies are limited to 80 px through max(80 px, window height minus 160 px); excess content scrolls. Unsized widgets retain natural heights; unsized trees retain their 240 px cap (D34).
+- Resized filter/statistics widget bodies are limited to 80 px through max(80 px, window height minus 160 px); excess content scrolls. Unsized filter widgets retain natural heights; unsized trees retain their 240 px cap. Statistics bodies start at 200 px (D34, D35).
+- Statistics width ranges from 280 px to the minimum of 720 px, 60% of viewport width and remaining menu/results space. Below 1200 px it starts hidden; manually opening either column or resizing statistics can temporarily hide the other to leave at least 420 px for results at supported window sizes. Both sidebar widths are clamped while space is limited without overwriting their saved preferences (D35, D36).
 
 ## Scope constraints
-- Read-only browsing: no editing, bookmarking, export or statistics views.
+- Read-only browsing: no editing, bookmarking or export. The statistics column is present, but geographic and employer statistics remain unavailable until T5/T9 (SRC-019/SRC-020).
 - No automatic update of existing ads from newer files.
 - Data is local only; the single network use is employer logo images and links opened externally.
 - UI language is English only; dates are formatted `en-GB`.
