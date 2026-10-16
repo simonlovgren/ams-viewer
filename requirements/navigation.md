@@ -9,5 +9,6 @@
 | NAV-005 | Backspace (outside text inputs) shall navigate back. | Must | Implemented | |
 | NAV-006 | The mouse back button shall navigate back; the forward button forward. | Must | Implemented | Verified by code only. |
 | NAV-007 | Navigation shall follow browser-style history across list, ad and data views. | Should | Implemented | History API. |
-| NAV-008 | Alt+Left/Right shall navigate back/forward; `/` shall focus the search box. | Could | Implemented | |
+| NAV-008 | Alt+Left/Right shall navigate back/forward; `/` shall focus the search box. | Could | Implemented | D29: outside editable controls, focus in-ad find on the ad view without navigating; otherwise open/focus list search. Renderer regressions and browser keyboard fixture passed; real Electron interaction not manually tested. |
 | NAV-009 | The side menu shall provide a top-level Settings page, separate from search and ad views, supporting browser-style back/forward navigation and future application settings. | Must | Implemented | D26: Appearance section with UI-016. Existing History API and hidden views preserve search context; renderer tests and browser keyboard/history checks passed. |
+| NAV-010 | Keyboard shortcuts shall preserve the same user intent across views, while allowing view-specific targets and actions rather than requiring identical functions. | Must | Planned | For example, `/` focuses free-text search in the list view and text search within the current ad in the ad view (NAV-008, AD-011): both express the intent to search the current context. |

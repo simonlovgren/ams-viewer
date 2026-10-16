@@ -181,7 +181,11 @@
     if (e.key === 'Backspace' && !editable(e.target)) { e.preventDefault(); back(); }
     else if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); back(); }
     else if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); history.forward(); }
-    else if (e.key === '/' && !editable(e.target)) { e.preventDefault(); nav('list'); $('#q').focus(); }
+    else if (e.key === '/' && !editable(e.target)) {
+      e.preventDefault();
+      if (curView === 'ad') $('#ad-find').focus();
+      else { nav('list'); $('#q').focus(); }
+    }
   });
   document.addEventListener('mouseup', (e) => {
     if (e.button === 3) { e.preventDefault(); back(); }

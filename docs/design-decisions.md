@@ -145,3 +145,9 @@ Format: decision, requirements it satisfies, rationale, consequences. Every deci
 - **Decision**: provide a compact find field on the ad view. Search displayed ad text case-insensitively, highlight all matches using DOM-created elements, and cycle the active match with previous/next controls and Enter/Shift+Enter.
 - **Why**: users need to locate a phrase in a long ad without changing the list's global filters or altering stored source text.
 - **Consequence**: matching is renderer-only and includes displayed ad details; no IPC, database, dependency or schema change. Match highlighting is applied after safe rendering and removed when the query changes or the ad is reloaded.
+
+## D29. Contextual slash search shortcut
+- **Requirements**: NAV-008, AD-011
+- **Decision**: outside editable controls, `/` focuses in-ad find when an ad is displayed; in every other view it retains the existing list-search navigation and focus.
+- **Why**: searching from an ad should find text in that ad without abandoning its context.
+- **Consequence**: focusing in-ad find does not change history, ad content or global filters. Editable inputs retain literal slash entry. No dependency, IPC or schema change.

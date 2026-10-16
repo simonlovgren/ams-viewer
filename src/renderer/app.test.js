@@ -28,6 +28,28 @@ test('ad-view find matches case-insensitively and ignores empty queries', () => 
   assert.equal(evaluate("matchRanges('nothing here', 'else').length"), 0);
 });
 
+test('slash focuses ad find without navigating, and list search in other views', () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  for (const view of ['ad', 'list', 'data', 'settings']) {
+    for (const target of [{ tagName: 'BODY' }, { tagName: 'INPUT' }, { tagName: 'TEXTAREA' }, { tagName: 'SELECT' }, { tagName: 'DIV', isContentEditable: true }]) {
+      let keydown, focused, prevented = false;
+      const navigations = [];
+      const context = vm.createContext({
+        curView: view,
+        document: { addEventListener: (name, listener) => { if (name === 'keydown') keydown = listener; } },
+        $: selector => ({ focus: () => { focused = selector; } }),
+        nav: destination => navigations.push(destination),
+      });
+      vm.runInContext(source.slice(source.indexOf('  const editable ='), source.indexOf("  document.addEventListener('mouseup'")), context);
+      keydown({ key: '/', target, preventDefault: () => { prevented = true; } });
+      const editableTarget = target.tagName !== 'BODY';
+      assert.equal(prevented, !editableTarget);
+      assert.equal(focused, editableTarget ? undefined : view === 'ad' ? '#ad-find' : '#q');
+      assert.deepEqual(navigations, editableTarget || view === 'ad' ? [] : ['list']);
+    }
+  }
+});
+
 test('tree leaves sum duplicate rows instead of replacing positive counts with zero', () => {
   const evaluate = rendererContext();
   assert.equal(evaluate("buildLoc([{r:'Region',m:'Town',n:3},{r:'Region',m:'Town',n:0}])[0].kids[0].n"), 3);
