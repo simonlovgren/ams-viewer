@@ -4,9 +4,9 @@ const { readFileSync } = require('node:fs');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
-function rendererContext(document = { querySelectorAll: () => [] }) {
+function rendererContext(document = { querySelectorAll: () => [] }, globals = {}) {
   const source = readFileSync(require.resolve('./app.js'), 'utf8');
-  const context = vm.createContext({ Intl, document });
+  const context = vm.createContext({ Intl, document, ...globals });
   vm.runInContext("const F = {sel: [], loc: []}; const expanded = new Set(); let fseq = 0; const icon = () => '';" +
     source.slice(source.indexOf('  const esc ='), source.indexOf('  /* ---------- filter state')) +
     source.slice(source.indexOf('  let facetData ='), source.indexOf('  /* ---------- ads-over-time chart')), context);
@@ -56,10 +56,38 @@ test('tree leaves sum duplicate rows instead of replacing positive counts with z
   assert.equal(evaluate("buildOcc([{fi:'f',gi:'g',oi:'o',n:3},{fi:'f',gi:'g',oi:'o',n:0}])[0].kids[0].kids[0].n"), 3);
 });
 
+test('collapse all clears every tree level independently, preserves selections and saves expansion state', () => {
+  for (const tree of ['occ', 'loc']) {
+    const elements = Object.fromEntries(['#tf-occ', '#tf-loc', '#tree-occ', '#tree-loc'].map(selector => [selector, { value: '', innerHTML: '' }]));
+    const button = { dataset: { collapseTree: tree }, addEventListener: (event, listener) => { button.click = listener; } };
+    let saved;
+    const evaluate = rendererContext({ querySelectorAll: () => [button] }, {
+      $: selector => elements[selector],
+      saveExp: () => { saved = evaluate('JSON.stringify([...expanded])'); },
+    });
+    evaluate(`facetData = {occ: [{fi:'f',f:'Field',gi:'g',g:'Group',oi:'o',o:'Occupation',n:3}],loc: [{r:'Region',m:'Town',n:3}]};
+      F.sel = [{k:'occ',id:'o'}]; F.loc = [{k:'muni',id:'Town',ri:'Region'}];
+      ['field:f','group:g','occ:o','region:Region|Region','muni:Region|Town'].forEach(key => expanded.add(key)); renderTrees()`);
+    assert.match(elements['#tree-occ'].innerHTML, /class="kids"/);
+    assert.match(elements['#tree-loc'].innerHTML, /class="kids"/);
+    elements['#tf-' + tree].value = tree === 'occ' ? 'Occupation' : 'Town';
+    evaluate('renderTrees()');
+    const selections = evaluate('JSON.stringify(F)');
+    button.click();
+    assert.equal(elements['#tf-' + tree].value, '');
+    assert.doesNotMatch(elements['#tree-' + tree].innerHTML, /class="kids"/);
+    assert.match(elements[tree === 'occ' ? '#tree-loc' : '#tree-occ'].innerHTML, /class="kids"/);
+    assert.equal(evaluate('JSON.stringify(F)'), selections);
+    assert.deepEqual(JSON.parse(saved), tree === 'occ' ? ['region:Region|Region', 'muni:Region|Town'] : ['field:f', 'group:g', 'occ:o']);
+    button.click();
+    assert.equal(evaluate('JSON.stringify([...expanded])'), saved);
+  }
+});
+
 test('pending counts hide stale values and zero styling, including rebuilt trees', () => {
   const count = { textContent: '0', title: '0' };
   let zeroRemoved = false;
-  const evaluate = rendererContext({ querySelectorAll: selector => selector.includes('.cnt') ? [count] : [{ classList: { remove: () => { zeroRemoved = true; } } }] });
+  const evaluate = rendererContext({ querySelectorAll: selector => selector === '[data-collapse-tree]' ? [] : selector.includes('.cnt') ? [count] : [{ classList: { remove: () => { zeroRemoved = true; } } }] });
   evaluate('facetPending = false; markFacetsPending()');
   assert.equal(evaluate('fseq'), 1);
   assert.equal(count.textContent, '...');

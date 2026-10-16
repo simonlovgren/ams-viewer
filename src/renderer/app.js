@@ -397,6 +397,19 @@
     $('#tree-loc').innerHTML = treeHtml(t2, $('#tf-loc').value.trim()) || '<div class="empty-mini">Nothing found</div>';
   }
 
+  function collapseTree(tree) {
+    const prefixes = tree === 'occ' ? ['field:', 'group:', 'occ:'] : ['region:', 'muni:'];
+    for (const key of expanded) {
+      if (prefixes.some((prefix) => key.startsWith(prefix))) expanded.delete(key);
+    }
+    $('#tf-' + tree).value = '';
+    saveExp();
+    renderTrees();
+  }
+  document.querySelectorAll('[data-collapse-tree]').forEach((button) => {
+    button.addEventListener('click', () => collapseTree(button.dataset.collapseTree));
+  });
+
   function chipsHtml(items, isOn) {
     return items.map((i) => `<span class="chip${isOn(i) ? ' on' : ''}${facetPending || i.n ? '' : ' zero'}" data-v="${esc(i.v)}">${esc(i.label)} <small title="${facetTitle(i.n)}">${facetCount(i.n)}</small></span>`).join('');
   }

@@ -151,3 +151,9 @@ Format: decision, requirements it satisfies, rationale, consequences. Every deci
 - **Decision**: outside editable controls, `/` focuses in-ad find when an ad is displayed; in every other view it retains the existing list-search navigation and focus.
 - **Why**: searching from an ad should find text in that ad without abandoning its context.
 - **Consequence**: focusing in-ad find does not change history, ad content or global filters. Editable inputs retain literal slash entry. No dependency, IPC or schema change.
+
+## D30. Independent collapse-all actions for hierarchical filters
+- **Requirements**: UI-017
+- **Decision**: place a small native text button labelled "collapse all" with a tree-specific accessible name directly below each occupation/location search field, inside the widget body. Remove every saved expansion key belonging to that tree, including hidden descendants, and clear its tree-search text before redrawing from existing facet data.
+- **Why**: users need to close deeply expanded branches in one action; active tree-search text otherwise automatically reopens matching branches. The initial header icon was ambiguous beside title-based widget collapse; text and placement below search distinguish the two actions.
+- **Consequence**: selections, the other tree's search/expansions and widget visibility remain unchanged. Persist through the existing expansion storage; do not reload results or fetch facets. No dependency, IPC or schema change.

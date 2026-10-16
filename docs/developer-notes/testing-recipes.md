@@ -2,6 +2,11 @@
 
 Count logic has headless regression tests; visual layout still needs manual review.
 
+## Hierarchical filter collapse all (D30)
+`node --test src/renderer/app.test.js && node --check src/renderer/app.js` passed all 12 renderer tests (2026-10-16). Collapse coverage checks both trees independently, hidden descendant expansion keys, search clearing, unchanged selections, persistence writes and repeated activation. Browser fixture passed DOM click, native Enter/Space activation and reload persistence. Revised 12px text controls were verified directly below search fields at 960x600: no overlap/clipped text, collapse works, and controls hide with their widget bodies. Native Electron interaction was not manually tested. Tree search auto-expands matching branches, so collapse must clear only the target tree's search text. Existing fixtures that mock `querySelectorAll` must distinguish `[data-collapse-tree]` from facet-count selectors.
+
+Final D30 styling refinement: collapse-all controls use 11px text, a 1px border and 4px corners. Browser measurements at 960x600 confirmed 20px button height versus 26px filter chips (2026-10-16), retaining the below-search placement.
+
 ## Find in ad (D28)
 `node --test src/renderer/app.test.js && node --check src/renderer/app.js` covers case-insensitive match ranges and renderer regressions. In a browser fixture, load an ad with repeated text, search it, then verify all marks, next/previous cycling, `0/0` with disabled controls for no matches, and clearing. Toolbar fit was checked at 960x600 and 1400x900; real Electron interaction was not tested.
 

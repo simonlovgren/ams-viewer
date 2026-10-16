@@ -68,6 +68,9 @@ main { flex: 1; min-width: 0; display: flex; }
 .widget-toggle:hover { color: var(--text); }
 .widget-toggle:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 .widget-label { min-width: 0; overflow-wrap: anywhere; }
+.tree-collapse { display: block; width: fit-content; margin: 0 0 6px; padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); font-size: 11px; line-height: 16px; text-align: left; }
+.tree-collapse:hover { border-color: var(--teal); color: var(--teal); }
+.tree-collapse:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 .widget-toggle[aria-expanded="false"] .widget-chevron { transform: rotate(-90deg); }
 .widget-active { margin-left: auto; flex: none; padding: 0 5px; border: 1px solid var(--teal); border-radius: 4px; color: var(--teal); font-variant-numeric: tabular-nums; }
 .widget-body { min-width: 0; }
