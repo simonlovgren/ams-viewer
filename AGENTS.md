@@ -55,6 +55,7 @@ When a large enough coherent change is complete (a finished requirement or featu
 
 - Say that this is a good commit point and what the commit would contain; if unrelated changes have piled up, suggest how to split them.
 - Propose the message: Conventional Commits subject (50 characters or less), a short body when the why is not obvious, and the requirement and decision IDs involved (for example `SRC-009`, `D6`).
+- Always present the complete proposed commit message in a multiline fenced code block for easy copy/paste, including the subject, optional body, and requirement/decision IDs. Never present it as inline code.
 - Then wait for the user; carry on with new work only when asked.
 
 Do not suggest a commit for tiny edits or work that is half done or unverified.
