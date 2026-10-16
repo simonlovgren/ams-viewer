@@ -176,11 +176,42 @@
   });
   history.replaceState({ view: 'list', i: 0 }, '');
 
+  const messageDialog = $('#message-dialog');
+  $('#message-cancel').addEventListener('click', () => messageDialog.close('cancel'));
+  $('#message-accept').addEventListener('click', () => messageDialog.close('accept'));
+  messageDialog.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    messageDialog.close('cancel');
+  });
+  messageDialog.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { event.preventDefault(); messageDialog.close('cancel'); }
+  });
+  function showMessage({ title, message, confirmLabel }) {
+    if (messageDialog.open) return Promise.resolve(false);
+    const returnFocus = document.activeElement;
+    const cancel = $('#message-cancel');
+    const accept = $('#message-accept');
+    $('#message-title').textContent = title;
+    $('#message-body').textContent = message;
+    cancel.hidden = !confirmLabel;
+    accept.textContent = confirmLabel || 'OK';
+    accept.classList.toggle('danger', !!confirmLabel);
+    messageDialog.returnValue = '';
+    return new Promise((resolve) => {
+      messageDialog.addEventListener('close', () => {
+        if (returnFocus?.isConnected && typeof returnFocus.focus === 'function') returnFocus.focus({ preventScroll: true });
+        resolve(messageDialog.returnValue === 'accept');
+      }, { once: true });
+      messageDialog.showModal();
+      (confirmLabel ? cancel : accept).focus();
+    });
+  }
+
   const editable = (t) => t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable);
   const shortcutDialog = $('#shortcut-help');
   let shortcutReturnFocus = null;
   function openShortcutHelp() {
-    if (shortcutDialog.open) return;
+    if (shortcutDialog.open || $('#message-dialog')?.open) return;
     shortcutReturnFocus = document.activeElement;
     document.querySelectorAll('[data-shortcut-view]').forEach((section) => {
       section.hidden = section.dataset.shortcutView !== curView;
@@ -198,7 +229,7 @@
   });
   $('#shortcut-close').addEventListener('click', () => shortcutDialog.close());
   document.addEventListener('keydown', (e) => {
-    if (shortcutDialog.open) return;
+    if (shortcutDialog.open || $('#message-dialog')?.open) return;
     if (e.key === '?' && !editable(e.target)) { e.preventDefault(); openShortcutHelp(); }
     if (e.key === 'Backspace' && !editable(e.target)) { e.preventDefault(); back(); }
     else if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); back(); }
@@ -210,7 +241,7 @@
     }
   });
   document.addEventListener('mouseup', (e) => {
-    if (shortcutDialog.open) return;
+    if (shortcutDialog.open || $('#message-dialog')?.open) return;
     if (e.button === 3) { e.preventDefault(); back(); }
     else if (e.button === 4) { e.preventDefault(); history.forward(); }
   });
@@ -975,9 +1006,18 @@
   dataEl.addEventListener('click', async (e) => {
     if (e.target.closest('#pick')) return startImport(api.importDialog());
     const rm = e.target.closest('[data-rm]');
-    if (rm && confirm(`Remove all ads imported from ${rm.dataset.rm}?`)) {
-      const r = await api.removeSource(rm.dataset.rm);
-      if (r && r.ok === false) alert(r.error);
+    if (rm && await showMessage({
+      title: 'Remove data source?',
+      message: `Remove all ads imported from ${rm.dataset.rm}?\n\nThe original source file will not be deleted.`,
+      confirmLabel: 'Remove',
+    })) {
+      try {
+        const r = await api.removeSource(rm.dataset.rm);
+        if (r && r.ok === false) throw new Error(r.error || 'Could not remove data source.');
+      } catch (error) {
+        await showMessage({ title: 'Removal failed', message: error.message || 'Could not remove data source.' });
+        return;
+      }
       await renderData();
       reload();
     }

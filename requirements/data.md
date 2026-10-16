@@ -10,7 +10,7 @@
 | DAT-006 | Import shall not block the UI and shall show progress (file x of n, added, duplicates, errors). | Must | Implemented | Worker thread. |
 | DAT-007 | Ads already stored (same ad id) shall be skipped on import, so files may be re-imported or overlap. | Must | Implemented | |
 | DAT-008 | Invalid records shall be counted and skipped without aborting the import. | Must | Implemented | Lines are split on `\n` only; U+2028/2029 occur inside texts. |
-| DAT-009 | The user shall be able to see imported sources with ad counts and remove a source with its ads. | Should | Implemented | |
+| DAT-009 | The user shall be able to see imported sources with ad counts and remove a source with its ads. | Should | Implemented | D33 / UI-018: themed confirmation defaults to Cancel; removal failures use the same modal. Original source files are not deleted. Browser fixture verified; real Electron deletion not tested. |
 | DAT-010 | The application shall show total ad count, number of sources and year range covered. | Could | Implemented | |
 | DAT-011 | If the database is empty at startup, the application shall open the Data sources view. | Could | Implemented | |
 | DAT-012 | The importer shall handle all generations of the source data (2006–2026): ads without an id, numeric ids, array-valued taxonomy fields, `.jsonl` and `.json` array files, and both date formats. | Must | Implemented | Verified on samples of every file and full imports of `2018.json` (3.6 GB array, 683k ads, 188 s, peak RSS 210 MB) and `2006.jsonl` (243k ads, 34 s). Remaining files not fully imported yet. |

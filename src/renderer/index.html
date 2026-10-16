@@ -130,7 +130,16 @@
     </section>
   </main>
 
-  <dialog id="shortcut-help" aria-labelledby="shortcut-title">
+  <dialog id="message-dialog" class="app-dialog" aria-labelledby="message-title" aria-describedby="message-body">
+    <div class="shortcut-head"><h2 id="message-title"></h2></div>
+    <div class="message-body" id="message-body"></div>
+    <div class="message-actions">
+      <button id="message-cancel" class="btn sec" type="button">Cancel</button>
+      <button id="message-accept" class="btn sec" type="button">OK</button>
+    </div>
+  </dialog>
+
+  <dialog id="shortcut-help" class="app-dialog" aria-labelledby="shortcut-title">
     <div class="shortcut-head">
       <div>
         <h2 id="shortcut-title">Keyboard shortcuts</h2>

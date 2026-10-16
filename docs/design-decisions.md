@@ -169,3 +169,9 @@ Format: decision, requirements it satisfies, rationale, consequences. Every deci
 - **Decision**: place the find controls at the right edge of the breadcrumb bar, allowing the input to shrink when the ad pane is narrow.
 - **Why**: keep find out of the breadcrumb's way without letting the controls overflow the ad view.
 - **Consequence**: CSS-only layout change; no dependency, IPC or schema change.
+
+## D33. Consistent application message and confirmation dialogs
+- **Requirements**: UI-018, DAT-009
+- **Decision**: share the keyboard-shortcut dialog's shell and backdrop through `.app-dialog`. Replace renderer `confirm`/`alert` calls with an asynchronous native `<dialog>` helper for messages and confirmations. Source removal initially focuses Cancel, requires explicit Remove, and explains that the original file remains untouched. Escape cancels; ordinary messages offer OK only.
+- **Why**: system popups break visual consistency and make destructive actions less clear. An asynchronous modal preserves the renderer event loop and native focus containment.
+- **Consequence**: text is assigned with `textContent`, never interpreted as HTML. Dialog dismissal restores focus; global keyboard/mouse navigation and shortcut help are blocked during confirmation or messages. Returned and rejected removal errors use the same dialog. No dependency, IPC, schema or native file-picker change.

@@ -125,6 +125,77 @@ test('shortcut dialog blocks background keyboard and mouse navigation', () => {
   assert.equal(forwardCount, 0);
 });
 
+test('message dialogs use safe defaults, plain text, dismissal and focus restoration', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  for (const action of ['cancel', 'accept', 'escape', 'native-cancel', 'message']) {
+    let focused, restored = 0;
+    const listeners = {};
+    const dialog = {
+      open: false,
+      addEventListener: (name, listener) => { listeners[name] = listener; },
+      showModal() { this.open = true; },
+      close(value) { this.returnValue = value; this.open = false; listeners.close(); },
+    };
+    const elements = { '#message-dialog': dialog };
+    for (const name of ['cancel', 'accept', 'title', 'body']) {
+      elements['#message-' + name] = {
+        addEventListener(event, listener) { this[event] = listener; },
+        classList: { toggle() {} },
+        focus() { focused = name; },
+      };
+    }
+    const context = vm.createContext({
+      $: selector => elements[selector],
+      document: { activeElement: { isConnected: true, focus() { restored++; } } },
+    });
+    vm.runInContext(source.slice(source.indexOf('  const messageDialog ='), source.indexOf('  const editable =')), context);
+    const result = vm.runInContext(`showMessage({title:'Remove?',message:'<img src=x onerror=bad()>',confirmLabel:${action === 'message' ? 'undefined' : "'Remove'"}})`, context);
+    assert.equal(dialog.open, true);
+    assert.equal(focused, action === 'message' ? 'accept' : 'cancel');
+    assert.equal(elements['#message-cancel'].hidden, action === 'message');
+    assert.equal(elements['#message-body'].textContent, '<img src=x onerror=bad()>');
+    assert.equal(await vm.runInContext("showMessage({title:'Duplicate',message:'Ignored'})", context), false);
+    if (action === 'escape' || action === 'native-cancel') {
+      let prevented = false;
+      listeners[action === 'escape' ? 'keydown' : 'cancel']({ key: 'Escape', preventDefault() { prevented = true; } });
+      assert.equal(prevented, true);
+    } else elements['#message-' + (action === 'cancel' ? 'cancel' : 'accept')].click();
+    assert.equal(await result, action === 'accept' || action === 'message');
+    assert.equal(restored, 1);
+    assert.equal(dialog.open, false);
+  }
+});
+
+test('source removal requires confirmation and shows returned or rejected errors in a modal', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  for (const outcome of ['cancel', 'success', 'error', 'reject']) {
+    let click, removals = 0, renders = 0, reloads = 0;
+    const messages = [];
+    const context = vm.createContext({
+      $: () => ({ addEventListener: (event, listener) => { click = listener; } }),
+      showMessage: async options => { messages.push(options); return outcome !== 'cancel'; },
+      api: { removeSource: async name => {
+        assert.equal(name, '<source>.jsonl');
+        removals++;
+        if (outcome === 'reject') throw new Error('Worker failed');
+        return outcome === 'error' ? { ok: false, error: 'Busy' } : { ok: true };
+      } },
+      renderData: async () => { renders++; }, reload: () => { reloads++; },
+    });
+    vm.runInContext(source.slice(source.indexOf("  const dataEl ="), source.indexOf("  window.addEventListener('dragover'")), context);
+    await click({ target: { closest: selector => selector === '[data-rm]' ? { dataset: { rm: '<source>.jsonl' } } : null } });
+    assert.equal(removals, outcome === 'cancel' ? 0 : 1);
+    assert.equal(renders, outcome === 'success' ? 1 : 0);
+    assert.equal(reloads, outcome === 'success' ? 1 : 0);
+    assert.equal(messages[0].confirmLabel, 'Remove');
+    if (outcome === 'error' || outcome === 'reject') {
+      assert.equal(messages[1].title, 'Removal failed');
+      assert.equal(messages[1].message, outcome === 'error' ? 'Busy' : 'Worker failed');
+      assert.equal(messages[1].confirmLabel, undefined);
+    } else assert.equal(messages.length, 1);
+  }
+});
+
 test('tree leaves sum duplicate rows instead of replacing positive counts with zero', () => {
   const evaluate = rendererContext();
   assert.equal(evaluate("buildLoc([{r:'Region',m:'Town',n:3},{r:'Region',m:'Town',n:0}])[0].kids[0].n"), 3);

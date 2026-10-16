@@ -2,6 +2,11 @@
 
 Count logic has headless regression tests; visual layout still needs manual review.
 
+## Application messages and source-removal confirmation (D33)
+`node --test src/renderer/app.test.js && node --check src/renderer/app.js` passed all 16 renderer tests (2026-10-16). Covers Cancel/explicit Escape/native cancellation, safe initial focus, focus restoration, plain-text filenames/messages, one removal per confirmation, and returned/rejected errors. Browser fixture passed focus containment/restoration, blocked Backspace/slash/question-mark navigation, Cancel/Escape without removal, Confirm once, and error OK/Enter dismissal. Modal fits at 960x600 and 1400x900; minimum-size screenshot reviewed. Real Electron deletion was deliberately not tested; browser `removeSource` was stubbed.
+
+Explicit Escape key handling matches shortcut help; native dialog cancellation alone did not fire in the integrated-browser fixture. `.btn` sets `display: inline-flex` and primary buttons span full width: modal actions use `.btn.sec` and explicitly honor `[hidden]`. Browser timeline fixtures must return `{points: [], unit: 'year'}`, not an array.
+
 ## Hierarchical filter collapse all (D30)
 `node --test src/renderer/app.test.js && node --check src/renderer/app.js` passed all 12 renderer tests (2026-10-16). Collapse coverage checks both trees independently, hidden descendant expansion keys, search clearing, unchanged selections, persistence writes and repeated activation. Browser fixture passed DOM click, native Enter/Space activation and reload persistence. Revised 12px text controls were verified directly below search fields at 960x600: no overlap/clipped text, collapse works, and controls hide with their widget bodies. Native Electron interaction was not manually tested. Tree search auto-expands matching branches, so collapse must clear only the target tree's search text. Existing fixtures that mock `querySelectorAll` must distinguish `[data-collapse-tree]` from facet-count selectors.
 

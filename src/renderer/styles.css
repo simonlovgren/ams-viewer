@@ -251,7 +251,7 @@ td.r, th.r { text-align: right; }
   .setting-switch, .setting-switch::before { transition: none; }
 }
 
-#shortcut-help {
+.app-dialog {
   width: min(560px, calc(100vw - 32px));
   max-height: min(560px, calc(100vh - 32px));
   padding: 0;
@@ -263,7 +263,12 @@ td.r, th.r { text-align: right; }
   box-shadow: 0 24px 80px rgba(0, 0, 0, .55);
   font: inherit;
 }
-#shortcut-help::backdrop { background: rgba(4, 7, 14, .76); }
+.app-dialog::backdrop { background: rgba(4, 7, 14, .76); }
+.message-body { padding: 20px; max-height: calc(100vh - 220px); overflow-y: auto; overflow-wrap: anywhere; white-space: pre-wrap; }
+.message-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; padding: 0 20px 20px; }
+.message-actions .btn { border-radius: 6px; }
+.message-actions .danger { color: var(--pink); border-color: var(--pink); }
+.message-actions [hidden] { display: none; }
 .shortcut-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px; border-bottom: 1px solid var(--line); }
 .shortcut-head h2 { margin: 0; font-size: 17px; }
 .shortcut-head p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
@@ -274,7 +279,7 @@ td.r, th.r { text-align: right; }
 .shortcut-row { display: grid; grid-template-columns: minmax(120px, 38%) minmax(0, 1fr); align-items: center; gap: 14px; min-height: 34px; border-top: 1px solid rgba(35, 45, 74, .65); }
 .shortcut-row kbd { width: fit-content; padding: 2px 7px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--text); font: inherit; font-size: 12px; white-space: nowrap; }
 .shortcut-row span { color: #c6cde6; font-size: 12px; overflow-wrap: anywhere; }
-#shortcut-help button:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.app-dialog button:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 @media (max-width: 520px) {
   .shortcut-head { padding: 14px; }
   .shortcut-body { padding: 2px 14px 14px; }
