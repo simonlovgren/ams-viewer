@@ -97,6 +97,12 @@
       <div class="crumbbar">
         <button id="back" class="icon-btn" title="Back (Backspace)"><span data-i="arrow-left"></span></button>
         <nav id="crumbs"></nav>
+        <div class="ad-find" role="search" aria-label="Find in ad">
+          <input id="ad-find" type="search" placeholder="Find in ad" aria-label="Find in ad" autocomplete="off" />
+          <span id="ad-find-status" aria-live="polite">0/0</span>
+          <button id="ad-find-prev" class="icon-btn" type="button" title="Previous match (Shift+Enter)" aria-label="Previous match" disabled><span data-i="chev-u"></span></button>
+          <button id="ad-find-next" class="icon-btn" type="button" title="Next match (Enter)" aria-label="Next match" disabled><span data-i="chev-d"></span></button>
+        </div>
       </div>
       <div id="ad-scroll"><div id="ad"></div></div>
     </section>

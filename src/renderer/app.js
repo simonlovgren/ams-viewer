@@ -13,6 +13,7 @@
     clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
     'chev-r': '<path d="m9 18 6-6-6-6"/>',
     'chev-d': '<path d="m6 9 6 6 6-6"/>',
+    'chev-u': '<path d="m6 15 6-6 6 6"/>',
     'arrow-left': '<path d="m12 19-7-7 7-7M19 12H5"/>',
     x: '<path d="M18 6 6 18M6 6l12 12"/>',
     upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5M12 3v12"/>',
@@ -39,6 +40,19 @@
     root.querySelectorAll('[data-i]').forEach((el) => { if (!el.firstChild) el.innerHTML = icon(el.dataset.i); });
 
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  function matchRanges(text, query) {
+    const source = String(text ?? '');
+    const needle = String(query ?? '').trim().toLocaleLowerCase();
+    if (!needle) return [];
+    const haystack = source.toLocaleLowerCase();
+    const ranges = [];
+    let start = 0;
+    while ((start = haystack.indexOf(needle, start)) !== -1) {
+      ranges.push({ start, end: start + needle.length });
+      start += needle.length;
+    }
+    return ranges;
+  }
   const fmtNum = (n) => Number(n || 0).toLocaleString('en-GB');
   const countFormat = new Intl.NumberFormat('en-GB', { notation: 'compact', maximumFractionDigits: 1 });
   const fmtCount = (n) => countFormat.format(Number(n || 0)).replace('K', 'k');
@@ -629,6 +643,63 @@
 
   /* ---------- ad view ---------- */
   let adSeq = 0;
+  let adMatches = [];
+  let adMatchIndex = -1;
+
+  function highlightAdMatches(root, query) {
+    root.querySelectorAll('mark.ad-match').forEach((mark) => mark.replaceWith(...mark.childNodes));
+    root.normalize();
+    const needle = String(query || '').trim();
+    if (!needle) return [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    const matches = [];
+    for (const node of nodes) {
+      const ranges = matchRanges(node.nodeValue, needle);
+      if (!ranges.length) continue;
+      const fragment = document.createDocumentFragment();
+      let offset = 0;
+      for (const range of ranges) {
+        fragment.appendChild(document.createTextNode(node.nodeValue.slice(offset, range.start)));
+        const mark = document.createElement('mark');
+        mark.className = 'ad-match';
+        mark.textContent = node.nodeValue.slice(range.start, range.end);
+        fragment.appendChild(mark);
+        matches.push(mark);
+        offset = range.end;
+      }
+      fragment.appendChild(document.createTextNode(node.nodeValue.slice(offset)));
+      node.parentNode.replaceChild(fragment, node);
+    }
+    return matches;
+  }
+
+  function showAdMatch(index) {
+    adMatchIndex = adMatches.length ? (index + adMatches.length) % adMatches.length : -1;
+    adMatches.forEach((mark, i) => mark.classList.toggle('current', i === adMatchIndex));
+    $('#ad-find-status').textContent = adMatches.length ? `${adMatchIndex + 1}/${adMatches.length}` : '0/0';
+    $('#ad-find-prev').disabled = $('#ad-find-next').disabled = !adMatches.length;
+    if (adMatchIndex >= 0) adMatches[adMatchIndex].scrollIntoView({ block: 'center' });
+  }
+
+  function updateAdFind() {
+    adMatches = highlightAdMatches($('#ad'), $('#ad-find').value);
+    showAdMatch(0);
+  }
+
+  $('#ad-find').addEventListener('input', updateAdFind);
+  $('#ad-find').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      showAdMatch(adMatchIndex + (event.shiftKey ? -1 : 1));
+    } else if (event.key === 'Escape') {
+      $('#ad-find').value = '';
+      updateAdFind();
+    }
+  });
+  $('#ad-find-prev').addEventListener('click', () => showAdMatch(adMatchIndex - 1));
+  $('#ad-find-next').addEventListener('click', () => showAdMatch(adMatchIndex + 1));
 
   function fmtText(text) {
     let t = String(text || '').replace(/\r/g, '');
@@ -675,6 +746,9 @@
 
   async function loadAd(id) {
     const s = ++adSeq;
+    $('#ad-find').value = '';
+    adMatches = [];
+    showAdMatch(-1);
     $('#ad').innerHTML = '<div class="state">Loading…</div>';
     $('#crumbs').innerHTML = '';
     $('#ad-scroll').scrollTop = 0;

@@ -21,6 +21,13 @@ test('compact counts retain exact hover values and round across units', () => {
   assert.match(evaluate('countHtml(11252350)'), /title="11,252,350">11.3M/);
 });
 
+test('ad-view find matches case-insensitively and ignores empty queries', () => {
+  const evaluate = rendererContext();
+  assert.equal(evaluate("JSON.stringify(matchRanges('Örebro söker sjuksköterska i ÖREBRO', 'örebro'))"), '[{"start":0,"end":6},{"start":29,"end":35}]');
+  assert.equal(evaluate("matchRanges('some ad text', '   ').length"), 0);
+  assert.equal(evaluate("matchRanges('nothing here', 'else').length"), 0);
+});
+
 test('tree leaves sum duplicate rows instead of replacing positive counts with zero', () => {
   const evaluate = rendererContext();
   assert.equal(evaluate("buildLoc([{r:'Region',m:'Town',n:3},{r:'Region',m:'Town',n:0}])[0].kids[0].n"), 3);

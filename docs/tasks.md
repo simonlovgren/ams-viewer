@@ -16,8 +16,9 @@ Planned work that is specified but not started. Each task links to its requireme
 | T10 | Employer logo cache | AD-010 | M |
 | T11 | Favorite lists and star-action popover | LST-009, LST-010, LST-011, LST-012, LST-013 | M |
 | T12 | Enrich older ads from newer taxonomy and geographic data | DAT-015, DAT-016 | L |
+| T13 | Done: Find and navigate text matches in the ad view | AD-011 | S |
 
-Priority order: T7 and T2 are complete (D26, D27). T1 remains independent; T8 will reuse T2's collapsible-widget helper, then T9 and T5 (both live in the statistics bar). T3 goes with T4 (same view); T10 is independent and can slot in anywhere. T6 follows the [full-scale performance plan](full-scale-performance-plan.md) when filtered use at full scale feels slow, and before T9 and T5 if their queries make it worse.
+Priority order: T7, T2 and T13 are complete (D26, D27, D28). T1 remains independent; T8 will reuse T2's collapsible-widget helper, then T9 and T5 (both live in the statistics bar). T3 goes with T4 (same view); T10 is independent and can slot in anywhere. T6 follows the [full-scale performance plan](full-scale-performance-plan.md) when filtered use at full scale feels slow, and before T9 and T5 if their queries make it worse.
 
 ## T1. Resizable hierarchical filter boxes (UI-010)
 - The occupation and location trees currently have a fixed `max-height: 240px` (`.tree` in `styles.css`).
@@ -113,6 +114,10 @@ Priority order: T7 and T2 are complete (D26, D27). T1 remains independent; T8 wi
 - Before implementation, decide mapping keys and conflict rules, reference-dataset selection, offline persistence, import-time versus backfill enrichment, and how newly imported reference data updates previously imported ads. Keep expensive work off the main thread and update affected search indexes and summary tables consistently.
 - Verification: fixtures from older and newer generations; resolved occupation hierarchy and location displayed in list/detail and available in filters; ambiguous and unmatched cases unchanged; existing values preserved; import-order independence and repeat-run stability. Measure coverage and full-dataset processing cost.
 - Docs: record implementation decisions with DAT-015/DAT-016; update the data model and migration/backfill procedure, data flow, constraints and developer notes as needed. Coordinate geographic coverage findings with T5.
+
+## T13. Done: Find and navigate text matches in the ad view (AD-011)
+- Completed 2026-10-16; D28. The ad toolbar searches displayed content case-insensitively, highlights all matches, reports the current position and cycles with previous/next buttons or Enter/Shift+Enter. Escape clears the query.
+- Renderer tests passed. Browser fixture verified matching across headline and description, navigation, no-match and clear states, and toolbar fit at 960x600 and 1400x900. Real Electron interaction was not manually tested.
 
 ## Other open items (not requirements yet)
 - Re-import `2016.jsonl` (shows 0 ads) and import the remaining files.
