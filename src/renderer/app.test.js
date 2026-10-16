@@ -116,3 +116,67 @@ test('Settings joins history navigation without losing list scroll', () => {
   assert.equal(listScroll.scrollTop, 240);
   assert.equal(views.get('settings').has('hidden'), true);
 });
+
+function widgetContext(saved, storageFails = false) {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const stored = new Map(saved === undefined ? [] : [['collapsedWidgets', saved]]);
+  const widgets = ['timeline', 'published', 'occupation', 'location', 'employment', 'hours'].map(key => {
+    const attributes = new Map([['aria-controls', 'widget-' + key]]);
+    const button = {
+      setAttribute: (name, value) => attributes.set(name, value),
+      getAttribute: name => attributes.get(name),
+      addEventListener: (name, listener) => { button.click = listener; },
+    };
+    const body = {};
+    const badge = { setAttribute: () => {} };
+    return { dataset: { widget: key }, button, body, badge, querySelector: selector => selector === '.widget-toggle' ? button : selector === '.widget-active' ? badge : body };
+  });
+  const filters = { from: '', to: '', sel: [], loc: [], emp: '', hours: '' };
+  const context = vm.createContext({
+    F: filters, document: { querySelectorAll: () => widgets },
+    $: (selector, root) => root.querySelector(selector),
+    localStorage: {
+      getItem: key => { if (storageFails) throw new Error('Storage unavailable'); return stored.get(key); },
+      setItem: (key, value) => { if (storageFails) throw new Error('Storage unavailable'); stored.set(key, value); },
+    },
+  });
+  vm.runInContext(source.slice(source.indexOf('  /* ---------- collapsible widgets'), source.indexOf('  /* ---------- settings')), context);
+  vm.runInContext('initWidgets()', context);
+  return { widgets, filters, stored, update: () => vm.runInContext('updateWidgets()', context) };
+}
+
+test('widgets default expanded and tolerate invalid or unavailable storage', () => {
+  for (const saved of [undefined, '{', 'null', '{}', 'true', '[3]']) {
+    assert.ok(widgetContext(saved).widgets.every(widget => !widget.body.hidden));
+  }
+  const { widgets } = widgetContext(undefined, true);
+  widgets[0].button.click();
+  assert.equal(widgets[0].body.hidden, true);
+});
+
+test('widget collapse persists independently and preserves active filters', () => {
+  const { widgets, filters, stored, update } = widgetContext();
+  filters.sel.push({ id: 'occupation' }, { id: 'other' });
+  filters.from = '2026-01-01';
+  filters.to = '2026-12-31';
+  filters.loc.push({ id: 'town' });
+  filters.emp = 'Permanent';
+  filters.hours = 'Full time';
+  for (const widget of widgets) widget.button.click();
+  assert.ok(widgets.every(widget => widget.body.hidden));
+  assert.equal(widgets[2].button.getAttribute('aria-expanded'), 'false');
+  assert.deepEqual(widgets.map(widget => widget.badge.textContent), ['0', '2', '2', '1', '1', '1']);
+  assert.equal(widgets[0].badge.hidden, true);
+  assert.equal(widgets[2].badge.hidden, false);
+  const restored = widgetContext(stored.get('collapsedWidgets'));
+  assert.ok(restored.widgets.every(widget => widget.body.hidden));
+  widgets[2].button.click();
+  assert.equal(widgets[2].body.hidden, false);
+  assert.equal(widgets[2].badge.hidden, true);
+  assert.equal(widgets[3].body.hidden, true);
+  assert.equal(filters.sel.length, 2);
+  filters.loc = [];
+  update();
+  assert.equal(widgets[3].badge.hidden, true);
+  assert.equal(widgets[3].body.hidden, true);
+});

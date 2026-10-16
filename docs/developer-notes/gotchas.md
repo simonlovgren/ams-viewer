@@ -15,6 +15,8 @@
 - Selecting a nullish id in a tree (`Unspecified` node) is intentionally ignored; an id of `null` in `IN (...)` would match nothing.
 
 ## Electron and renderer
+- Filter sections inside the scrolling flex column must not shrink. In a 600 px window, `.f-sec.grow { min-height: 0 }` plus default flex shrinking reduced tree sections to zero height while titles/inputs overflowed into neighbours (D27). Keep `.f-head, .f-sec { flex-shrink: 0 }` and let the column scroll.
+- Collapsible widgets use stable `data-widget` keys, a `.widget-toggle` button with `aria-controls`, a `.widget-active` badge and a `.widget-body` with matching ID. `initWidgets()` binds existing sections; `updateWidgets()` refreshes state/badges. Chart rendering must skip zero width and rely on `ResizeObserver` when shown again (D27).
 - The data folder is pinned in `main.js` to `~/.config/AMS Viewer` (note the space; quote it in shells). Before it was pinned it followed `package.json`: adding `productName` for electron-builder silently switched `npm start` from `ams-viewer` to `AMS Viewer` and split the imports across two databases (2026-10-15). `~/.config/ams-viewer` is a stale leftover (only `2026-Q3`); scripts must use the `AMS Viewer` path.
 - CSP has `style-src 'unsafe-inline'` because markup uses inline `style` attributes; scripts remain locked to `'self'`. Do not add inline scripts or `onclick` attributes.
 - Everything dynamic in template strings must go through `esc()`.

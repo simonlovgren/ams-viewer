@@ -75,6 +75,48 @@
     reloadTimer = setTimeout(reload, immediate ? 0 : 180);
   }
 
+  /* ---------- collapsible widgets ---------- */
+  const collapsedWidgets = new Set();
+  try {
+    const saved = JSON.parse(localStorage.getItem('collapsedWidgets') || '[]');
+    if (Array.isArray(saved)) saved.filter((key) => typeof key === 'string').forEach((key) => collapsedWidgets.add(key));
+  } catch { /* ignore */ }
+
+  function updateWidgets() {
+    const active = {
+      published: Number(!!F.from) + Number(!!F.to),
+      occupation: F.sel.length,
+      location: F.loc.length,
+      employment: Number(!!F.emp),
+      hours: Number(!!F.hours),
+    };
+    document.querySelectorAll('[data-widget]').forEach((widget) => {
+      const key = widget.dataset.widget;
+      const collapsed = collapsedWidgets.has(key);
+      const button = $('.widget-toggle', widget);
+      button.setAttribute('aria-expanded', String(!collapsed));
+      $('#' + button.getAttribute('aria-controls'), widget).hidden = collapsed;
+      const badge = $('.widget-active', widget);
+      const count = active[key] || 0;
+      badge.hidden = !collapsed || !count;
+      badge.textContent = String(count);
+      badge.title = `${count} active ${count === 1 ? 'selection' : 'selections'}`;
+      badge.setAttribute('aria-label', badge.title);
+    });
+  }
+
+  function initWidgets() {
+    document.querySelectorAll('[data-widget]').forEach((widget) => {
+      $('.widget-toggle', widget).addEventListener('click', () => {
+        const key = widget.dataset.widget;
+        collapsedWidgets.has(key) ? collapsedWidgets.delete(key) : collapsedWidgets.add(key);
+        try { localStorage.setItem('collapsedWidgets', JSON.stringify([...collapsedWidgets])); } catch { /* ignore */ }
+        updateWidgets();
+      });
+    });
+    updateWidgets();
+  }
+
   /* ---------- settings ---------- */
   const settings = { monospace: true };
   try {
@@ -397,6 +439,7 @@
 
   function renderChart() {
     const box = $('#chart');
+    if (!box.clientWidth) return;
     const t = timelineData;
     const W = Math.max(160, box.clientWidth);
     if (!t || !t.points.length) { box.innerHTML = '<div class="empty-mini">No data</div>'; return; }
@@ -555,6 +598,7 @@
     $('#f-from').value = F.from;
     $('#f-to').value = F.to;
     $('#sort').value = F.sort;
+    updateWidgets();
   }
 
   function renderActive() {
@@ -878,6 +922,7 @@
 
   /* ---------- init ---------- */
   hydrateIcons();
+  initWidgets();
   syncInputs();
   renderActive();
   Promise.allSettled([

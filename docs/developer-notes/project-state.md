@@ -3,6 +3,7 @@
 Last updated: 2026-10-15.
 
 ## User preferences
+- 2026-10-16: ads-over-time chart stays in the filter column beside publication-date filters, not in the planned statistics bar (D27). T2 is complete; T1 and T8 remain separate planned tasks.
 - 2026-10-16: Settings on/off controls should use slider-style switches, not plain checkboxes. The monospace switch retains native checkbox keyboard behavior and exposes `role="switch"`; browser click/Space behavior and focus styling verified.
 - 2026-10-16: monospace applies to all main-window text, including headings and ad descriptions; user can disable it in top-level Settings > Appearance (D26). Keep future application preferences here, outside search/ad controls.
 - Answers short and technical; the caveman skill is always used in chat (code, commits and docs are written normally).
@@ -14,7 +15,7 @@ Last updated: 2026-10-15.
 Import to SQLite with progress (multi-file, drag and drop); keyword search with multiple free-text entries; multi-select occupation and location trees with always-visible options and counts; date range, year, employment, hours filters; job-ad style ad view with breadcrumb; history navigation (Backspace, mouse buttons); electron-builder packaging.
 
 ## Not verified / known gaps
-- No visual review of the UI has been done by an agent (layout, gray styling of zero-count options, search-input chips (Enter-only) and AND/OR button, date boxes, resizable/collapsible filter bar, icon-only menu, ads-over-time chart layout and labels). Ask the user for feedback or find a way to screenshot.
+- Browser fixtures now cover Settings/typography (D26) and filter widgets, minimum-width tree/search layout, date inputs, sidebar drag resizing and yearly chart layout (D27), with screenshots reviewed. Real Electron interactions, gray zero-count styling, search chips/AND-OR and non-year chart label layouts still need visual review.
 - Mouse back/forward buttons, drag and drop import and the packaged AppImage/Windows/macOS builds are untested.
 - NFR-005 (scaling to all years, 2006–2026): facets and OFFSET paging may need optimisation; see `docs/constraints.md`. Ideas: summary table for facets, keyset paging.
 - No app icon, code signing or auto-update (NFR-009 in progress).

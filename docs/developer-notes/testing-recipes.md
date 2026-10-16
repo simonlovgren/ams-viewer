@@ -2,6 +2,13 @@
 
 Count logic has headless regression tests; visual layout still needs manual review.
 
+## Collapsible widgets and minimum-width filters (D27)
+`node --test src/renderer/app.test.js` now includes independent collapse persistence, invalid/unavailable storage, active-selection badges, filter retention and badge clearing (nine renderer tests total, passed 2026-10-16).
+
+Browser fixture: inject `window.api` before loading the renderer, with 30 occupation fields, 25 regions, 21 years, employment/hours options and a yearly timeline. At 310 px filter width, verify adjacent section rectangles do not overlap, each tree search starts below its heading, and filter `scrollWidth <= clientWidth`. Passed at 960x600 and 1400x900 in both font modes; screenshots reviewed. Reintroducing default section shrinking and `min-height: 0` reproduced zero-height tree sections with inputs outside their bounds.
+
+Click/Enter/Space toggles, active-date badge, retained date input, independent chart/date/tree collapse after reload, and chart redraw after expand/drag resize passed. When expanding all widgets in Playwright, repeatedly click `.widget-toggle[aria-expanded="false"]` with `.first()`; locators returned by `.all()` use shifting indexes as the selector stops matching expanded buttons. Real `timeout 12s npm start -- --no-sandbox` opened 11.25M ads in ~0.6 s; known Wayland/Vulkan warning and expected SIGTERM only. Actual Electron quit/relaunch persistence and non-year chart label layouts were not manually tested.
+
 ## Settings and typography (D26)
 `node --test src/renderer/app.test.js` covers default-on typography, boolean validation, malformed/unavailable storage, immediate changes, persistence across renderer restart and Settings navigation preserving list scroll. Seven renderer tests passed 2026-10-16.
 

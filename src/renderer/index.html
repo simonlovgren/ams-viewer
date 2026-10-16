@@ -25,38 +25,50 @@
       <div id="filters">
         <div class="f-head"><span data-i="filter"></span>Filters<button id="clear-all" class="link">Clear all</button></div>
 
-        <div class="f-sec">
-          <h4><span data-i="trending-up"></span>Ads over time</h4>
+        <div class="f-sec" data-widget="timeline">
+          <h4><button class="widget-toggle" type="button" aria-expanded="true" aria-controls="widget-timeline"><span class="widget-chevron" data-i="chev-d"></span><span data-i="trending-up"></span><span class="widget-label">Ads over time</span><span class="widget-active" hidden></span></button></h4>
+          <div id="widget-timeline" class="widget-body">
           <div id="chart"><div class="empty-mini">Loading statistics…</div></div>
+          </div>
         </div>
 
-        <div class="f-sec">
-          <h4><span data-i="calendar"></span>Published</h4>
+        <div class="f-sec" data-widget="published">
+          <h4><button class="widget-toggle" type="button" aria-expanded="true" aria-controls="widget-published"><span class="widget-chevron" data-i="chev-d"></span><span data-i="calendar"></span><span class="widget-label">Published</span><span class="widget-active" hidden></span></button></h4>
+          <div id="widget-published" class="widget-body">
           <div class="date-row">
-            <input type="date" id="f-from" /><span>–</span><input type="date" id="f-to" />
+            <input type="date" id="f-from" aria-label="Published from" /><span>–</span><input type="date" id="f-to" aria-label="Published to" />
           </div>
           <div id="chips-year" class="chips"></div>
+          </div>
         </div>
 
-        <div class="f-sec grow">
-          <h4><span data-i="layers"></span>Occupation</h4>
+        <div class="f-sec grow" data-widget="occupation">
+          <h4><button class="widget-toggle" type="button" aria-expanded="true" aria-controls="widget-occupation"><span class="widget-chevron" data-i="chev-d"></span><span data-i="layers"></span><span class="widget-label">Occupation</span><span class="widget-active" hidden></span></button></h4>
+          <div id="widget-occupation" class="widget-body">
           <input type="search" id="tf-occ" class="mini" placeholder="Find field, group or occupation…" />
           <div id="tree-occ" class="tree"><div class="empty-mini">Loading filters…</div></div>
+          </div>
         </div>
 
-        <div class="f-sec grow">
-          <h4><span data-i="map-pin"></span>Location</h4>
+        <div class="f-sec grow" data-widget="location">
+          <h4><button class="widget-toggle" type="button" aria-expanded="true" aria-controls="widget-location"><span class="widget-chevron" data-i="chev-d"></span><span data-i="map-pin"></span><span class="widget-label">Location</span><span class="widget-active" hidden></span></button></h4>
+          <div id="widget-location" class="widget-body">
           <input type="search" id="tf-loc" class="mini" placeholder="Find region or municipality…" />
           <div id="tree-loc" class="tree"><div class="empty-mini">Loading filters…</div></div>
+          </div>
         </div>
 
-        <div class="f-sec">
-          <h4><span data-i="briefcase"></span>Employment</h4>
+        <div class="f-sec" data-widget="employment">
+          <h4><button class="widget-toggle" type="button" aria-expanded="true" aria-controls="widget-employment"><span class="widget-chevron" data-i="chev-d"></span><span data-i="briefcase"></span><span class="widget-label">Employment</span><span class="widget-active" hidden></span></button></h4>
+          <div id="widget-employment" class="widget-body">
           <div id="chips-emp" class="chips"></div>
+          </div>
         </div>
-        <div class="f-sec">
-          <h4><span data-i="clock"></span>Working hours</h4>
+        <div class="f-sec" data-widget="hours">
+          <h4><button class="widget-toggle" type="button" aria-expanded="true" aria-controls="widget-hours"><span class="widget-chevron" data-i="chev-d"></span><span data-i="clock"></span><span class="widget-label">Working hours</span><span class="widget-active" hidden></span></button></h4>
+          <div id="widget-hours" class="widget-body">
           <div id="chips-hours" class="chips"></div>
+          </div>
         </div>
       </div>
       <div id="filters-resizer" title="Drag to resize filters"></div>

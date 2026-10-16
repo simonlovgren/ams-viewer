@@ -6,18 +6,18 @@ Planned work that is specified but not started. Each task links to its requireme
 |---|---|---|---|
 | T6 | Full-scale performance of filtering, counts and statistics (lower priority since startup is fixed; [plan](full-scale-performance-plan.md)) | NFR-003, NFR-004, NFR-005 | L |
 | T1 | Resizable hierarchical filter boxes | UI-010 | S |
-| T2 | Collapsible filter widgets and graphs | UI-011 | S |
+| T2 | Done: collapsible filter widgets and chart | UI-011, UI-007, SRC-017 | S |
 | T3 | Live-updating import file list | DAT-013 | S |
 | T4 | Import statistics per file (time, duplicates, errors) | DAT-014 | M |
 | T5 | Geographical hotspot view | SRC-019 | L |
 | T7 | Done: monospace typography and top-level Settings | UI-012, UI-016, NAV-009 | S |
-| T8 | Statistics bar on the right (collapsible, hosts the graphs) | UI-013, UI-011, SRC-017 | M |
+| T8 | Statistics bar on the right (collapsible, hosts map and employers) | UI-013, UI-011 | M |
 | T9 | Top-30 employers widget | SRC-020 | M |
 | T10 | Employer logo cache | AD-010 | M |
 | T11 | Favorite lists and star-action popover | LST-009, LST-010, LST-011, LST-012, LST-013 | M |
 | T12 | Enrich older ads from newer taxonomy and geographic data | DAT-015, DAT-016 | L |
 
-Priority order: T7 is complete (D26). T8 before T2 (so one collapsible-widget mechanism serves both bars), then T2 and T1 together, T3 with T4 (same view), then T9 and T5 (both live in the statistics bar); T10 is independent and can slot in anywhere. T6 follows the [full-scale performance plan](full-scale-performance-plan.md) when filtered use at full scale feels slow, and before T9 and T5 if their queries make it worse.
+Priority order: T7 and T2 are complete (D26, D27). T1 remains independent; T8 will reuse T2's collapsible-widget helper, then T9 and T5 (both live in the statistics bar). T3 goes with T4 (same view); T10 is independent and can slot in anywhere. T6 follows the [full-scale performance plan](full-scale-performance-plan.md) when filtered use at full scale feels slow, and before T9 and T5 if their queries make it worse.
 
 ## T1. Resizable hierarchical filter boxes (UI-010)
 - The occupation and location trees currently have a fixed `max-height: 240px` (`.tree` in `styles.css`).
@@ -25,12 +25,11 @@ Priority order: T7 is complete (D26). T8 before T2 (so one collapsible-widget me
 - Decide: min height (about 80 px), max height (container or window based), and whether heights reset on "Clear all" (suggest: no).
 - Docs: UI requirement status, a line in D17 (or a new decision if the approach differs), developer notes (unverified visual layout).
 
-## T2. Collapsible widgets (UI-011)
-- Widgets: Published, Occupation, Location, Employment, Working hours in the filter sidebar; ads-over-time chart, employers (T9) and the map (T5) in the statistics bar (T8). Build one reusable collapsible-widget helper for both bars.
-- Clicking a section title (`h4` in `.f-sec`) toggles it; show a chevron icon; keep the title keyboard accessible (button or `tabindex` + Enter).
-- Persist collapsed state per widget in `localStorage`.
-- Interaction with T1: a collapsed tree keeps its saved height; the chart keeps rendering in the background or re-renders on expand (it already uses a `ResizeObserver`).
-- Decide: whether collapsed widgets that hold an active filter show a small badge or count so the user does not forget a hidden filter (suggest: yes).
+## T2. Done: collapsible widgets (UI-011, UI-007, SRC-017)
+- Completed 2026-10-16; D27. Ads over time, Published, Occupation, Location, Employment and Working hours stay in the filter column and collapse independently using native title buttons (click/Enter/Space).
+- Shared `data-widget` helper, independent `localStorage` collapse keys and active-selection badges; collapse preserves filters and tree search. The chart skips zero-width rendering and redraws on expand/resize.
+- Fixed minimum-width overlap by preventing filter sections from shrinking; scrolling keeps titles and inputs separate. T1 tree-height resizing remains planned and should retain saved heights across collapse.
+- Nine renderer tests passed. Browser fixture verified reload persistence, keyboard controls, badges, drag resizing and non-overlapping 310 px layout at 960x600 and 1400x900 in both font modes. Electron startup passed against 11.25M ads; actual quit/relaunch preference retention not manually tested.
 
 ## T3. Live-updating import file list (DAT-013)
 - Today `renderData()` runs on the data view and after import completion; per-file completion (`file-done`) is ignored, so the list changes only at the very end.
@@ -46,7 +45,7 @@ Priority order: T7 is complete (D26). T8 before T2 (so one collapsible-widget me
 - Also useful: show the same figures live for the running import.
 
 ## T5. Geographical hotspot view (SRC-019)
-- Goal: below the timeline, a map-like view of where the filtered ads are, as a hotspot/heat overlay, following all active filters like the chart.
+- Goal: in the right statistics bar, a map-like view of where the filtered ads are, as a hotspot/heat overlay, following all active filters like the chart (which stays in the filter column).
 - Data: `workplace_address.coordinates` exists in newer ads (2026 sample has `[lon, lat]`); older eras mostly have only municipality/region (and none before 2018). Needs a survey of coordinate coverage per file first.
 - Open questions to settle with the user before building:
   - Base map without network (requirement NFR-002: offline): bundle a simplified Sweden outline (GeoJSON, e.g. from public domain/open data, with licence noted) and draw it in SVG, versus loading online map tiles (violates offline, adds a network dependency and a CSP change).
@@ -71,10 +70,10 @@ Priority order: T7 is complete (D26). T8 before T2 (so one collapsible-widget me
 
 ## T8. Statistics bar (UI-013)
 - New right-hand column in the search view (`#view-list`), next to `#results`; collapsible with a toggle like the filter bar (`UI-008`, `D17`) and with a remembered state; a resizable width is optional.
-- Move the ads-over-time chart (`#chart`, `renderChart()`, currently the first section of `#filters`) into it; its `ResizeObserver` already follows the container width. SRC-017 stays `In progress` until this is done.
-- Each statistics widget is a titled section that collapses on title click (shares the helper from T2).
+- Keep the ads-over-time chart (`#chart`, `renderChart()`) in the filter column beside time filtering (SRC-017, D27). The statistics bar hosts the map (T5) and employers (T9); it need not be built for T2.
+- Each statistics widget is a titled section that collapses on title click (reuse the `data-widget` markup and helper from T2).
 - Layout: the list needs a sensible minimum width, so decide what happens on narrow windows (suggest: auto-collapse the statistics bar below about 1200 px).
-- Data: the chart and statistics already come with the facets result; keep sending them in one worker call, or split them off if T6 shows they slow filtering.
+- Data: timeline already has its own worker request/lane (D23); choose requests for new statistics based on measured T6 costs, without blocking filter facets.
 - Docs: new decision (layout), `system-description.md` (UI structure), developer notes.
 
 ## T9. Top-30 employers widget (SRC-020)
