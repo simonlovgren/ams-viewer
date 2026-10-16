@@ -3,7 +3,8 @@
 Last updated: 2026-10-16.
 
 ## User preferences
-- 2026-10-16: ads-over-time chart stays in the filter column beside publication-date filters, not in the planned statistics bar (D27). T2 is complete; T1 and T8 remain separate planned tasks.
+- 2026-10-16: all filter widgets resize vertically by grabbing their bottom divider, not only hierarchical trees (D34). T1 is complete; T8 remains planned.
+- 2026-10-16: ads-over-time chart stays in the filter column beside publication-date filters, not in the planned statistics bar (D27). T2 is complete.
 - 2026-10-16: Settings on/off controls should use slider-style switches, not plain checkboxes. The monospace switch retains native checkbox keyboard behavior and exposes `role="switch"`; browser click/Space behavior and focus styling verified.
 - 2026-10-16: monospace applies to all main-window text, including headings and ad descriptions; user can disable it in top-level Settings > Appearance (D26). Keep future application preferences here, outside search/ad controls.
 - Answers short and technical; the caveman skill is always used in chat (code, commits and docs are written normally).

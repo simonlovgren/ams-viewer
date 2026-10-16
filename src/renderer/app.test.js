@@ -320,9 +320,26 @@ test('Settings joins history navigation without losing list scroll', () => {
   assert.equal(views.get('settings').has('hidden'), true);
 });
 
-function widgetContext(saved, storageFails = false) {
+function widgetContext(saved, storageFails = false, heights) {
   const source = readFileSync(require.resolve('./app.js'), 'utf8');
   const stored = new Map(saved === undefined ? [] : [['collapsedWidgets', saved]]);
+  if (heights !== undefined) stored.set('widgetHeights', heights);
+  const windowListeners = [];
+  const window = { innerHeight: 900, addEventListener: (name, listener) => windowListeners.push(listener) };
+  const createElement = () => {
+    const attributes = new Map();
+    const listeners = new Map();
+    const classes = new Set();
+    return {
+      setAttribute: (name, value) => attributes.set(name, value),
+      getAttribute: name => attributes.get(name),
+      addEventListener: (name, listener) => listeners.set(name, listener),
+      removeEventListener: name => listeners.delete(name),
+      classList: { add: name => classes.add(name), remove: name => classes.delete(name) },
+      setPointerCapture() {}, hasPointerCapture: () => true, releasePointerCapture() {},
+      fire: (name, values = {}) => listeners.get(name)?.({ button: 0, pointerId: 1, clientY: 100, preventDefault() {}, ...values }),
+    };
+  };
   const widgets = ['timeline', 'published', 'occupation', 'location', 'employment', 'hours'].map(key => {
     const attributes = new Map([['aria-controls', 'widget-' + key]]);
     const button = {
@@ -330,13 +347,15 @@ function widgetContext(saved, storageFails = false) {
       getAttribute: name => attributes.get(name),
       addEventListener: (name, listener) => { button.click = listener; },
     };
-    const body = {};
+    const body = { id: 'widget-' + key, style: {}, classList: { add() {} }, getBoundingClientRect: () => ({ height: parseFloat(body.style.height) || 200 }) };
     const badge = { setAttribute: () => {} };
-    return { dataset: { widget: key }, button, body, badge, querySelector: selector => selector === '.widget-toggle' ? button : selector === '.widget-active' ? badge : body };
+    return { dataset: { widget: key }, button, body, badge,
+      append(handle) { this.handle = handle; },
+      querySelector: selector => selector === '.widget-toggle' ? button : selector === '.widget-active' ? badge : selector === '.widget-label' ? { textContent: key } : body };
   });
   const filters = { from: '', to: '', sel: [], loc: [], emp: '', hours: '' };
   const context = vm.createContext({
-    F: filters, document: { querySelectorAll: () => widgets },
+    F: filters, document: { querySelectorAll: () => widgets, createElement }, window,
     $: (selector, root) => root.querySelector(selector),
     localStorage: {
       getItem: key => { if (storageFails) throw new Error('Storage unavailable'); return stored.get(key); },
@@ -345,8 +364,57 @@ function widgetContext(saved, storageFails = false) {
   });
   vm.runInContext(source.slice(source.indexOf('  /* ---------- collapsible widgets'), source.indexOf('  /* ---------- settings')), context);
   vm.runInContext('initWidgets()', context);
-  return { widgets, filters, stored, update: () => vm.runInContext('updateWidgets()', context) };
+  return { widgets, filters, stored, window, resizeWindow: () => windowListeners.forEach(listener => listener()), update: () => vm.runInContext('updateWidgets()', context) };
 }
+
+test('every widget divider resizes independently with pointer capture and persists on completion', () => {
+  const { widgets, stored } = widgetContext();
+  for (const [index, widget] of widgets.entries()) {
+    assert.equal(widget.handle.getAttribute('role'), 'separator');
+    assert.equal(widget.handle.getAttribute('aria-controls'), widget.body.id);
+    widget.handle.fire('pointerdown');
+    widget.handle.fire('pointermove', { pointerId: 2, clientY: 700 });
+    assert.equal(widget.body.style.height, undefined);
+    widget.handle.fire('pointermove', { clientY: 150 + index });
+    assert.equal(widget.body.style.height, (250 + index) + 'px');
+    widget.handle.fire(index % 2 ? 'pointercancel' : 'pointerup');
+    widget.handle.fire('pointermove', { clientY: 400 });
+    assert.equal(widget.body.style.height, (250 + index) + 'px');
+  }
+  const restored = widgetContext(undefined, false, stored.get('widgetHeights'));
+  assert.deepEqual(restored.widgets.map(widget => widget.body.style.height), widgets.map(widget => widget.body.style.height));
+});
+
+test('widget heights clamp, survive collapse and tolerate invalid or unavailable storage', () => {
+  const state = widgetContext(undefined, false, '{"occupation":360,"hours":9999,"location":"300"}');
+  const widget = state.widgets[2];
+  assert.equal(widget.body.style.height, '360px');
+  assert.equal(state.widgets[5].body.style.height, '740px');
+  assert.equal(state.widgets[3].body.style.height, undefined);
+  widget.handle.fire('keydown', { key: 'ArrowDown' });
+  assert.equal(widget.body.style.height, '380px');
+  widget.button.click();
+  widget.handle.fire('keydown', { key: 'End' });
+  widget.button.click();
+  assert.equal(widget.body.style.height, '380px');
+  widget.handle.fire('keydown', { key: 'Home' });
+  assert.equal(widget.body.style.height, '80px');
+  widget.handle.fire('keydown', { key: 'ArrowUp' });
+  assert.equal(widget.body.style.height, '80px');
+  widget.handle.fire('keydown', { key: 'End' });
+  state.window.innerHeight = 600;
+  state.resizeWindow();
+  assert.equal(widget.body.style.height, '440px');
+  state.window.innerHeight = 900;
+  state.resizeWindow();
+  assert.equal(widget.body.style.height, '740px');
+  for (const saved of ['{', 'null', 'true', '{"hours":null}']) {
+    assert.ok(widgetContext(undefined, false, saved).widgets.every(item => !item.body.style.height));
+  }
+  const unavailable = widgetContext(undefined, true).widgets[0];
+  unavailable.handle.fire('keydown', { key: 'ArrowDown' });
+  assert.equal(unavailable.body.style.height, '220px');
+});
 
 test('widgets default expanded and tolerate invalid or unavailable storage', () => {
   for (const saved of [undefined, '{', 'null', '{}', 'true', '[3]']) {

@@ -11,6 +11,7 @@ Browse, filter and read historical job ads offline. Source data is published as 
   - Hierarchical filters: occupation field → group → occupation; region → municipality.
   - Date range and one-click year chips; employment type; working hours.
   - Ads-over-time chart stays above publication-date filters in the left column. All six filter/chart widgets collapse independently using their title buttons; collapsed filters show active-selection counts (D27). Sections scroll without shrinking into overlapping titles or inputs.
+  - Every filter widget resizes vertically through its bottom divider, with independent remembered body heights and keyboard-accessible separators. Resizing moves subsequent widgets down; overflowing content scrolls within the body. Collapse and Clear all preserve dimensions (D34).
   - Sort: newest, oldest, relevance (keyword only).
   - Results update live while typing/selecting; the list loads incrementally while scrolling.
   - Active filters shown as removable chips; "Clear all".
@@ -18,7 +19,7 @@ Browse, filter and read historical job ads offline. Source data is published as 
 - **Data sources view**: import (file picker or drag & drop, multiple files), progress, per-source removal, totals.
 - **Settings view**: separate sidebar destination with an Appearance section; monospace typography for all main-window text defaults on and can be toggled immediately. Additional settings can be added here (D26).
 - **Navigation**: sidebar menu; Backspace, mouse back/forward buttons and Alt+Left/Right move through view history; `/` searches the current context (list search or in-ad find); `?` opens view-specific shortcut help (D31).
-- **Persistence of state**: filters are kept in `sessionStorage` (only while the app is open); tree expansion, layout (including per-widget collapse) and application settings are saved in `localStorage`; the list view is kept alive (hidden) while another view is open, preserving scroll position.
+- **Persistence of state**: filters are kept in `sessionStorage` (only while the app is open); tree expansion, layout (including per-widget collapse and heights) and application settings are saved in `localStorage`; the list view is kept alive (hidden) while another view is open, preserving scroll position.
 
 ## Architecture
 

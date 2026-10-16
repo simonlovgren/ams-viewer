@@ -2,6 +2,11 @@
 
 Count logic has headless regression tests; visual layout still needs manual review.
 
+## Vertical widget resizing (D34)
+`node --test src/renderer/app.test.js && node --check src/renderer/app.js` passed all 18 tests (2026-10-16). Resize tests cover all six widgets, independent saved heights, pointer identity/cancellation/cleanup, keyboard bounds, collapse retention, viewport clamping/restoration and invalid/unavailable storage. Browser fixture passed six real pointer drags, reload/Collapse/Clear all retention, Home/End/Up, scrollable trees beyond 240 px, and non-overlap/no horizontal overflow at 960x600 and 1400x900 in both fonts. Minimum-window screenshot reviewed; native Electron interaction and quit/relaunch not tested.
+
+Populated facet fixtures need `year`, not `years`; a wrong key throws after trees render, leaving year/employment/hours chips empty. Timeline points use `{d: '2026-01-01', n: 10}` with `unit`, `from` and `to`. If integrated-browser `scrollIntoViewIfNeeded()` stalls waiting for stability, DOM `scrollIntoView({block: 'center', behavior: 'instant'})` followed by real Playwright mouse dragging works.
+
 ## Application messages and source-removal confirmation (D33)
 `node --test src/renderer/app.test.js && node --check src/renderer/app.js` passed all 16 renderer tests (2026-10-16). Covers Cancel/explicit Escape/native cancellation, safe initial focus, focus restoration, plain-text filenames/messages, one removal per confirmation, and returned/rejected errors. Browser fixture passed focus containment/restoration, blocked Backspace/slash/question-mark navigation, Cancel/Escape without removal, Confirm once, and error OK/Enter dismissal. Modal fits at 960x600 and 1400x900; minimum-size screenshot reviewed. Real Electron deletion was deliberately not tested; browser `removeSource` was stubbed.
 

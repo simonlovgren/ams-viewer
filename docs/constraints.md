@@ -19,6 +19,7 @@
 - No auto-update, code signing or custom app icon. Packaging uses electron-builder (`npm run dist`); only the Linux unpacked build has been tried.
 - Linux tested only. Mouse back/forward buttons are handled via DOM `mouseup` buttons 3 and 4; behaviour may differ on other platforms.
 - Electron may require `--no-sandbox` on systems where the `chrome-sandbox` helper is not set up.
+- Resized filter-widget bodies are limited to 80 px through max(80 px, window height minus 160 px); excess content scrolls. Unsized widgets retain natural heights; unsized trees retain their 240 px cap (D34).
 
 ## Scope constraints
 - Read-only browsing: no editing, bookmarking, export or statistics views.

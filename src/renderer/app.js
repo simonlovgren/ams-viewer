@@ -119,8 +119,84 @@
     });
   }
 
+  const widgetHeights = {};
+  try {
+    const saved = JSON.parse(localStorage.getItem('widgetHeights') || '{}');
+    if (saved && typeof saved === 'object') {
+      Object.entries(saved).forEach(([key, height]) => {
+        if (typeof height === 'number' && Number.isFinite(height)) widgetHeights[key] = height;
+      });
+    }
+  } catch { /* ignore */ }
+
+  function initWidgetResize(widget) {
+    const key = widget.dataset.widget;
+    const body = $('.widget-body', widget);
+    const handle = document.createElement('div');
+    handle.className = 'widget-resizer';
+    handle.tabIndex = 0;
+    handle.title = 'Drag to resize ' + $('.widget-label', widget).textContent;
+    handle.setAttribute('role', 'separator');
+    handle.setAttribute('aria-label', handle.title);
+    handle.setAttribute('aria-orientation', 'horizontal');
+    handle.setAttribute('aria-controls', body.id);
+    const maxHeight = () => Math.max(80, window.innerHeight - 160);
+    const resize = (height, save = false) => {
+      const clamped = Math.round(Math.max(80, Math.min(maxHeight(), height)));
+      body.style.height = clamped + 'px';
+      body.classList.add('widget-sized');
+      handle.setAttribute('aria-valuemin', '80');
+      handle.setAttribute('aria-valuemax', String(maxHeight()));
+      handle.setAttribute('aria-valuenow', String(clamped));
+      if (save) {
+        widgetHeights[key] = clamped;
+        try { localStorage.setItem('widgetHeights', JSON.stringify(widgetHeights)); } catch { /* ignore */ }
+      }
+    };
+    handle.setAttribute('aria-valuemin', '80');
+    handle.setAttribute('aria-valuemax', String(maxHeight()));
+    handle.setAttribute('aria-valuenow', String(Math.round(body.getBoundingClientRect().height)));
+    if (Object.hasOwn(widgetHeights, key)) resize(widgetHeights[key]);
+    handle.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0 || body.hidden) return;
+      event.preventDefault();
+      const startY = event.clientY;
+      const startHeight = body.getBoundingClientRect().height;
+      handle.setPointerCapture(event.pointerId);
+      handle.classList.add('drag');
+      const move = (next) => {
+        if (next.pointerId === event.pointerId) resize(startHeight + next.clientY - startY);
+      };
+      const stop = (next) => {
+        if (next.pointerId !== event.pointerId) return;
+        handle.classList.remove('drag');
+        resize(body.getBoundingClientRect().height, true);
+        handle.removeEventListener('pointermove', move);
+        handle.removeEventListener('pointerup', stop);
+        handle.removeEventListener('pointercancel', stop);
+        handle.removeEventListener('lostpointercapture', stop);
+        if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+      };
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', stop);
+      handle.addEventListener('pointercancel', stop);
+      handle.addEventListener('lostpointercapture', stop);
+    });
+    handle.addEventListener('keydown', (event) => {
+      if (body.hidden || !['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const height = body.getBoundingClientRect().height;
+      resize(event.key === 'Home' ? 80 : event.key === 'End' ? maxHeight() : height + (event.key === 'ArrowUp' ? -20 : 20), true);
+    });
+    window.addEventListener('resize', () => {
+      if (Object.hasOwn(widgetHeights, key)) resize(widgetHeights[key]);
+    });
+    widget.append(handle);
+  }
+
   function initWidgets() {
     document.querySelectorAll('[data-widget]').forEach((widget) => {
+      initWidgetResize(widget);
       $('.widget-toggle', widget).addEventListener('click', () => {
         const key = widget.dataset.widget;
         collapsedWidgets.has(key) ? collapsedWidgets.delete(key) : collapsedWidgets.add(key);

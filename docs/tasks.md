@@ -5,7 +5,7 @@ Planned work that is specified but not started. Each task links to its requireme
 | # | Task | Requirements | Size |
 |---|---|---|---|
 | T6 | Full-scale performance of filtering, counts and statistics (lower priority since startup is fixed; [plan](full-scale-performance-plan.md)) | NFR-003, NFR-004, NFR-005 | L |
-| T1 | Resizable hierarchical filter boxes | UI-010 | S |
+| T1 | Done: vertically resizable filter widgets | UI-010 | S |
 | T2 | Done: collapsible filter widgets and chart | UI-011, UI-007, SRC-017 | S |
 | T3 | Live-updating import file list | DAT-013 | S |
 | T4 | Import statistics per file (time, duplicates, errors) | DAT-014 | M |
@@ -19,18 +19,17 @@ Planned work that is specified but not started. Each task links to its requireme
 | T13 | Done: Find and navigate text matches in the ad view | AD-011 | S |
 | T14 | Done: Contextual keyboard-shortcut help modal | NAV-011, NAV-010, UI-001 | S |
 
-Priority order: T7, T2, T13 and T14 are complete (D26, D27, D28, D31). T1 remains independent; T8 will reuse T2's collapsible-widget helper, then T9 and T5 (both live in the statistics bar). T3 goes with T4 (same view); T10 is independent and can slot in anywhere. T6 follows the [full-scale performance plan](full-scale-performance-plan.md) when filtered use at full scale feels slow, and before T9 and T5 if their queries make it worse.
+Priority order: T7, T2, T13, T14 and T1 are complete (D26, D27, D28, D31, D34). T8 will reuse T2's collapsible-widget helper, then T9 and T5 (both live in the statistics bar). T3 goes with T4 (same view); T10 is independent and can slot in anywhere. T6 follows the [full-scale performance plan](full-scale-performance-plan.md) when filtered use at full scale feels slow, and before T9 and T5 if their queries make it worse.
 
-## T1. Resizable hierarchical filter boxes (UI-010)
-- The occupation and location trees currently have a fixed `max-height: 240px` (`.tree` in `styles.css`).
-- Add a vertical drag handle at the bottom of each tree box (or CSS `resize: vertical` on the container) and persist the heights in `localStorage` like the sidebar width (`D17`).
-- Decide: min height (about 80 px), max height (container or window based), and whether heights reset on "Clear all" (suggest: no).
-- Docs: UI requirement status, a line in D17 (or a new decision if the approach differs), developer notes (unverified visual layout).
+## T1. Done: vertically resizable filter widgets (UI-010)
+- Completed 2026-10-16; D34. Scope broadened to all six filter widgets at the user's request. Drag each bottom divider to resize the widget above; keyboard Up/Down and Home/End also work.
+- Body heights are independent and persisted; collapse and Clear all preserve them. Bounds are 80 px through window height minus 160 px. Trees grow beyond their old cap, with overflowing content scrolling inside the resized body.
+- All 18 renderer tests and syntax checks passed. Browser fixture passed all six pointer drags, keyboard bounds/steps, reload persistence, collapse and Clear all retention, and non-overlapping layout at 960x600 and 1400x900 in both fonts; minimum-window screenshot reviewed. Native Electron interaction and quit/relaunch not manually tested.
 
 ## T2. Done: collapsible widgets (UI-011, UI-007, SRC-017)
 - Completed 2026-10-16; D27. Ads over time, Published, Occupation, Location, Employment and Working hours stay in the filter column and collapse independently using native title buttons (click/Enter/Space).
 - Shared `data-widget` helper, independent `localStorage` collapse keys and active-selection badges; collapse preserves filters and tree search. The chart skips zero-width rendering and redraws on expand/resize.
-- Fixed minimum-width overlap by preventing filter sections from shrinking; scrolling keeps titles and inputs separate. T1 tree-height resizing remains planned and should retain saved heights across collapse.
+- Fixed minimum-width overlap by preventing filter sections from shrinking; scrolling keeps titles and inputs separate. T1 now adds saved heights for all widgets and retains them across collapse (D34).
 - Nine renderer tests passed. Browser fixture verified reload persistence, keyboard controls, badges, drag resizing and non-overlapping 310 px layout at 960x600 and 1400x900 in both font modes. Electron startup passed against 11.25M ads; actual quit/relaunch preference retention not manually tested.
 
 ## T3. Live-updating import file list (DAT-013)
