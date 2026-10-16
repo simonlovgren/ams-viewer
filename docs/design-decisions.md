@@ -121,3 +121,9 @@ Format: decision, requirements it satisfies, rationale, consequences. Every deci
 - **Decision**: provide a default "Favorites" list and user-created, custom-named lists that can be deleted. An ad's star action opens a list-selection popover. Its last entry is a plus (+) control that becomes a name input with an "Add" button on the right. Submitting creates the list and adds the pending ad to it.
 - **Why**: users can organize ads into named collections and create a destination without abandoning the current favorite action.
 - **Consequence**: the popover workflow must retain the originating ad while creating a list. Persistence, list browsing/management, default-list deletion policy and membership-removal behavior remain open in T11; they are not decided by this interaction plan.
+
+## D25. Compact counts and explicit pending facet values
+- **Requirements**: UI-015, SRC-009, SRC-015
+- **Decision**: format large counts with the built-in `Intl.NumberFormat` compact notation, at most one decimal place and lowercase `k` for thousands. Keep exact grouped counts on hover. Apply this to filter options, result/sidebar totals, chart labels and totals, source statistics and import counters; chart hover remains exact.
+- **Why**: million-scale counts must fit narrow filter rows without hiding labels. Old facet counts can disagree with newly loaded results while slower statistics requests are still running.
+- **Consequence**: filter changes immediately invalidate older facet requests, replace counts with `...` and remove stale zero styling until fresh counts arrive. A failed request leaves counts unknown rather than showing stale values. Own-filter exclusion remains unchanged (D6). Filtered merge keys use the same missing-value normalization as summary tables, and repeated groups/tree leaves are summed instead of overwritten. No schema change, rebuild or new dependency is needed.

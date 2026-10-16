@@ -39,6 +39,14 @@
 
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const fmtNum = (n) => Number(n || 0).toLocaleString('en-GB');
+  const countFormat = new Intl.NumberFormat('en-GB', { notation: 'compact', maximumFractionDigits: 1 });
+  const fmtCount = (n) => countFormat.format(Number(n || 0)).replace('K', 'k');
+  const countHtml = (n) => `<span title="${fmtNum(n)}">${fmtCount(n)}</span>`;
+  function setCount(selector, n, suffix = '') {
+    const el = $(selector);
+    el.textContent = fmtCount(n) + suffix;
+    el.title = fmtNum(n) + suffix;
+  }
   const parseDate = (s) => (s ? new Date(String(s).slice(0, 10) + 'T00:00:00') : null);
   const fmtDate = (s, long) => {
     const d = parseDate(s);
@@ -61,6 +69,7 @@
     saveF();
     syncInputs();
     renderActive();
+    markFacetsPending();
     clearTimeout(reloadTimer);
     reloadTimer = setTimeout(reload, immediate ? 0 : 180);
   }
@@ -133,7 +142,8 @@
   }
 
   function updateCount() {
-    $('#count').textContent = total === null ? 'counting…' : total ? `${fmtNum(total)} ads` : '';
+    if (total === null) { $('#count').textContent = 'counting…'; $('#count').removeAttribute('title'); }
+    else setCount('#count', total, ' ads');
   }
 
   async function loadMore(first, s) {
@@ -187,6 +197,7 @@
     for (const id of ['#tree-occ', '#tree-loc', '#chart']) $(id).innerHTML = msg;
   }
   function loadStats() {
+    markFacetsPending();
     const fs_ = ++fseq;
     api.facets(F).then((data) => {
       if (fs_ !== fseq || !data || data.stale) return;
@@ -219,7 +230,21 @@
 
   /* ---------- filter panel ---------- */
   let facetData = null;
+  let facetPending = true;
   const nodeIndex = new Map();
+
+  function markFacetsPending() {
+    ++fseq;
+    facetPending = true;
+    document.querySelectorAll('#filters .cnt, #filters .chip small').forEach((el) => {
+      el.textContent = '...';
+      el.title = 'Updating counts';
+    });
+    document.querySelectorAll('#filters .zero').forEach((el) => el.classList.remove('zero'));
+  }
+
+  const facetTitle = (n) => facetPending ? 'Updating counts' : fmtNum(n);
+  const facetCount = (n) => facetPending ? '...' : fmtCount(n);
 
   function buildOcc(rows) {
     const fields = new Map();
@@ -232,7 +257,10 @@
       let g = f.kids.get(gk);
       if (!g) f.kids.set(gk, (g = { k: 'group', id: r.gi, label: r.g || 'Unspecified', n: 0, kids: new Map(), path: { ...f.path, group: { id: r.gi, label: r.g } } }));
       g.n += r.n;
-      g.kids.set(r.oi || '', { k: 'occ', id: r.oi, label: r.o || 'Unspecified', n: r.n, kids: new Map(), path: { ...g.path, occ: { id: r.oi, label: r.o } } });
+      const ok = r.oi || '';
+      const o = g.kids.get(ok);
+      if (o) o.n += r.n;
+      else g.kids.set(ok, { k: 'occ', id: r.oi, label: r.o || 'Unspecified', n: r.n, kids: new Map(), path: { ...g.path, occ: { id: r.oi, label: r.o } } });
     }
     return sortNodes(fields);
   }
@@ -243,7 +271,10 @@
       let g = regs.get(rk);
       if (!g) regs.set(rk, (g = { k: 'region', id: r.r, label: r.r || 'Unspecified', n: 0, kids: new Map(), path: { region: r.r } }));
       g.n += r.n;
-      g.kids.set(r.m || '', { k: 'muni', id: r.m, label: r.m || 'Unspecified', n: r.n, kids: new Map(), path: { region: r.r, muni: r.m } });
+      const mk = r.m || '';
+      const m = g.kids.get(mk);
+      if (m) m.n += r.n;
+      else g.kids.set(mk, { k: 'muni', id: r.m, label: r.m || 'Unspecified', n: r.n, kids: new Map(), path: { region: r.r, muni: r.m } });
     }
     return sortNodes(regs);
   }
@@ -270,9 +301,9 @@
       nodeIndex.set(key, n);
       const open = f ? kidsMatch : expanded.has(key);
       const hasKids = n.kids.length > 0;
-      out += `<div class="node${isSel(n) ? ' sel' : ''}${n.n ? '' : ' zero'}" data-key="${esc(key)}">
+      out += `<div class="node${isSel(n) ? ' sel' : ''}${facetPending || n.n ? '' : ' zero'}" data-key="${esc(key)}">
         <span class="tg${hasKids ? '' : ' none'}">${icon(open ? 'chev-d' : 'chev-r')}</span>
-        <span class="lbl" title="${esc(n.label)}">${esc(n.label)}</span><span class="cnt">${fmtNum(n.n)}</span></div>`;
+        <span class="lbl" title="${esc(n.label)}">${esc(n.label)}</span><span class="cnt" title="${facetTitle(n.n)}">${facetCount(n.n)}</span></div>`;
       if (open && hasKids) out += `<div class="kids">${treeHtml(n.kids, f && !self ? filter : '', depth + 1)}</div>`;
     }
     return out;
@@ -288,11 +319,12 @@
   }
 
   function chipsHtml(items, isOn) {
-    return items.map((i) => `<span class="chip${isOn(i) ? ' on' : ''}${i.n ? '' : ' zero'}" data-v="${esc(i.v)}">${esc(i.label)} <small>${fmtNum(i.n)}</small></span>`).join('');
+    return items.map((i) => `<span class="chip${isOn(i) ? ' on' : ''}${facetPending || i.n ? '' : ' zero'}" data-v="${esc(i.v)}">${esc(i.label)} <small title="${facetTitle(i.n)}">${facetCount(i.n)}</small></span>`).join('');
   }
 
   function renderFacets(d) {
     facetData = d;
+    facetPending = false;
     renderTrees();
     $('#chips-year').innerHTML = chipsHtml(
       d.year.filter((r) => r.y).map((r) => ({ v: r.y, label: r.y, n: r.n })),
@@ -313,7 +345,6 @@
     const jan4 = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
     return 1 + Math.round(((d - jan4) / 864e5 - 3 + ((jan4.getUTCDay() + 6) % 7)) / 7);
   };
-  const compact = (n) => (n >= 10000 ? Math.round(n / 1000) + 'k' : n >= 1000 ? (n / 1000).toFixed(1).replace('.0', '') + 'k' : String(n));
 
   // Axis label for a bin: pri 0 = first bin, 1 = calendar landmark (year/month), 2 = filler (month, week, day).
   function axisLabel(p, i, pts, unit) {
@@ -350,10 +381,10 @@
     const t = timelineData;
     const W = Math.max(160, box.clientWidth);
     if (!t || !t.points.length) { box.innerHTML = '<div class="empty-mini">No data</div>'; return; }
-    const H = 132, L = 34, R = 10, T = 10, B = 22;
     const pts = t.points;
     const n = pts.length;
     const max = Math.max(1, ...pts.map((p) => p.n));
+    const H = 132, L = Math.max(34, fmtCount(max).length * 7 + 8), R = 10, T = 10, B = 22;
     const total = pts.reduce((s, p) => s + p.n, 0);
     const xs = (i) => (n === 1 ? (L + W - R) / 2 : L + (i * (W - L - R)) / (n - 1));
     const ys = (v) => T + (1 - v / max) * (H - T - B);
@@ -373,7 +404,7 @@
     const labels = placed.map((q) => `<line class="ch-tick" x1="${q.x.toFixed(1)}" x2="${q.x.toFixed(1)}" y1="${H - B}" y2="${H - B + 3}"/><text class="ch-lab${q.pri === 2 ? ' dim' : ''}" x="${q.x.toFixed(1)}" y="${H - 6}" text-anchor="middle">${esc(q.text)}</text>`).join('');
     const dots = n <= 40 ? pts.map((p, i) => `<circle class="ch-dot" cx="${xs(i).toFixed(1)}" cy="${ys(p.n).toFixed(1)}" r="2.2"/>`).join('') : '';
 
-    box.innerHTML = `<div class="chart-sub">${esc(fmtNum(total))} ads · per ${t.unit} · ${esc(t.from)} → ${esc(t.to)}</div>
+    box.innerHTML = `<div class="chart-sub">${countHtml(total)} ads · per ${t.unit} · ${esc(t.from)} → ${esc(t.to)}</div>
       <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
         <defs>
           <linearGradient id="cg-line" gradientUnits="userSpaceOnUse" x1="${L}" x2="${W - R}" y1="0" y2="0"><stop offset="0" stop-color="#2dd4bf"/><stop offset=".35" stop-color="#60a5fa"/><stop offset=".7" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472b6"/></linearGradient>
@@ -382,7 +413,7 @@
         <line class="ch-grid" x1="${L}" x2="${W - R}" y1="${ys(max)}" y2="${ys(max)}"/>
         <line class="ch-grid" x1="${L}" x2="${W - R}" y1="${ys(max / 2)}" y2="${ys(max / 2)}"/>
         <line class="ch-base" x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}"/>
-        <text class="ch-lab" x="${L - 5}" y="${ys(max) + 3.5}" text-anchor="end">${compact(max)}</text>
+        <text class="ch-lab" x="${L - 5}" y="${ys(max) + 3.5}" text-anchor="end"><title>${fmtNum(max)}</title>${fmtCount(max)}</text>
         <text class="ch-lab" x="${L - 5}" y="${H - B + 3.5}" text-anchor="end">0</text>
         <path d="${area}" fill="url(#cg-area)"/>
         <path d="${line}" fill="none" stroke="url(#cg-line)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
@@ -712,15 +743,15 @@
 
   async function renderData() {
     const info = await api.info();
-    $('#side-total').textContent = `${fmtNum(info.total)} ads`;
+    setCount('#side-total', info.total, ' ads');
     const rows = info.sources.map((s) => `<tr><td>${icon('database').replace('<svg', '<svg style="vertical-align:-3px;margin-right:6px;color:var(--teal)"')}${esc(s.name)}</td>
-      <td class="r">${fmtNum(s.ads)}</td><td>${esc((s.imported_at || '').slice(0, 10))}</td>
+      <td class="r">${countHtml(s.ads)}</td><td>${esc((s.imported_at || '').slice(0, 10))}</td>
       <td class="r"><button class="btn sec danger" data-rm="${esc(s.name)}">${icon('trash')}Remove</button></td></tr>`).join('');
     $('#data').innerHTML = `
       <h1>Data sources</h1><div style="color:var(--muted)">Import JSONL / JSON ad files. Several files can be selected at once; ads already present are skipped.</div>
       <div class="stats">
-        <div class="stat"><b>${fmtNum(info.total)}</b><small>ads stored</small></div>
-        <div class="stat"><b>${fmtNum(info.sources.length)}</b><small>source files</small></div>
+        <div class="stat"><b>${countHtml(info.total)}</b><small>ads stored</small></div>
+        <div class="stat"><b>${countHtml(info.sources.length)}</b><small>source files</small></div>
         <div class="stat"><b>${info.min ? esc(info.min.slice(0, 4)) + ' – ' + esc(info.max.slice(0, 4)) : '–'}</b><small>years covered</small></div>
       </div>
       <div class="drop" id="drop">${icon('upload').replace('<svg', '<svg style="width:32px;height:32px;color:var(--purple)"')}
@@ -740,7 +771,7 @@
     const overall = ((s.fileIndex + (s.pct || 0)) / s.files) * 100;
     el.innerHTML = `<div class="progress"><b>${esc(s.file)}</b> <span style="color:var(--muted)">(file ${s.fileIndex + 1} of ${s.files})</span>
       <div class="bar"><i style="width:${overall.toFixed(1)}%"></i></div>
-      <small style="color:var(--muted)">${fmtNum(s.inserted)} added · ${fmtNum(s.skipped)} duplicates · ${fmtNum(s.errors)} errors</small></div>`;
+      <small style="color:var(--muted)">${countHtml(s.inserted)} added · ${countHtml(s.skipped)} duplicates · ${countHtml(s.errors)} errors</small></div>`;
   }
 
   async function startImport(promise) {
@@ -757,7 +788,7 @@
   api.onImport((m) => {
     importState = m.type === 'file-done' ? importState : m;
     if (m.type === 'done' || m.type === 'error') {
-      api.info().then((i) => ($('#side-total').textContent = `${fmtNum(i.total)} ads`));
+      api.info().then((i) => setCount('#side-total', i.total, ' ads'));
       if (curView === 'data') { const keep = importState; renderData().then(() => { importState = keep; renderProgress(); }); }
       reload();
     } else renderProgress();
@@ -832,7 +863,7 @@
   renderActive();
   Promise.allSettled([
     api.info().then((i) => {
-      $('#side-total').textContent = `${fmtNum(i.total)} ads`;
+      setCount('#side-total', i.total, ' ads');
       if (!i.total) nav('data');
     }),
     reload(),

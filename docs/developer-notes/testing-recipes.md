@@ -1,6 +1,12 @@
 # Testing recipes
 
-The UI has no automated tests and no screenshot tooling was available; verify logic headlessly, then state honestly that the visual result was not seen.
+Count logic has headless regression tests; visual layout still needs manual review.
+
+## Facet and compact-count regressions (D25)
+```bash
+node --test src/main/db.test.js src/renderer/app.test.js
+```
+Uses in-memory SQLite and renderer helper evaluation (no real DB writes). Covers missing-value normalization, all five facet dimensions and own-filter exclusion, locations present in results, duplicate tree leaves, compact unit boundaries, exact tooltips and pending-count invalidation. Five tests passed 2026-10-16. A read-only query on the real 11,252,350-ad DB for `neuropsykolog` returned 9,100 ads and identical totals in all five facets (~846 ms combined); no visible location had a zero facet count. Electron startup smoke test (`timeout 15s npm start -- --no-sandbox`) showed the window in ~625 ms; no app errors, only an environmental Wayland/Vulkan warning. Timeout termination is expected. Visual fit and interactive rapid-filter changes were not manually reviewed.
 
 ## Syntax / startup
 ```bash

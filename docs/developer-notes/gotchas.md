@@ -9,7 +9,7 @@
 ## Database and queries
 - `node:sqlite` returns rows as null-prototype objects; spread (`{ ...r }`) before sending over IPC.
 - The contentless FTS table needs `contentless_delete=1` to delete rows; deleting a source removes FTS rows by rowid first.
-- Facets: `facets()` returns every option with its count under the other filters (0 = grayed out, SRC-015). Unfiltered lists are cached in the worker and invalidated by `PRAGMA data_version`. A filter dimension that is added must be added to `FACETS` in `db.js`.
+- Facets: `facets()` returns every option with its count under the other filters (0 = grayed out, SRC-015). Unfiltered options come from summary tables (D23). A filter dimension that is added must be added to `FACETS` in `db.js`. Merge keys must normalize NULL/empty strings like `accAdd` and accumulate duplicate normalized groups; otherwise matching ads can disappear from counts (D25). Pending renderer counts are unknown (`...`), never zero.
 - `where(f, skip)` is used for both list and facet queries; `skip` names the dimension excluded for its own facet (`occ`, `loc`, `date`, `emp`, `hours`, `q`).
 - Free text: committed `terms` (added with Enter; the renderer no longer sends `q`) are combined by `ftsMatch()` (AND or OR per `termMode`); never read `f.q` directly in new code.
 - Selecting a nullish id in a tree (`Unspecified` node) is intentionally ignored; an id of `null` in `IN (...)` would match nothing.

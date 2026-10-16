@@ -74,7 +74,7 @@ input.mini { width: 100%; margin-bottom: 6px; padding: 5px 9px; font-size: 12px;
 .node .tg:hover { background: var(--panel2); color: var(--text); }
 .node .tg.none { visibility: hidden; }
 .node .lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-.node .cnt { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.node .cnt { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; flex-shrink: 0; white-space: nowrap; }
 .kids { margin-left: 14px; border-left: 1px solid var(--line); padding-left: 4px; }
 .empty-mini { color: var(--muted); font-size: 12px; padding: 4px; }
 

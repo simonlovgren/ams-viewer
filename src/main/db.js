@@ -220,7 +220,7 @@ const FACETS = {
   hours: { cols: 'hours v', skip: ['hours'], extra: 'GROUP BY hours ORDER BY n DESC', key: ['v'] },
 };
 
-const keyOf = (spec, r) => JSON.stringify(spec.key.map((k) => r[k] ?? null));
+const keyOf = (spec, r) => JSON.stringify(spec.key.map((k) => r[k] ?? (k === 'y' ? 0 : '')));
 
 /* ---------- summary tables ----------
  * Per-dimension counts of all ads, kept up to date by the importer and by source removal, so the filter
@@ -332,9 +332,11 @@ function facets(db, f) {
   for (const [name, spec] of Object.entries(FACETS)) {
     if (where(f, spec.skip).sql === '1') { out[name] = universe[name]; continue; }
     const { sql, params } = where(f, spec.skip);
-    const counts = new Map(
-      db.prepare(`SELECT ${spec.cols}, COUNT(*) n FROM ads a WHERE ${sql} ${spec.extra}`).all(...params).map((r) => [keyOf(spec, r), r.n])
-    );
+    const counts = new Map();
+    for (const row of db.prepare(`SELECT ${spec.cols}, COUNT(*) n FROM ads a WHERE ${sql} ${spec.extra}`).all(...params)) {
+      const key = keyOf(spec, row);
+      counts.set(key, (counts.get(key) || 0) + row.n);
+    }
     out[name] = universe[name].map((r) => ({ ...r, n: counts.get(keyOf(spec, r)) || 0 }));
   }
   return out;

@@ -10,7 +10,7 @@
 | SRC-006 | The user shall be able to filter by employment type. | Should | Implemented | |
 | SRC-007 | The user shall be able to filter by working hours. | Should | Implemented | |
 | SRC-008 | The list shall update dynamically as filters change, without reloading the page. | Must | Implemented | The free-text box is the exception (SRC-021): it applies on Enter. |
-| SRC-009 | Filter options shall show counts reflecting the other active filters. | Should | Implemented | Own-filter excluded per group. |
+| SRC-009 | Filter options shall show counts reflecting the other active filters. | Should | Implemented | Own-filter excluded per group. D25: normalize missing-value merge keys and sum duplicate groups; hide stale counts while loading. Regression tests cover every dimension and mixed NULL/empty values; real-data query matched all facet totals (9,100 ads). |
 | SRC-010 | Active filters shall be shown as removable chips, with a "Clear all" action. | Should | Implemented | |
 | SRC-011 | The user shall be able to sort by newest, oldest and (with keyword) relevance. | Should | Implemented | |
 | SRC-012 | The occupation and location trees shall be searchable by text. | Could | Implemented | |
