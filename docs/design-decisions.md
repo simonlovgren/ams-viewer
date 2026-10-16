@@ -163,3 +163,9 @@ Format: decision, requirements it satisfies, rationale, consequences. Every deci
 - **Decision**: pressing `?` outside editable controls opens a native modal dialog with global shortcuts and a section for the active view. Entries describe current bindings, including contextual `/`, search/result keys and ad-find keys. Escape and the close button dismiss it; focus returns to the opener, and background navigation is ignored while open.
 - **Why**: users need discoverable shortcuts without losing the current view or confusing actions whose target changes by context.
 - **Consequence**: native dialog behavior contains focus; the modal adds no dependency, IPC or schema change and does not alter unrelated shortcuts. Shortcut descriptions must stay aligned with renderer handlers.
+
+## D32. Right-align in-ad find controls
+- **Requirements**: AD-011
+- **Decision**: place the find controls at the right edge of the breadcrumb bar, allowing the input to shrink when the ad pane is narrow.
+- **Why**: keep find out of the breadcrumb's way without letting the controls overflow the ad view.
+- **Consequence**: CSS-only layout change; no dependency, IPC or schema change.

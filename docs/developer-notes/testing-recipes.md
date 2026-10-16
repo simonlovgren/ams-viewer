@@ -8,7 +8,7 @@ Count logic has headless regression tests; visual layout still needs manual revi
 Final D30 styling refinement: collapse-all controls use 11px text, a 1px border and 4px corners. Browser measurements at 960x600 confirmed 20px button height versus 26px filter chips (2026-10-16), retaining the below-search placement.
 
 ## Find in ad (D28)
-`node --test src/renderer/app.test.js && node --check src/renderer/app.js` covers case-insensitive match ranges and renderer regressions. In a browser fixture, load an ad with repeated text, search it, then verify all marks, next/previous cycling, `0/0` with disabled controls for no matches, and clearing. Toolbar fit was checked at 960x600 and 1400x900; real Electron interaction was not tested.
+`node --test src/renderer/app.test.js && node --check src/renderer/app.js` covers case-insensitive match ranges and renderer regressions. In a browser fixture, load an ad with repeated text, search it, then verify all marks, next/previous cycling, `0/0` with disabled controls for no matches, and clearing. With the list hidden and a representative breadcrumb, find controls align to the right padding without overlap; the input is 165px at 960x600 and 190px at 1400x900. Real Electron interaction was not tested.
 
 D29 shortcut checks (2026-10-16): all 11 renderer tests passed, including `/` routing from all four views and non-interception in inputs, textareas, selects and contenteditable elements. Browser keyboard fixture passed ad-find focus with unchanged history, typing/highlighting, literal slash in the find input, and Settings-to-list search fallback. Fixture ads use `window.api.get`, not `getAd`. Real Electron shortcut interaction was not manually tested.
 
