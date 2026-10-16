@@ -17,8 +17,9 @@ Planned work that is specified but not started. Each task links to its requireme
 | T11 | Favorite lists and star-action popover | LST-009, LST-010, LST-011, LST-012, LST-013 | M |
 | T12 | Enrich older ads from newer taxonomy and geographic data | DAT-015, DAT-016 | L |
 | T13 | Done: Find and navigate text matches in the ad view | AD-011 | S |
+| T14 | Done: Contextual keyboard-shortcut help modal | NAV-011, NAV-010, UI-001 | S |
 
-Priority order: T7, T2 and T13 are complete (D26, D27, D28). T1 remains independent; T8 will reuse T2's collapsible-widget helper, then T9 and T5 (both live in the statistics bar). T3 goes with T4 (same view); T10 is independent and can slot in anywhere. T6 follows the [full-scale performance plan](full-scale-performance-plan.md) when filtered use at full scale feels slow, and before T9 and T5 if their queries make it worse.
+Priority order: T7, T2, T13 and T14 are complete (D26, D27, D28, D31). T1 remains independent; T8 will reuse T2's collapsible-widget helper, then T9 and T5 (both live in the statistics bar). T3 goes with T4 (same view); T10 is independent and can slot in anywhere. T6 follows the [full-scale performance plan](full-scale-performance-plan.md) when filtered use at full scale feels slow, and before T9 and T5 if their queries make it worse.
 
 ## T1. Resizable hierarchical filter boxes (UI-010)
 - The occupation and location trees currently have a fixed `max-height: 240px` (`.tree` in `styles.css`).
@@ -118,6 +119,12 @@ Priority order: T7, T2 and T13 are complete (D26, D27, D28). T1 remains independ
 ## T13. Done: Find and navigate text matches in the ad view (AD-011)
 - Completed 2026-10-16; D28. The ad toolbar searches displayed content case-insensitively, highlights all matches, reports the current position and cycles with previous/next buttons or Enter/Shift+Enter. Escape clears the query.
 - Renderer tests passed. Browser fixture verified matching across headline and description, navigation, no-match and clear states, and toolbar fit at 960x600 and 1400x900. Real Electron interaction was not manually tested.
+
+## T14. Contextual keyboard-shortcut help modal (NAV-011, NAV-010, UI-001)
+- Status: done 2026-10-16; D31.
+- `?` opens a native dialog outside editable controls. Global shortcuts and only the active view's shortcuts are listed, including contextual `/`, keyword-entry/result keys and ad-find navigation/clear keys.
+- Escape and the close button dismiss the dialog and restore focus. The modal contains focus and blocks keyboard/mouse navigation behind it; shortcut content is static and aligned with existing handlers.
+- Verification: 14 renderer tests passed. Browser fixture passed `?` in all four views, literal `?` in the keyword field, repeated activation, Escape and close-button dismissal, focus containment/restoration, and blocked background navigation. At 960x600 the dialog fit without scrolling in both font modes. Real Electron interaction was not manually tested.
 
 ## Other open items (not requirements yet)
 - Re-import `2016.jsonl` (shows 0 ads) and import the remaining files.

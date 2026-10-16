@@ -157,3 +157,9 @@ Format: decision, requirements it satisfies, rationale, consequences. Every deci
 - **Decision**: place a small native text button labelled "collapse all" with a tree-specific accessible name directly below each occupation/location search field, inside the widget body. Remove every saved expansion key belonging to that tree, including hidden descendants, and clear its tree-search text before redrawing from existing facet data.
 - **Why**: users need to close deeply expanded branches in one action; active tree-search text otherwise automatically reopens matching branches. The initial header icon was ambiguous beside title-based widget collapse; text and placement below search distinguish the two actions.
 - **Consequence**: selections, the other tree's search/expansions and widget visibility remain unchanged. Persist through the existing expansion storage; do not reload results or fetch facets. No dependency, IPC or schema change.
+
+## D31. Contextual keyboard-shortcut help modal
+- **Requirements**: NAV-010, NAV-011, UI-001
+- **Decision**: pressing `?` outside editable controls opens a native modal dialog with global shortcuts and a section for the active view. Entries describe current bindings, including contextual `/`, search/result keys and ad-find keys. Escape and the close button dismiss it; focus returns to the opener, and background navigation is ignored while open.
+- **Why**: users need discoverable shortcuts without losing the current view or confusing actions whose target changes by context.
+- **Consequence**: native dialog behavior contains focus; the modal adds no dependency, IPC or schema change and does not alter unrelated shortcuts. Shortcut descriptions must stay aligned with renderer handlers.

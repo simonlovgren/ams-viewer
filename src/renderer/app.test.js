@@ -34,10 +34,12 @@ test('slash focuses ad find without navigating, and list search in other views',
     for (const target of [{ tagName: 'BODY' }, { tagName: 'INPUT' }, { tagName: 'TEXTAREA' }, { tagName: 'SELECT' }, { tagName: 'DIV', isContentEditable: true }]) {
       let keydown, focused, prevented = false;
       const navigations = [];
+      const dialog = { open: false, addEventListener() {}, showModal() { dialog.open = true; }, close() {} };
+      const close = { addEventListener() {}, focus() {} };
       const context = vm.createContext({
         curView: view,
         document: { addEventListener: (name, listener) => { if (name === 'keydown') keydown = listener; } },
-        $: selector => ({ focus: () => { focused = selector; } }),
+        $: selector => selector === '#shortcut-help' ? dialog : selector === '#shortcut-close' ? close : ({ focus: () => { focused = selector; } }),
         nav: destination => navigations.push(destination),
       });
       vm.runInContext(source.slice(source.indexOf('  const editable ='), source.indexOf("  document.addEventListener('mouseup'")), context);
@@ -48,6 +50,79 @@ test('slash focuses ad find without navigating, and list search in other views',
       assert.deepEqual(navigations, editableTarget || view === 'ad' ? [] : ['list']);
     }
   }
+});
+
+test('shortcut help opens the active view, ignores editable targets and restores focus', () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  for (const view of ['list', 'ad', 'data', 'settings']) {
+    let keydown;
+    let focusCount = 0;
+    const sections = ['list', 'ad', 'data', 'settings'].map(shortcutView => ({
+      dataset: { shortcutView }, hidden: true,
+    }));
+    const originalFocus = { isConnected: true, focus: () => { focusCount++; } };
+    const close = { addEventListener: (name, listener) => { close.click = listener; }, focus: () => {} };
+    const dialog = {
+      open: false,
+      addEventListener: (name, listener) => { if (name === 'close') dialog.closeEvent = listener; else if (name === 'keydown') dialog.keydown = listener; },
+      showModal: () => { dialog.open = true; dialog.openCount = (dialog.openCount || 0) + 1; },
+      close: () => { dialog.open = false; dialog.closeEvent(); },
+    };
+    const elements = { '#shortcut-help': dialog, '#shortcut-close': close };
+    const context = vm.createContext({
+      curView: view,
+      document: {
+        activeElement: originalFocus,
+        addEventListener: (name, listener) => { if (name === 'keydown') keydown = listener; },
+        querySelectorAll: () => sections,
+      },
+      $: selector => elements[selector],
+      nav: () => {}, back: () => {}, history: { forward: () => {} },
+    });
+    vm.runInContext(source.slice(source.indexOf('  const editable ='), source.indexOf("  document.addEventListener('mouseup'")) +
+      "document.addEventListener('mouseup', () => {});", context);
+
+    keydown({ key: '?', target: { tagName: 'BODY' }, preventDefault() {} });
+    assert.equal(dialog.open, true);
+    assert.equal(dialog.openCount, 1);
+    assert.deepEqual(sections.map(section => section.hidden), ['list', 'ad', 'data', 'settings'].map(item => item !== view));
+    keydown({ key: '?', target: { tagName: 'BODY' }, preventDefault() {} });
+    assert.equal(dialog.openCount, 1);
+    let escapePrevented = false;
+    dialog.keydown({ key: 'Escape', preventDefault: () => { escapePrevented = true; } });
+    assert.equal(escapePrevented, true);
+    assert.equal(dialog.open, false);
+    assert.equal(focusCount, 1);
+
+    for (const target of [{ tagName: 'INPUT' }, { tagName: 'TEXTAREA' }, { tagName: 'SELECT' }, { tagName: 'DIV', isContentEditable: true }]) {
+      keydown({ key: '?', target, preventDefault() {} });
+      assert.equal(dialog.open, false);
+    }
+  }
+});
+
+test('shortcut dialog blocks background keyboard and mouse navigation', () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  let keydown, mouseup, backCount = 0, forwardCount = 0;
+  const dialog = { open: true, addEventListener() {}, showModal() {}, close() {} };
+  const context = vm.createContext({
+    curView: 'list',
+    document: {
+      activeElement: {},
+      addEventListener: (name, listener) => { if (name === 'keydown') keydown = listener; else if (name === 'mouseup') mouseup = listener; },
+      querySelectorAll: () => [],
+    },
+    $: selector => selector === '#shortcut-help' ? dialog : ({ addEventListener() {}, focus() {} }),
+    nav: () => {}, back: () => { backCount++; }, history: { forward: () => { forwardCount++; } },
+  });
+  const start = source.indexOf('  const editable =');
+  vm.runInContext(source.slice(start, source.indexOf("  document.querySelectorAll('.nav')", start)), context);
+  keydown({ key: 'Backspace', target: { tagName: 'BODY' }, preventDefault() {} });
+  keydown({ key: '/', target: { tagName: 'BODY' }, preventDefault() {} });
+  mouseup({ button: 3, preventDefault() {} });
+  mouseup({ button: 4, preventDefault() {} });
+  assert.equal(backCount, 0);
+  assert.equal(forwardCount, 0);
 });
 
 test('tree leaves sum duplicate rows instead of replacing positive counts with zero', () => {

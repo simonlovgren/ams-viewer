@@ -12,6 +12,9 @@ Final D30 styling refinement: collapse-all controls use 11px text, a 1px border 
 
 D29 shortcut checks (2026-10-16): all 11 renderer tests passed, including `/` routing from all four views and non-interception in inputs, textareas, selects and contenteditable elements. Browser keyboard fixture passed ad-find focus with unchanged history, typing/highlighting, literal slash in the find input, and Settings-to-list search fallback. Fixture ads use `window.api.get`, not `getAd`. Real Electron shortcut interaction was not manually tested.
 
+## Contextual shortcut help (D31)
+`node --test src/renderer/app.test.js && node --check src/renderer/app.js` passed all 14 renderer tests (2026-10-16). Browser fixture at 960x600 verified `?` routing and contextual content in Search, Ad, Data sources and Settings; editable-field typing; repeated activation; Escape and close-button dismissal; focus containment/restoration; and blocked background navigation. The dialog fit without scrolling in monospace and proportional modes. Real Electron interaction was not manually tested.
+
 ## Collapsible widgets and minimum-width filters (D27)
 `node --test src/renderer/app.test.js` now includes independent collapse persistence, invalid/unavailable storage, active-selection badges, filter retention and badge clearing (nine renderer tests total, passed 2026-10-16).
 

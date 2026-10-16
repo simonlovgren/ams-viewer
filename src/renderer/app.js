@@ -177,7 +177,29 @@
   history.replaceState({ view: 'list', i: 0 }, '');
 
   const editable = (t) => t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable);
+  const shortcutDialog = $('#shortcut-help');
+  let shortcutReturnFocus = null;
+  function openShortcutHelp() {
+    if (shortcutDialog.open) return;
+    shortcutReturnFocus = document.activeElement;
+    document.querySelectorAll('[data-shortcut-view]').forEach((section) => {
+      section.hidden = section.dataset.shortcutView !== curView;
+    });
+    shortcutDialog.showModal();
+    $('#shortcut-close').focus();
+  }
+  shortcutDialog.addEventListener('close', () => {
+    const target = shortcutReturnFocus;
+    shortcutReturnFocus = null;
+    if (target?.isConnected && typeof target.focus === 'function') target.focus({ preventScroll: true });
+  });
+  shortcutDialog.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { event.preventDefault(); shortcutDialog.close(); }
+  });
+  $('#shortcut-close').addEventListener('click', () => shortcutDialog.close());
   document.addEventListener('keydown', (e) => {
+    if (shortcutDialog.open) return;
+    if (e.key === '?' && !editable(e.target)) { e.preventDefault(); openShortcutHelp(); }
     if (e.key === 'Backspace' && !editable(e.target)) { e.preventDefault(); back(); }
     else if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); back(); }
     else if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); history.forward(); }
@@ -188,6 +210,7 @@
     }
   });
   document.addEventListener('mouseup', (e) => {
+    if (shortcutDialog.open) return;
     if (e.button === 3) { e.preventDefault(); back(); }
     else if (e.button === 4) { e.preventDefault(); history.forward(); }
   });

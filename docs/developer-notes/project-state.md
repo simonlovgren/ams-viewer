@@ -1,6 +1,6 @@
 # Project state and preferences
 
-Last updated: 2026-10-15.
+Last updated: 2026-10-16.
 
 ## User preferences
 - 2026-10-16: ads-over-time chart stays in the filter column beside publication-date filters, not in the planned statistics bar (D27). T2 is complete; T1 and T8 remain separate planned tasks.
@@ -15,7 +15,7 @@ Last updated: 2026-10-15.
 Import to SQLite with progress (multi-file, drag and drop); keyword search with multiple free-text entries; multi-select occupation and location trees with always-visible options and counts; date range, year, employment, hours filters; job-ad style ad view with breadcrumb and in-ad find/highlight/navigation (AD-011); history navigation (Backspace, mouse buttons); electron-builder packaging.
 
 ## Not verified / known gaps
-- Browser fixtures now cover Settings/typography (D26), filter widgets, minimum-width tree/search layout, date inputs, sidebar drag resizing and yearly chart layout (D27), and in-ad find/navigation (D28), with screenshots reviewed. Real Electron interactions, gray zero-count styling, search chips/AND-OR and non-year chart label layouts still need visual review.
+- Browser fixtures now cover Settings/typography (D26), filter widgets, minimum-width tree/search layout, date inputs, sidebar drag resizing and yearly chart layout (D27), in-ad find/navigation (D28), and contextual shortcut help (D31), with screenshots reviewed. Real Electron interactions, gray zero-count styling, search chips/AND-OR and non-year chart label layouts still need visual review.
 - Mouse back/forward buttons, drag and drop import and the packaged AppImage/Windows/macOS builds are untested.
 - NFR-005 (scaling to all years, 2006–2026): facets and OFFSET paging may need optimisation; see `docs/constraints.md`. Ideas: summary table for facets, keyset paging.
 - No app icon, code signing or auto-update (NFR-009 in progress).
