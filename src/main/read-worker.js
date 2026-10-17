@@ -19,10 +19,11 @@ const handlers = {
 };
 
 parentPort.on('message', ({ id, type, payload }) => {
+  const started = performance.now();
   try {
     const data = handlers[type](payload || {}, (p) => parentPort.postMessage({ id, progress: p }));
-    parentPort.postMessage({ id, data });
+    parentPort.postMessage({ id, data, workMs: performance.now() - started });
   } catch (e) {
-    parentPort.postMessage({ id, error: String(e.message || e) });
+    parentPort.postMessage({ id, error: String(e.message || e), workMs: performance.now() - started });
   }
 });

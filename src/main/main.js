@@ -108,12 +108,13 @@ function lane() {
   const next = () => {
     if (cur || !queue.length) return;
     cur = queue.shift();
+    cur.started = performance.now();
     worker.postMessage({ id: cur.id, type: cur.type, payload: cur.payload });
   };
   return {
     start() {
       worker = new Worker(path.join(__dirname, 'read-worker.js'), { workerData: { dbPath: dbPath() } });
-      worker.on('message', ({ id, data, error, progress: prog }) => {
+      worker.on('message', ({ id, data, error, progress: prog, workMs }) => {
         if (prog) {
           if (cur && cur.id === id && cur.onProgress) cur.onProgress(prog);
           return;
@@ -121,6 +122,10 @@ function lane() {
         if (!cur || cur.id !== id) return;
         const c = cur;
         cur = null;
+        const queueMs = Math.round(c.started - c.queued);
+        if (process.env.AMS_TRACE || queueMs + workMs > 500) {
+          console.log(`[query] ${c.type} queue ${queueMs} ms, work ${Math.round(workMs)} ms${error ? ', failed' : ''}`);
+        }
         if (error) c.reject(new Error(error)); else c.resolve(data);
         next();
       });
@@ -136,7 +141,7 @@ function lane() {
             if (queue[i].type === type) { queue[i].resolve({ stale: true }); queue.splice(i, 1); }
           }
         }
-        queue.push({ id: ++seq, type, payload, resolve, reject, onProgress });
+        queue.push({ id: ++seq, type, payload, resolve, reject, onProgress, queued: performance.now() });
         next();
       });
     },

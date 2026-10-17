@@ -11,10 +11,10 @@
 ## Technical constraints
 - `node:sqlite` is required (Node ≥ 22.5 / Electron ≥ 38) with FTS5 and `contentless_delete` (SQLite ≥ 3.43).
 - Database size is roughly 1.3× the source data; 20 years of data will need tens of GB of disk.
-- A single writer: only one import runs at a time. Removing a source is blocked during import, and runs on the main thread, so large removals may briefly freeze the UI.
-- Search and ad lookup run on the main thread; they are fast (ms) but a pathological query could delay IPC. Facet counting is offloaded.
+- A single writer: only one import runs at a time. Removing a source is blocked during import and runs in the build worker.
+- All database reads run in workers. Separate lanes avoid direct cross-request queueing, but concurrent queries can still compete for disk and page cache. An obsolete active query is not interrupted.
 - The ads-over-time chart adds one grouped query per update; with an active date filter the combined facets+chart update took ~0.8 s at 130k ads (warm cache).
-- Facet cost scales with matching rows. At 130k rows it takes ~280 ms; at multi-million rows expect seconds unless a summary table or caching is added.
+- Facet cost scales with matching rows. D37 batches equivalent predicates and caches up to 32 dimension/predicate groupings per connection; database writes invalidate the cache. Materialized facet keys may spill to temporary storage. On 11.25M ads, first-use broad region/field facets still took 6-7 s, while cached returns took 12-13 ms (2026-10-17).
 - List paging uses `LIMIT/OFFSET`; deep scrolling in very large result sets becomes slower (keyset paging would be the fix).
 - No auto-update, code signing or custom app icon. Packaging uses electron-builder (`npm run dist`); only the Linux unpacked build has been tried.
 - Linux tested only. Mouse back/forward buttons are handled via DOM `mouseup` buttons 3 and 4; behaviour may differ on other platforms.
@@ -33,4 +33,4 @@
 - Source is ~57 GB (21 files); the database is about 1.2x the source size (3.6 GB array became a 4.4 GB database), so expect roughly 70 GB under the `userData` folder and an import time of about an hour (about 20 MB/s).
 - Ads from 2006–2017 have no occupation, location or employment type; occupation and location filters only cover 2018 onwards.
 - Ads with several occupations (2023+) are filterable only by their first occupation (D20).
-- Facet options, the unfiltered total, date-only counts and the chart come from summary tables (D23, NFR-010). The first start on an existing large database builds them once in the background (minutes on 11M ads); until then the UI shows a progress message, and import and source removal are refused. Filtered facets and counts still group the matching rows, so a broad filter (for example a one-letter prefix) can be slow; a running obsolete query is not cancelled.
+- Facet options, the unfiltered total, date-only counts and the chart come from summary tables (D23, NFR-010). The first start on an existing large database builds them once in the background (minutes on 11M ads); until then the UI shows a progress message, and import and source removal are refused. Filtered facets and counts still group matching rows, so broad filters can be slow despite D37 reuse; a running obsolete query is not cancelled. Sparse chronological filters can exhaust the bounded date probe and fall back to the expensive original plan; keyword/relevance and deep paging are not optimized by that probe. `[query]` logs separate queue and worker time; `[perf]` remains end-to-end and can include waiting or superseded requests.

@@ -2,6 +2,13 @@
 
 Count logic has headless regression tests; visual layout still needs manual review.
 
+## Full-scale filtering and facet reuse (D37)
+2026-10-17: `node --test src/main/db.test.js src/renderer/app.test.js` passed 31 tests. Query tests cover tied/null date ordering, offsets, sparse/absent matches, date ranges, own-dimension exclusion, missing keys, same-connection and cross-connection cache invalidation, eviction and failed-query recovery. Cross-connection tests use a disposable WAL database and exercise incremental summary updates and source removal.
+
+Read-only probes used `new DatabaseSync(path, {readOnly: true})`, not `dbm.open()` (which applies schema/PRAGMAs). On the real 11,252,350-ad DB, Stockholm (`loc: [{k: 'region', id: 'Stockholms län'}]`) list improved from 66,550 ms to 5 ms; adding healthcare (`sel: [{k: 'field', id: 'NYW6_mP6_vwf'}]`) improved from 3,952 ms to 31 ms. Repeat lists took 1-2 ms. Leading IDs matched. Region facets measured 13,322 ms before batching and 6,939 ms after; the following combined query measured 37,266 ms before and 6,274 ms after (both after warming region-only dimensions). Repeat facets took 12-13 ms. Every combined-filter facet count matched independent SQL grouping the original ads with its own dimension excluded. No OS cache clearing; measurements were sequential, not cold-cache guarantees or a parallel rapid-interaction benchmark.
+
+`timeout 12s env AMS_TRACE=1 npm start -- --no-sandbox` opened the window in 598 ms, facets in 19 ms end-to-end; `[query]` showed queue/work separately. Only known Wayland/Vulkan warning and expected SIGTERM. Native combine/uncombine interaction was not exercised. Counts/timelines and uncancelled obsolete SQL remain outside this optimization. The inspected real DB had no `sqlite_stat*` tables; no real-data migration, ANALYZE or index changes were performed.
+
 ## Statistics sidebar width (D36)
 All 23 renderer tests and syntax checks passed (2026-10-16). Width tests cover left-divider direction, pointer identity/cancellation/cleanup, keyboard bounds, saved-width restoration after viewport clamping and invalid/unavailable storage. Browser fixture verified real 280-to-400 px dragging, keyboard resizing to 420 px, collapse/reload retention and Home/End. With a saved 720 px width, reloading at 960x600 clamps statistics to 467 px beside the collapsed menu, hides filters and leaves 420 px for results; widening to 1400x900 restores 720 px. Passed in both fonts. Width storage is `statisticsW`, independent of `filterW` and widget heights. Native Electron width interaction and quit/relaunch retention remain untested.
 

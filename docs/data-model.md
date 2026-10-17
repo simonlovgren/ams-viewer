@@ -68,7 +68,7 @@ Dates are `YYYY-MM-DD` strings compared lexicographically. `sort` is `newest | o
 ## Adding a new filter dimension
 
 1. Add a column (and index) in `db.js` `SCHEMA` and populate it in `toRow()`/`INSERT_SQL`.
-2. Handle it in `where()` and add a facet query in `facets()`.
+2. Handle it in `where()` and add a facet query in `facets()`. Include its keys in the materialized facet projection (D37), so shared-predicate queries can group it.
 3. Add UI in `index.html`/`app.js` and include it in `DEF`, `renderActive()`.
 4. Re-import the data (existing rows are skipped by id, so remove the source first).
 

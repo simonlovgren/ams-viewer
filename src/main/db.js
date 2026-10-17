@@ -188,9 +188,27 @@ function search(db, f, offset, limit, wantTotal) {
   } else {
     const { sql, params } = where(f);
     const dir = f.sort === 'oldest' ? 'ASC' : 'DESC';
-    rows = db.prepare(
-      `SELECT ${LIST_COLS} FROM ads a WHERE ${sql} ORDER BY a.pub_date ${dir}, a.rowid ${dir} LIMIT ? OFFSET ?`
-    ).all(...params, limit, offset);
+    if (where(f, ['date']).sql !== '1' && !ftsMatch(f) && offset + limit <= 8192) {
+      const dates = where({ from: f.from, to: f.to });
+      const boundary = db.prepare(
+        `SELECT a.pub_date, a.rowid FROM ads a INDEXED BY ix_pub WHERE ${dates.sql}
+         ORDER BY a.pub_date ${dir}, a.rowid ${dir} LIMIT 1 OFFSET 8191`
+      ).get(...dates.params);
+      if (!boundary || boundary.pub_date !== null) {
+        const bound = boundary
+          ? dir === 'ASC' ? '(a.pub_date IS NULL OR (a.pub_date, a.rowid) <= (?, ?))' : '(a.pub_date, a.rowid) >= (?, ?)'
+          : '1';
+        rows = db.prepare(
+          `SELECT ${LIST_COLS} FROM ads a INDEXED BY ix_pub WHERE ${sql} AND ${bound}
+           ORDER BY a.pub_date ${dir}, a.rowid ${dir} LIMIT ? OFFSET ?`
+        ).all(...params, ...(boundary ? [boundary.pub_date, boundary.rowid] : []), limit, offset);
+      }
+    }
+    if (!rows || rows.length < limit) {
+      rows = db.prepare(
+        `SELECT ${LIST_COLS} FROM ads a WHERE ${sql} ORDER BY a.pub_date ${dir}, a.rowid ${dir} LIMIT ? OFFSET ?`
+      ).all(...params, limit, offset);
+    }
   }
   let total = null;
   if (wantTotal) total = count(db, f);
@@ -213,7 +231,7 @@ function count(db, f) {
 }
 
 const FACETS = {
-  occ: { cols: 'field_id fi, MAX(field) f, group_id gi, MAX(grp) g, occ_id oi, MAX(occ) o', skip: ['occ'], extra: 'GROUP BY field_id, group_id, occ_id', key: ['fi', 'gi', 'oi'] },
+  occ: { cols: 'field_id fi, group_id gi, occ_id oi', skip: ['occ'], extra: 'GROUP BY field_id, group_id, occ_id', key: ['fi', 'gi', 'oi'] },
   loc: { cols: 'region r, muni m', skip: ['loc'], extra: 'GROUP BY region, muni', key: ['r', 'm'] },
   year: { cols: 'year y', skip: ['date'], extra: 'GROUP BY year ORDER BY year DESC', key: ['y'] },
   emp: { cols: 'emp_type v', skip: ['emp'], extra: 'GROUP BY emp_type ORDER BY n DESC', key: ['v'] },
@@ -324,19 +342,62 @@ function summaryFacets(db) {
 
 // Every option in the data is returned; n is its count under the other active filters (0 = no match).
 // The option lists and the unfiltered counts come from the summary tables; only filtered counts query the ads.
+const facetCaches = new WeakMap();
+
 function facets(db, f) {
   if (!isBuilt(db)) return { building: true };
   const universe = summaryFacets(db);
   if (where(f).sql === '1') return universe;
+  const version = JSON.stringify(db.prepare('PRAGMA data_version').get());
+  const changes = db.prepare('SELECT total_changes() n').get().n;
+  let cache = facetCaches.get(db);
+  if (!cache || cache.version !== version || cache.changes !== changes) {
+    cache = { version, changes, counts: new Map() };
+    facetCaches.set(db, cache);
+  }
   const out = {};
+  const pending = new Map();
+  const selected = new Map();
   for (const [name, spec] of Object.entries(FACETS)) {
     if (where(f, spec.skip).sql === '1') { out[name] = universe[name]; continue; }
     const { sql, params } = where(f, spec.skip);
-    const counts = new Map();
-    for (const row of db.prepare(`SELECT ${spec.cols}, COUNT(*) n FROM ads a WHERE ${sql} ${spec.extra}`).all(...params)) {
-      const key = keyOf(spec, row);
-      counts.set(key, (counts.get(key) || 0) + row.n);
+    const signature = JSON.stringify([name, sql, params]);
+    let counts = cache.counts.get(signature);
+    if (counts) {
+      cache.counts.delete(signature);
+    } else {
+      counts = new Map();
+      const predicate = JSON.stringify([sql, params]);
+      if (!pending.has(predicate)) pending.set(predicate, { sql, params, dimensions: [] });
+      pending.get(predicate).dimensions.push(name);
     }
+    cache.counts.set(signature, counts);
+    if (cache.counts.size > 32) cache.counts.delete(cache.counts.keys().next().value);
+    selected.set(name, counts);
+  }
+  try {
+    for (const { sql, params, dimensions } of pending.values()) {
+      const queries = dimensions.map(name => {
+        const spec = FACETS[name];
+        const keys = spec.key.map(key => `COALESCE(${key}, ${key === 'y' ? '0' : "''"})`);
+        return `SELECT '${name}' dimension, json_array(${keys.join(',')}) facet_key, n
+                FROM (SELECT ${spec.cols}, COUNT(*) n FROM ${dimensions.length > 1 ? 'matched' : 'ads'} a
+                      ${dimensions.length > 1 ? '' : `WHERE ${sql}`} ${spec.extra})`;
+      });
+      const prefix = dimensions.length > 1
+        ? `WITH matched AS MATERIALIZED (SELECT field_id, group_id, occ_id, region, muni, year, emp_type, hours FROM ads a WHERE ${sql}) `
+        : '';
+      for (const row of db.prepare(prefix + queries.join(' UNION ALL ')).all(...params)) {
+        const counts = selected.get(row.dimension);
+        counts.set(row.facet_key, (counts.get(row.facet_key) || 0) + row.n);
+      }
+    }
+  } catch (error) {
+    facetCaches.delete(db);
+    throw error;
+  }
+  for (const [name, counts] of selected) {
+    const spec = FACETS[name];
     out[name] = universe[name].map((r) => ({ ...r, n: counts.get(keyOf(spec, r)) || 0 }));
   }
   return out;

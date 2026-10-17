@@ -1,7 +1,125 @@
 'use strict';
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
+const { mkdtempSync, rmSync } = require('node:fs');
+const { tmpdir } = require('node:os');
+const path = require('node:path');
 const dbm = require('./db');
+
+test('chronological filtering preserves ordering, offsets and sparse fallback', () => {
+  const db = dbm.open(':memory:');
+  try {
+    const insert = db.prepare(dbm.INSERT_SQL);
+    db.exec('BEGIN');
+    for (let index = 0; index < 8300; index++) {
+      const row = dbm.toRow({
+        id: String(index), publication_date: index < 2 ? null : index < 4150 ? '2025-01-02' : '2026-01-02',
+        workplace_address: { region: index % 2 ? 'North' : 'South' },
+        employment_type: { label: index === 4200 ? 'Rare' : 'Common' },
+      }, 'test');
+      insert.run(...row.values);
+    }
+    db.exec('COMMIT');
+    for (const sort of ['newest', 'oldest']) {
+      const direction = sort === 'oldest' ? 'ASC' : 'DESC';
+      for (const offset of [0, 60, 4090, 4200, 8190]) {
+        const expected = db.prepare(`SELECT ad_id FROM ads WHERE region = ? ORDER BY pub_date ${direction}, rowid ${direction} LIMIT 60 OFFSET ?`).all('North', offset);
+        const actual = dbm.search(db, { sort, loc: [{ k: 'region', id: 'North' }] }, offset, 60).rows;
+        assert.deepEqual(actual.map(row => row.ad_id), expected.map(row => row.ad_id));
+      }
+      assert.equal(dbm.search(db, { sort, emp: 'Rare' }, 0, 60).rows[0].ad_id, '4200');
+      assert.equal(dbm.search(db, { sort, emp: 'Absent' }, 0, 60).rows.length, 0);
+      const dated = dbm.search(db, { sort, from: '2025-01-01', to: '2025-12-31', loc: [{ k: 'region', id: 'North' }] }, 0, 60).rows;
+      assert.equal(dated.length, 60);
+      assert.ok(dated.every(row => row.pub_date === '2025-01-02'));
+    }
+  } finally {
+    db.close();
+  }
+});
+
+test('facet cache reuses dimension counts and invalidates after local writes', () => {
+  const db = dbm.open(':memory:');
+  try {
+    const row = dbm.toRow({ id: '1', publication_date: '2026-01-02', employment_type: { label: 'E' } }, 'test');
+    db.prepare(dbm.INSERT_SQL).run(...row.values);
+    dbm.ensureSummary(db);
+    const prepare = db.prepare.bind(db);
+    let scans = 0;
+    db.prepare = sql => {
+      if (sql.includes('COUNT(*) n FROM')) scans++;
+      return prepare(sql);
+    };
+    const filter = { emp: 'E' };
+    const first = dbm.facets(db, filter);
+    assert.equal(scans, 1);
+    assert.deepEqual(dbm.facets(db, filter), first);
+    assert.equal(scans, 1);
+    dbm.facets(db, { ...filter, hours: 'H' });
+    assert.equal(scans, 3);
+    assert.deepEqual(dbm.facets(db, filter), first);
+    assert.equal(scans, 3);
+    db.prepare("UPDATE ads SET emp_type = 'X'").run();
+    assert.equal(dbm.facets(db, filter).year.reduce((sum, row) => sum + row.n, 0), 0);
+    assert.equal(scans, 4);
+  } finally {
+    db.close();
+  }
+});
+
+test('facet cache invalidates after another connection imports or removes a source', () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'ams-facet-cache-'));
+  const db = dbm.open(path.join(directory, 'ads.db'));
+  const writer = dbm.open(path.join(directory, 'ads.db'));
+  try {
+    dbm.ensureSummary(writer);
+    const filter = { emp: 'E' };
+    assert.deepEqual(dbm.facets(db, filter).year, []);
+    const row = dbm.toRow({ id: '1', publication_date: '2026-01-02', employment_type: { label: 'E' } }, 'new-source');
+    writer.exec('BEGIN');
+    const inserted = writer.prepare(dbm.INSERT_SQL).run(...row.values);
+    writer.prepare('INSERT INTO ads_fts(rowid,headline,employer,body) VALUES (?,?,?,?)').run(inserted.lastInsertRowid, ...row.fts);
+    const acc = dbm.newAcc();
+    dbm.accAdd(acc, row.values);
+    dbm.accFlush(writer, acc);
+    writer.exec('COMMIT');
+    assert.deepEqual(dbm.facets(db, filter).year, [{ y: 2026, n: 1 }]);
+    dbm.removeSource(writer, 'new-source');
+    assert.equal(dbm.facets(db, filter).year.reduce((sum, row) => sum + row.n, 0), 0);
+  } finally {
+    writer.close();
+    db.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('facet cache evicts old groupings and never caches failed queries', () => {
+  const db = dbm.open(':memory:');
+  try {
+    dbm.ensureSummary(db);
+    const prepare = db.prepare.bind(db);
+    let scans = 0;
+    let fail = false;
+    db.prepare = sql => {
+      if (sql.includes('COUNT(*) n FROM')) {
+        scans++;
+        if (fail) throw new Error('Test query failure');
+      }
+      return prepare(sql);
+    };
+    for (let index = 0; index < 9; index++) dbm.facets(db, { emp: String(index) });
+    assert.equal(scans, 9);
+    dbm.facets(db, { emp: '0' });
+    assert.equal(scans, 10);
+    fail = true;
+    assert.throws(() => dbm.facets(db, { emp: 'failed' }), /Test query failure/);
+    fail = false;
+    dbm.facets(db, { emp: 'failed' });
+    assert.equal(scans, 12);
+  } finally {
+    db.close();
+  }
+});
 
 test('filtered facets preserve counts across missing-value representations', () => {
   const db = dbm.open(':memory:');
