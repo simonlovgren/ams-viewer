@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('api', {
   timeline: (filters) => ipcRenderer.invoke('ads:timeline', filters),
   summaryState: () => ipcRenderer.invoke('summary:get'),
   onSummary: (cb) => ipcRenderer.on('summary:state', (_e, s) => cb(s)),
+  tasks: () => ipcRenderer.invoke('tasks:list'),
+  onTask: (cb) => ipcRenderer.on('task:event', (_e, t) => cb(t)),
   facets: (filters) => ipcRenderer.invoke('ads:facets', filters),
   get: (id) => ipcRenderer.invoke('ads:get', id),
   importDialog: () => ipcRenderer.invoke('import:dialog'),

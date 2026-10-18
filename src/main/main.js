@@ -16,11 +16,25 @@ let closeApproved = false;
 
 const DATA_EXT = /\.(jsonl|ndjson|json)$/i;
 
+// Background work shown as renderer notices (UI-022); running tasks are replayed to a freshly loaded window.
+const tasks = new Map();
+function sendTask(key, state, text = '', pct = null) {
+  const task = { key, state, text, pct: Number.isFinite(pct) ? pct : null };
+  if (state === 'running') tasks.set(key, task); else tasks.delete(key);
+  if (win && !win.isDestroyed()) win.webContents.send('task:event', task);
+}
+const errorText = (error) => String(error?.message || error);
+
 function refreshActiveDatasetStats() {
   const datasetId = datasets.active().id;
+  sendTask('dataset-stats', 'running', 'Refreshing dataset statistics…');
   lists.request('info').then((info) => {
     if (datasets.active().id === datasetId) datasets.updateStats(datasetId, info);
-  }).catch((error) => console.error('Failed to refresh dataset statistics:', error));
+    sendTask('dataset-stats', 'done');
+  }).catch((error) => {
+    console.error('Failed to refresh dataset statistics:', error);
+    sendTask('dataset-stats', 'error', `Could not refresh dataset statistics: ${errorText(error)}`);
+  });
 }
 
 function createWindow(show = true) {
@@ -73,25 +87,35 @@ function startImport(files) {
     resourceLimits: { maxOldGenerationSizeMb: 3072 },
   });
   let finished = false;
+  sendTask('import', 'running', `Importing ${valid.length} file${valid.length === 1 ? '' : 's'}…`, 0);
+  const failed = (message) => {
+    sendTask('import', 'error', `Import failed: ${message}`);
+    send({ type: 'error', message });
+  };
   w.on('message', (m) => {
+    if (m.type === 'progress') {
+      sendTask('import', 'running', `Importing ${m.file} (file ${m.fileIndex + 1} of ${m.files})`, ((m.fileIndex + (m.pct || 0)) / m.files) * 100);
+    }
     if (m.type === 'done' || m.type === 'error') { importing = false; finished = true; }
     if (m.type === 'done' || m.type === 'error') {
       if (m.type === 'done') ensureSummary();
       refreshActiveDatasetStats();
     }
-    send(m);
+    if (m.type === 'done') sendTask('import', 'done');
+    if (m.type === 'error') failed(m.message);
+    else send(m);
   });
   w.on('error', (e) => {
     importing = false;
     finished = true;
     refreshActiveDatasetStats();
-    send({ type: 'error', message: String(e.message || e) });
+    failed(errorText(e));
   });
   w.on('exit', () => {
     if (finished) return;
     importing = false;
     refreshActiveDatasetStats();
-    send({ type: 'error', message: 'Import worker stopped unexpectedly' });
+    failed('Import worker stopped unexpectedly');
   });
   return { ok: true, count: valid.length };
 }
@@ -272,9 +296,18 @@ const sendSummary = (s) => {
 function ensureSummary() {
   if (buildBusy) return Promise.resolve();
   buildBusy = true;
-  return build.request('ensure', {}, false, (p) => sendSummary({ state: p.ready ? 'ready' : 'building', pct: p.pct, text: p.text }))
-    .then(() => sendSummary({ state: 'ready' }))
-    .catch((e) => sendSummary({ state: 'error', text: String(e.message || e) }))
+  return build.request('ensure', {}, false, (p) => {
+    sendSummary({ state: p.ready ? 'ready' : 'building', pct: p.pct, text: p.text });
+    sendTask('summary', 'running', p.text, p.pct);
+  })
+    .then(() => {
+      sendSummary({ state: 'ready' });
+      sendTask('summary', 'done');
+    })
+    .catch((e) => {
+      sendSummary({ state: 'error', text: errorText(e) });
+      sendTask('summary', 'error', `Statistics could not be built: ${errorText(e)}`);
+    })
     .finally(() => { buildBusy = false; });
 }
 
@@ -344,18 +377,20 @@ async function datasetSummaries() {
   datasetStatsBusy = true;
   const unavailable = new Set();
   try {
-    for (const dataset of datasets.list()) {
-      if (dataset.stats) continue;
+    const pending = datasets.list().filter((dataset) => !dataset.stats);
+    for (const [index, dataset] of pending.entries()) {
       if (!datasets.isInitialized(dataset.id)) {
         datasets.updateStats(dataset.id, { total: 0, sources: [] });
         continue;
       }
+      sendTask('dataset-summaries', 'running', `Reading statistics for dataset ${dataset.name} (${index + 1} of ${pending.length})`, (index / pending.length) * 100);
       try {
         const stats = await readDatasetStats(dataset.id);
         datasets.updateStats(dataset.id, stats);
       } catch (error) {
         unavailable.add(dataset.id);
         console.error(`Failed to read statistics for dataset ${dataset.name}:`, error);
+        sendTask(`dataset-summaries:${dataset.id}`, 'error', `Could not read statistics for dataset ${dataset.name}: ${errorText(error)}`);
       }
     }
     return {
@@ -364,6 +399,7 @@ async function datasetSummaries() {
     };
   } finally {
     datasetStatsBusy = false;
+    if (tasks.has('dataset-summaries')) sendTask('dataset-summaries', 'done');
   }
 }
 
@@ -400,15 +436,20 @@ function removeDatabase(databasePath) {
   for (const suffix of ['', '-wal', '-shm']) fs.rmSync(databasePath + suffix, { force: true });
 }
 
-async function datasetOperation(fn) {
+// Failures are returned to the renderer, which reports them in a modal; the notice only shows progress.
+async function datasetOperation(label, fn) {
   if (datasetChanging) return { ok: false, error: 'Dataset transition already running' };
   if (datasetStatsBusy) return { ok: false, error: 'Dataset statistics are being refreshed' };
   if (importing) return { ok: false, error: 'Import running' };
   if (buildBusy) return { ok: false, error: 'Statistics are being built; try again when it has finished.' };
   datasetChanging = true;
+  sendTask('dataset-operation', 'running', label);
   try { return { ok: true, ...(await fn()) }; }
-  catch (error) { return { ok: false, error: String(error.message || error) }; }
-  finally { datasetChanging = false; }
+  catch (error) { return { ok: false, error: errorText(error) }; }
+  finally {
+    datasetChanging = false;
+    sendTask('dataset-operation', 'done');
+  }
 }
 
 async function createDataset(name, description) {
@@ -563,10 +604,15 @@ function registerHandlers() {
   ipcMain.handle('ads:get', (_e, id) => { assertStableDataset(); return lists.request('get', { id }); });
   ipcMain.handle('datasets:list', () => { assertStableDataset(); return { datasets: datasets.list(), active: datasets.active() }; });
   ipcMain.handle('datasets:summary', () => datasetSummaries());
-  ipcMain.handle('datasets:create', (_e, name, description) => datasetOperation(() => createDataset(name, description)));
-  ipcMain.handle('datasets:update', (_e, id, name, description) => datasetOperation(() => ({ dataset: datasets.update(id, name, description) })));
-  ipcMain.handle('datasets:activate', (_e, id) => datasetOperation(async () => ({ dataset: await switchDataset(id) })));
-  ipcMain.handle('datasets:delete', (_e, id) => datasetOperation(() => deleteDataset(id)));
+  ipcMain.handle('tasks:list', () => {
+    const list = [...tasks.values()];
+    if (summaryState.state === 'error') list.push({ key: 'summary', state: 'error', text: `Statistics could not be built: ${summaryState.text}`, pct: null });
+    return list;
+  });
+  ipcMain.handle('datasets:create', (_e, name, description) => datasetOperation('Creating dataset…', () => createDataset(name, description)));
+  ipcMain.handle('datasets:update', (_e, id, name, description) => datasetOperation('Saving dataset details…', () => ({ dataset: datasets.update(id, name, description) })));
+  ipcMain.handle('datasets:activate', (_e, id) => datasetOperation('Switching dataset…', async () => ({ dataset: await switchDataset(id) })));
+  ipcMain.handle('datasets:delete', (_e, id) => datasetOperation('Deleting dataset…', () => deleteDataset(id)));
   ipcMain.handle('import:dialog', async () => {
     if (datasetChanging) return { ok: false, error: 'Dataset transition in progress' };
     const r = await dialog.showOpenDialog(win, {
@@ -580,7 +626,7 @@ function registerHandlers() {
     if (datasetChanging) return { ok: false, error: 'Dataset transition in progress' };
     return Array.isArray(files) ? startImport(files) : { ok: false };
   });
-  ipcMain.handle('source:remove', (_e, name) => datasetOperation(async () => {
+  ipcMain.handle('source:remove', (_e, name) => datasetOperation(`Removing data source ${String(name)}…`, async () => {
       await build.request('remove', { name: String(name) });
       const info = await lists.request('info');
       datasets.updateStats(datasets.active().id, info);

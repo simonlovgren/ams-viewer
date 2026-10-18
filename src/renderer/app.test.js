@@ -594,10 +594,12 @@ test('facet refresh failures report the underlying error', async () => {
   const source = readFileSync(require.resolve('./app.js'), 'utf8');
   const failure = new Error('Facet worker failed');
   const errors = [];
+  const notices = [];
   const employerWidget = { innerHTML: '', querySelector: () => null };
   const evaluate = rendererContext({ querySelectorAll: () => [] }, {
     $: selector => selector === '#widget-employers' ? employerWidget : null,
     console: { error: (...args) => errors.push(args) },
+    reportStatsError: (what, error) => notices.push([what, error]),
     api: {
       facets: async () => { throw failure; },
       timeline: async () => ({ stale: true }),
@@ -609,6 +611,94 @@ test('facet refresh failures report the underlying error', async () => {
   await Promise.resolve();
   await Promise.resolve();
   assert.deepEqual(errors, [['Failed to update filter counts:', failure]]);
+  assert.deepEqual(notices, [['filter counts', failure]]);
+});
+
+function noticeContext() {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const container = { children: [], append(el) { this.children.push(el); } };
+  const timers = new Map();
+  let timerId = 0;
+  const createElement = () => {
+    const parts = {};
+    const el = {
+      attributes: {},
+      setAttribute(name, value) { this.attributes[name] = value; },
+      remove() { container.children.splice(container.children.indexOf(el), 1); },
+      set innerHTML(html) {
+        this.html = html;
+        parts['.notice-text'] = { textContent: '' };
+        if (html.includes('notice-bar')) {
+          const classes = new Set(['bar', 'notice-bar']);
+          parts['.notice-bar'] = { firstChild: { style: { width: '' } }, classes, classList: { toggle: (name, on) => (on ? classes.add(name) : classes.delete(name)) } };
+        }
+        if (html.includes('notice-close')) parts['.notice-close'] = { addEventListener(name, listener) { this.click = listener; } };
+      },
+      get innerHTML() { return this.html; },
+      querySelector: selector => parts[selector] || null,
+    };
+    return el;
+  };
+  const context = vm.createContext({
+    $: selector => (selector === '#notices' ? container : null),
+    icon: name => `<svg data-icon="${name}"></svg>`,
+    document: { createElement },
+    setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
+    clearTimeout: id => timers.delete(id),
+  });
+  vm.runInContext(source.slice(source.indexOf('  /* ---------- notifications'), source.indexOf('  const esc =')), context);
+  const flush = () => { const pending = [...timers.values()]; timers.clear(); pending.forEach(callback => callback()); };
+  return { evaluate: expression => vm.runInContext(expression, context), container, flush, timers };
+}
+
+test('background tasks show delayed progress notices that update in place and vanish when done', () => {
+  const { evaluate, container, flush, timers } = noticeContext();
+  evaluate("applyTask({ key: 'quick', state: 'running', text: 'Quick' }); applyTask({ key: 'quick', state: 'done' })");
+  assert.equal(timers.size, 0);
+  assert.equal(container.children.length, 0);
+  evaluate("applyTask({ key: 'summary', state: 'running', text: '<b>Building</b>', pct: 10 }); applyTask({ key: 'import', state: 'running', text: 'Importing', pct: null })");
+  assert.equal(container.children.length, 0);
+  flush();
+  assert.equal(container.children.length, 2);
+  const [summary, imported] = container.children;
+  assert.equal(summary.attributes.role, 'status');
+  assert.equal(summary.querySelector('.notice-text').textContent, '<b>Building</b>');
+  assert.equal(summary.querySelector('.notice-bar').firstChild.style.width, '10%');
+  assert.equal(summary.querySelector('.notice-close'), null);
+  assert.ok(imported.querySelector('.notice-bar').classes.has('indeterminate'));
+  evaluate("applyTask({ key: 'summary', state: 'running', text: 'Indexing', pct: 140 })");
+  assert.equal(container.children[0], summary);
+  assert.equal(summary.querySelector('.notice-text').textContent, 'Indexing');
+  assert.equal(summary.querySelector('.notice-bar').firstChild.style.width, '100%');
+  evaluate("applyTask({ key: 'summary', state: 'done' })");
+  assert.deepEqual(container.children, [imported]);
+});
+
+test('error notices stack immediately, replace same-key errors and close only by dismissal', () => {
+  const { evaluate, container, flush } = noticeContext();
+  evaluate("applyTask({ key: 'import', state: 'running', text: 'Importing' })");
+  flush();
+  evaluate("applyTask({ key: 'import', state: 'error', text: 'Import failed: bad file' })");
+  evaluate("showError('stats', 'Could not update filter counts: one'); showError('stats', 'Could not update filter counts: two')");
+  assert.equal(container.children.length, 2);
+  const [importError, statsError] = container.children;
+  assert.equal(importError.attributes.role, 'alert');
+  assert.equal(importError.querySelector('.notice-text').textContent, 'Import failed: bad file');
+  assert.equal(importError.querySelector('.notice-bar'), null);
+  assert.match(importError.innerHTML, /aria-label="Dismiss notification"/);
+  assert.equal(statsError.querySelector('.notice-text').textContent, 'Could not update filter counts: two');
+  evaluate("applyTask({ key: 'import', state: 'done' })");
+  assert.equal(container.children.length, 2);
+  importError.querySelector('.notice-close').click();
+  assert.deepEqual(container.children, [statsError]);
+});
+
+test('statistics errors strip IPC prefixes and ignore dataset transitions', () => {
+  const { evaluate, container } = noticeContext();
+  evaluate("reportStatsError('the result count', new Error(\"Error invoking remote method 'ads:count': Error: Dataset transition in progress\"))");
+  assert.equal(container.children.length, 0);
+  evaluate("reportStatsError('the result count', new Error(\"Error invoking remote method 'ads:count': Error: disk I/O error\"))");
+  assert.equal(container.children[0].querySelector('.notice-text').textContent, 'Could not update the result count: disk I/O error');
 });
 
 test('pending counts hide stale values and zero styling, including rebuilt trees', () => {

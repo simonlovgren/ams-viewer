@@ -27,6 +27,7 @@
 - Global `svg { fill: none; stroke: currentColor; stroke-width: 2 }` is meant for icons. Any other inline SVG (the chart) inherits it, and its text then looks bold/glowing; reset with `stroke: none` on that SVG (`#chart svg`).
 - The list view stays mounted (hidden) while an ad is open; scrollTop is saved/restored manually in `show()`.
 - Stale async results are dropped with counters (`seq`, `fseq`, `adSeq`); keep using them for new async UI.
+- D47 notices: new background work in main should call `sendTask(key, 'running'|'done'|'error', text, pct)`; never leave a `running` key without `done`/`error` (it stays visible and is replayed by `tasks:list`). Body is a CSS grid (`#notices` row above sidebar/main); views must not use `100vh` heights. Hidden integrated-browser tabs throttle `setTimeout`, so the 300 ms notice delay can take ~1 s there.
 - Facet refresh failures must not be silently swallowed: `loadStats()` logs `Failed to update filter counts:` with the underlying error. A reported startup stall on `...` was not reproduced in a fresh native Electron instance (2026-10-16); the user confirmed that instance showed counts. The original instance's cause remains unknown.
 - Filter state lives in `F`, kept in `sessionStorage.filters` (only while the app is open, SRC-013). Nothing needs migrating when its shape changes; the old `localStorage.filters` key is deleted on start.
 - Mouse back/forward = DOM `mouseup` buttons 3/4 (Linux). Backspace navigates back except in inputs; the search input has its own Backspace handler (removes the last free-text entry).

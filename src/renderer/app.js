@@ -35,10 +35,74 @@
     hash: '<path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/>',
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
     settings: '<path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/>',
+    alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>',
+    loader: '<path d="M21 12a9 9 0 1 1-6.2-8.6"/>',
   };
   const icon = (n) => `<svg viewBox="0 0 24 24">${ICONS[n] || ''}</svg>`;
   const hydrateIcons = (root = document) =>
     root.querySelectorAll('[data-i]').forEach((el) => { if (!el.firstChild) el.innerHTML = icon(el.dataset.i); });
+
+  /* ---------- notifications (UI-022) ---------- */
+  // Running tasks appear only after a short delay so quick ones do not flash.
+  const NOTICE_DELAY = 300;
+  const notices = new Map();
+  function paintNotice(n) {
+    n.el.querySelector('.notice-text').textContent = n.text;
+    const bar = n.el.querySelector('.notice-bar');
+    if (!bar) return;
+    const known = Number.isFinite(n.pct);
+    bar.classList.toggle('indeterminate', !known);
+    bar.firstChild.style.width = known ? `${Math.max(0, Math.min(100, n.pct))}%` : '';
+  }
+  function mountNotice(key, n) {
+    const error = n.kind === 'error';
+    n.el = document.createElement('div');
+    n.el.className = `notice notice-${n.kind}`;
+    n.el.setAttribute('role', error ? 'alert' : 'status');
+    n.el.innerHTML = `<span class="notice-icon">${icon(error ? 'alert' : 'loader')}</span><div class="notice-body"><div class="notice-text"></div>${error ? '' : '<div class="bar notice-bar"><i></i></div>'}</div>`
+      + (error ? `<button class="icon-btn notice-close" type="button" aria-label="Dismiss notification" title="Dismiss">${icon('x')}</button>` : '');
+    if (error) n.el.querySelector('.notice-close').addEventListener('click', () => removeNotice(key));
+    paintNotice(n);
+    $('#notices').append(n.el);
+  }
+  function removeNotice(key) {
+    const n = notices.get(key);
+    if (!n) return;
+    clearTimeout(n.timer);
+    n.el?.remove();
+    notices.delete(key);
+  }
+  function showTask(key, text, pct = null) {
+    const current = notices.get(key);
+    if (current?.kind === 'task') {
+      Object.assign(current, { text, pct });
+      if (current.el) paintNotice(current);
+      return;
+    }
+    removeNotice(key);
+    const task = { kind: 'task', text, pct };
+    task.timer = setTimeout(() => mountNotice(key, task), NOTICE_DELAY);
+    notices.set(key, task);
+  }
+  const endTask = (key) => { if (notices.get(key)?.kind === 'task') removeNotice(key); };
+  function showError(key, text) {
+    removeNotice(key);
+    const n = { kind: 'error', text };
+    notices.set(key, n);
+    mountNotice(key, n);
+  }
+  function applyTask(t) {
+    if (!t || typeof t.key !== 'string') return;
+    if (t.state === 'running') { showTask(t.key, String(t.text || 'Working…'), t.pct); return; }
+    endTask(t.key);
+    if (t.state === 'error') showError(t.key + ':error', String(t.text || 'Background task failed'));
+  }
+  // Requests rejected while a dataset switch is in progress are superseded, not failures worth reporting.
+  function reportStatsError(what, error) {
+    const message = String(error?.message || error).replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '');
+    if (message.includes('Dataset transition in progress')) return;
+    showError('stats', `Could not update ${what}: ${message}`);
+  }
 
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   function matchRanges(text, query) {
@@ -425,7 +489,7 @@
       if (s !== seq || !r || r.stale) return;
       total = r.total;
       updateCount();
-    }).catch(() => {});
+    }).catch((error) => { if (s === seq) reportStatsError('the result count', error); });
     loadStats();
     return firstPage;
   }
@@ -447,7 +511,10 @@
       summaryInfo = { state: 'ready' };
       renderFacets(data);
     }).catch((error) => {
-      if (fs_ === fseq) $('#widget-employers').innerHTML = '<div class="empty-mini">Employer statistics unavailable</div>';
+      if (fs_ === fseq) {
+        $('#widget-employers').innerHTML = '<div class="empty-mini">Employer statistics unavailable</div>';
+        reportStatsError('filter counts', error);
+      }
       console.error('Failed to update filter counts:', error);
     });
     const ts = ++tseq;
@@ -455,7 +522,7 @@
       if (ts !== tseq || !t || t.stale || t.building) return;
       timelineData = t;
       renderChart();
-    }).catch(() => {});
+    }).catch((error) => { if (ts === tseq) reportStatsError('the ads-over-time chart', error); });
   }
   api.onSummary((s) => {
     const wasReady = summaryInfo.state === 'ready';
@@ -1542,6 +1609,8 @@
 
   /* ---------- init ---------- */
   hydrateIcons();
+  api.onTask(applyTask);
+  api.tasks().then((list) => list.forEach(applyTask)).catch((error) => console.error('Could not load background tasks:', error));
   initWidgets();
   syncInputs();
   renderActive();
