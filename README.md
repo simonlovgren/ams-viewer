@@ -2,22 +2,30 @@
 
 Desktop app for browsing historical Swedish job ads (Arbetsförmedlingen / JobTech open data). Import one or more JSONL files, then search and filter by keyword, occupation, location, date and more, and read ads in a job-ad style view.
 
+![Reference search-listing screenshot](docs/search-listing.png)
+
+*Placeholder screenshot; replace with a fresh application capture.*
+
 ## Using the app
 
 1. Start the app (see below).
-2. Open **Datasets** in the side menu and click **Choose files…** (or drag and drop). Select one or more `.jsonl`, `.ndjson` or `.json` files. A quarter-sized file (~130k ads, ~770 MB) imports in roughly half a minute.
-3. Go to **Search ads**. Filter with the left panel, search by keyword at the top, click an ad to open it.
-4. Use **Swap dataset** on the Datasets page to switch collections, create one, or delete a dataset. Switching clears current filters; source files are never deleted.
+2. Open **Datasets** and click **Choose files…** (or drag and drop) to import one or more `.jsonl`, `.ndjson` or `.json` files. A quarter-sized file (~130k ads, ~770 MB) imports in roughly half a minute.
+3. Go to **Search ads**. Choose filters in the left panel; search headlines, employers and descriptions with keywords or quoted phrases. Choose AND or OR for multiple keyword entries. Click an ad to open it.
+4. Use **Swap dataset** to create or switch collections. Edit a dataset's name and description in place; delete datasets from the chooser. Switching clears current filters. Dataset deletion removes its local database, not original source files.
+5. Use **Reprocess dataset** on the Datasets page when stored search indexes or summaries need rebuilding. It works without source files, asks for confirmation, and may take a long time.
 
 | Action | How |
 |---|---|
-| Back / forward | Backspace, mouse back/forward buttons, Alt+← / Alt+→, or the back button in the ad view |
-| Focus keyword search | `/` |
-| Jump to a filter from an ad | Click a tag or breadcrumb item |
-| Filter by employer | Click a Top employers entry, or focus it and press Enter/Space; remove its "Employer: …" chip to clear it |
-| Remove imported data | Datasets → Remove |
+| Show keybinds | Press `?` |
+| Jump from an ad to a filter | Click a tag or breadcrumb item |
+| Filter by employer | Click a Top employers entry; remove its "Employer: …" chip to clear it |
+| Clear current filters | **Clear all** in the filter panel |
+| Remove an imported source | Datasets → source row → **Remove**; original file stays untouched |
+| Rebuild indexes and summaries | Datasets → **Reprocess dataset**; confirm the long-running operation |
 
-Filters are remembered while browsing a dataset and reset when switching datasets. Data is stored locally in `~/.config/AMS Viewer/datasets/` with the active dataset recorded in `datasets.json` (macOS: `~/Library/Application Support/AMS Viewer/`, Windows: `%APPDATA%\AMS Viewer\`); the source files are not needed after import.
+Filters are remembered while browsing a dataset and reset when switching datasets. Data is stored locally in Electron's `userData` folder: `~/.config/AMS Viewer/` on Linux, `~/Library/Application Support/AMS Viewer/` on macOS, or `%APPDATA%\AMS Viewer\` on Windows. The catalog is `datasets.json`; each dataset has its own database under `datasets/`. Source files are not needed after import. Back up this folder before upgrading from versions that used `ads.db`.
+
+Suspect publication dates do not cause automatic exclusion. Manual ad exclusion is not available yet.
 
 ## Running as a developer
 
@@ -51,8 +59,8 @@ AGENTS.md       Rules for working in the project (also used by the Copilot agent
 ```bash
 node --no-warnings -e "
 const d=require('./src/main/db');
-const db=d.open(process.env.HOME+'/.config/AMS Viewer/ads.db');
-console.log(d.info(db), d.search(db,{q:'sjuksköterska'},0,5,true));"
+const db=d.open(process.env.HOME+'/.config/AMS Viewer/datasets/default.db');
+console.log(d.info(db), d.search(db,{terms:['sjuksköterska']},0,5,true));"
 ```
 
 ## Building for distribution
