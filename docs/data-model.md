@@ -49,9 +49,10 @@ ads_fts USING fts5(headline, employer, body,
   tokenize='unicode61 remove_diacritics 2')   -- rowid = ads.rowid
 
 sources(name TEXT PRIMARY KEY, path TEXT, ads INTEGER, imported_at TEXT)
-meta(key PRIMARY KEY, value)                    -- summary_version = '1' once summary tables are built
+meta(key PRIMARY KEY, value)                    -- summary_version = '2' once summary tables are built
 sum_occ(field_id, field, group_id, grp, occ_id, occ, n)  -- PK (field_id, group_id, occ_id)
 sum_loc(region, muni, n)   sum_year(year, n)   sum_emp(v, n)   sum_hours(v, n)   sum_day(day, n)
+sum_employer(v, n)         -- exact employer text and total count; included in summary version 2
 ```
 
 ### Indexes

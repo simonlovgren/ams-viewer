@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS sum_year (year INTEGER NOT NULL PRIMARY KEY, n INTEGE
 CREATE TABLE IF NOT EXISTS sum_emp (v TEXT NOT NULL PRIMARY KEY, n INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS sum_hours (v TEXT NOT NULL PRIMARY KEY, n INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS sum_day (day TEXT NOT NULL PRIMARY KEY, n INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS sum_employer (v TEXT NOT NULL PRIMARY KEY, n INTEGER NOT NULL);
 `;
 
 function open(path) {
@@ -246,14 +247,14 @@ const keyOf = (spec, r) => JSON.stringify(spec.key.map((k) => r[k] ?? (k === 'y'
 
 const isBuilt = (db) => {
   const r = db.prepare("SELECT value FROM meta WHERE key = 'summary_version'").get();
-  return !!r && r.value === '1';
+  return !!r && r.value === '2';
 };
 
 const nz = (v) => (v === null || v === undefined ? '' : v);
 const nul = (s) => (s === '' ? null : s);
 
 function newAcc() {
-  return { occ: new Map(), loc: new Map(), year: new Map(), emp: new Map(), hours: new Map(), day: new Map() };
+  return { occ: new Map(), loc: new Map(), year: new Map(), emp: new Map(), hours: new Map(), day: new Map(), employers: new Map() };
 }
 function bump(m, key, row) {
   const e = m.get(key);
@@ -267,6 +268,7 @@ function accAdd(acc, v) {
   bump(acc.emp, nz(v[14]), [nz(v[14])]);
   bump(acc.hours, nz(v[15]), [nz(v[15])]);
   if (v[2]) bump(acc.day, v[2], [v[2]]);
+  if (v[5]) bump(acc.employers, v[5], [v[5]]);
 }
 
 const UPSERT = {
@@ -276,8 +278,9 @@ const UPSERT = {
   emp: 'INSERT INTO sum_emp(v,n) VALUES (?,?) ON CONFLICT(v) DO UPDATE SET n = n + excluded.n',
   hours: 'INSERT INTO sum_hours(v,n) VALUES (?,?) ON CONFLICT(v) DO UPDATE SET n = n + excluded.n',
   day: 'INSERT INTO sum_day(day,n) VALUES (?,?) ON CONFLICT(day) DO UPDATE SET n = n + excluded.n',
+  employers: 'INSERT INTO sum_employer(v,n) VALUES (?,?) ON CONFLICT(v) DO UPDATE SET n = n + excluded.n',
 };
-const SUM_TABLE = { occ: 'sum_occ', loc: 'sum_loc', year: 'sum_year', emp: 'sum_emp', hours: 'sum_hours', day: 'sum_day' };
+const SUM_TABLE = { occ: 'sum_occ', loc: 'sum_loc', year: 'sum_year', emp: 'sum_emp', hours: 'sum_hours', day: 'sum_day', employers: 'sum_employer' };
 const stmtCache = new WeakMap();
 
 // Adds (sign 1) or subtracts (sign -1) the accumulated counts; call it inside the same transaction as the ads change.
@@ -295,7 +298,7 @@ function accFlush(db, acc, sign = 1) {
   }
 }
 
-const SCAN_SQL = 'SELECT NULL, NULL, pub_date, year, NULL, NULL, region, muni, field_id, field, group_id, grp, occ_id, occ, emp_type, hours, rowid FROM ads';
+const SCAN_SQL = 'SELECT NULL, NULL, pub_date, year, NULL, employer, region, muni, field_id, field, group_id, grp, occ_id, occ, emp_type, hours, rowid FROM ads';
 function scanRows(db, sql, ...params) {
   const st = db.prepare(sql);
   st.setReturnArrays(true);
@@ -318,7 +321,7 @@ function ensureSummary(db, onProgress = () => {}) {
   try {
     for (const t of Object.values(SUM_TABLE)) db.exec(`DELETE FROM ${t}`);
     accFlush(db, acc, 1);
-    db.prepare("INSERT OR REPLACE INTO meta(key, value) VALUES ('summary_version', '1')").run();
+    db.prepare("INSERT OR REPLACE INTO meta(key, value) VALUES ('summary_version', '2')").run();
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
@@ -337,6 +340,8 @@ function summaryFacets(db) {
     year: db.prepare('SELECT year y, n FROM sum_year ORDER BY year DESC').all().map((r) => ({ y: r.y, n: r.n })),
     emp: db.prepare('SELECT v, n FROM sum_emp ORDER BY n DESC').all().map((r) => ({ v: nul(r.v), n: r.n })),
     hours: db.prepare('SELECT v, n FROM sum_hours ORDER BY n DESC').all().map((r) => ({ v: nul(r.v), n: r.n })),
+    employers: db.prepare('SELECT v, n FROM sum_employer ORDER BY n DESC, v COLLATE NOCASE LIMIT 30').all()
+      .map((r) => ({ v: r.v, n: r.n })),
   };
 }
 
@@ -400,6 +405,27 @@ function facets(db, f) {
     const spec = FACETS[name];
     out[name] = universe[name].map((r) => ({ ...r, n: counts.get(keyOf(spec, r)) || 0 }));
   }
+  const employerFilter = where(f);
+  const employerSignature = JSON.stringify(['employers', employerFilter.sql, employerFilter.params]);
+  let employers = cache.counts.get(employerSignature);
+  if (employers) {
+    cache.counts.delete(employerSignature);
+    cache.counts.set(employerSignature, employers);
+  }
+  try {
+    if (!employers) {
+      employers = db.prepare(`SELECT a.employer v, COUNT(*) n FROM ads a
+        WHERE ${employerFilter.sql} AND a.employer IS NOT NULL AND a.employer <> ''
+        GROUP BY a.employer ORDER BY n DESC, a.employer COLLATE NOCASE LIMIT 30`).all(...employerFilter.params)
+        .map((r) => ({ v: r.v, n: r.n }));
+      cache.counts.set(employerSignature, employers);
+      if (cache.counts.size > 32) cache.counts.delete(cache.counts.keys().next().value);
+    }
+  } catch (error) {
+    facetCaches.delete(db);
+    throw error;
+  }
+  out.employers = employers;
   return out;
 }
 

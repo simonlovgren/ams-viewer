@@ -50,6 +50,9 @@ main { flex: 1; min-width: 0; display: flex; }
 #filters { width: var(--filter-w, 310px); min-width: 310px; }
 #statistics { width: var(--statistics-w, 280px); min-width: 280px; }
 .statistics-body { height: 200px; overflow: auto; }
+.employer-list { display: flex; flex-direction: column; gap: 6px; }
+.employer-chip { display: flex; width: 100%; min-width: 0; justify-content: space-between; gap: 8px; }
+.employer-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .statistics-collapsed #statistics, .statistics-collapsed #statistics-resizer { display: none; }
 #filters-resizer, #statistics-resizer { width: 5px; flex: none; cursor: col-resize; background: var(--line); transition: background .12s; }
 #filters-resizer:hover, #filters-resizer.drag, #statistics-resizer:hover, #statistics-resizer.drag, #statistics-resizer:focus-visible { background: var(--teal); }

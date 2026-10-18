@@ -21,6 +21,15 @@ test('compact counts retain exact hover values and round across units', () => {
   assert.match(evaluate('countHtml(11252350)'), /title="11,252,350">11.3M/);
 });
 
+test('top employers render escaped names, compact counts and full-name tooltips', () => {
+  const employerWidget = { innerHTML: '' };
+  const evaluate = rendererContext({ querySelectorAll: () => [] }, { $: selector => selector === '#widget-employers' ? employerWidget : null });
+  evaluate(`renderEmployers([{v:'<Company & Sons>',n:12500}])`);
+  assert.match(employerWidget.innerHTML, /title="&lt;Company &amp; Sons&gt;"/);
+  assert.match(employerWidget.innerHTML, /&lt;Company &amp; Sons&gt;/);
+  assert.match(employerWidget.innerHTML, /title="12,500">12\.5k/);
+});
+
 test('ad-view find matches case-insensitively and ignores empty queries', () => {
   const evaluate = rendererContext();
   assert.equal(evaluate("JSON.stringify(matchRanges('Örebro söker sjuksköterska i ÖREBRO', 'örebro'))"), '[{"start":0,"end":6},{"start":29,"end":35}]');
@@ -495,7 +504,7 @@ test('collapse all clears every tree level independently, preserves selections a
 
 test('facet refresh replaces pending counts and ignores superseded responses', async () => {
   const source = readFileSync(require.resolve('./app.js'), 'utf8');
-  const elements = Object.fromEntries(['#tf-occ', '#tf-loc', '#tree-occ', '#tree-loc', '#chips-year', '#chips-emp', '#chips-hours'].map(selector => [selector, { value: '', innerHTML: '' }]));
+  const elements = Object.fromEntries(['#tf-occ', '#tf-loc', '#tree-occ', '#tree-loc', '#chips-year', '#chips-emp', '#chips-hours', '#widget-employers'].map(selector => [selector, { value: '', innerHTML: '' }]));
   const requests = [];
   const evaluate = rendererContext({ querySelectorAll: () => [] }, {
     $: selector => elements[selector],
@@ -507,7 +516,7 @@ test('facet refresh replaces pending counts and ignores superseded responses', a
   });
   evaluate(source.slice(source.indexOf('  let tseq ='), source.indexOf("  listEl.addEventListener('click'")));
   evaluate('loadStats(); loadStats()');
-  const data = { occ: [], loc: [{ r: 'Region', m: 'Town', n: 7 }], year: [{ y: 2026, n: 7 }], emp: [{ v: 'Permanent', n: 7 }], hours: [{ v: 'Full time', n: 7 }] };
+  const data = { occ: [], loc: [{ r: 'Region', m: 'Town', n: 7 }], year: [{ y: 2026, n: 7 }], emp: [{ v: 'Permanent', n: 7 }], hours: [{ v: 'Full time', n: 7 }], employers: [] };
   requests[0](data);
   await Promise.resolve();
   assert.equal(evaluate('facetPending'), true);
@@ -524,7 +533,9 @@ test('facet refresh failures report the underlying error', async () => {
   const source = readFileSync(require.resolve('./app.js'), 'utf8');
   const failure = new Error('Facet worker failed');
   const errors = [];
+  const employerWidget = { innerHTML: '' };
   const evaluate = rendererContext({ querySelectorAll: () => [] }, {
+    $: selector => selector === '#widget-employers' ? employerWidget : null,
     console: { error: (...args) => errors.push(args) },
     api: {
       facets: async () => { throw failure; },
@@ -690,7 +701,7 @@ function widgetContext(saved, storageFails = false, heights) {
       fire: (name, values = {}) => listeners.get(name)?.({ button: 0, pointerId: 1, clientY: 100, preventDefault() {}, ...values }),
     };
   };
-  const widgets = ['timeline', 'published', 'occupation', 'location', 'employment', 'hours', 'geography', 'employers'].map(key => {
+  const widgets = ['timeline', 'published', 'occupation', 'location', 'employment', 'hours', 'employers'].map(key => {
     const attributes = new Map([['aria-controls', 'widget-' + key]]);
     const button = {
       setAttribute: (name, value) => attributes.set(name, value),
@@ -786,7 +797,7 @@ test('widget collapse persists independently and preserves active filters', () =
   for (const widget of widgets) widget.button.click();
   assert.ok(widgets.every(widget => widget.body.hidden));
   assert.equal(widgets[2].button.getAttribute('aria-expanded'), 'false');
-  assert.deepEqual(widgets.map(widget => widget.badge.textContent), ['0', '2', '2', '1', '1', '1', '0', '0']);
+  assert.deepEqual(widgets.map(widget => widget.badge.textContent), ['0', '2', '2', '1', '1', '1', '0']);
   assert.equal(widgets[0].badge.hidden, true);
   assert.equal(widgets[2].badge.hidden, false);
   const restored = widgetContext(stored.get('collapsedWidgets'));

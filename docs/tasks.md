@@ -4,15 +4,15 @@ Planned work that is specified but not started, plus active tasks. Each task lin
 
 | # | Task | Requirements | Size |
 |---|---|---|---|
-| T6 | Full-scale performance of filtering, counts and statistics (lower priority since startup is fixed; [plan](full-scale-performance-plan.md)) | NFR-003, NFR-004, NFR-005 | L |
 | T1 | Done: vertically resizable filter widgets | UI-010 | S |
 | T2 | Done: collapsible filter widgets and chart | UI-011, UI-007, SRC-017 | S |
 | T3 | Live-updating import file list | DAT-013 | S |
 | T4 | Import statistics per file (time, duplicates, errors) | DAT-014 | M |
 | T5 | Geographical hotspot view | SRC-019 | L |
+| T6 | Full-scale performance of filtering, counts and statistics (lower priority since startup is fixed; [plan](full-scale-performance-plan.md)) | NFR-003, NFR-004, NFR-005 | L |
 | T7 | Done: monospace typography and top-level Settings | UI-012, UI-016, NAV-009 | S |
 | T8 | Done: matching, resizable statistics widgets and collapsible columns | UI-013, UI-011, UI-019, UI-020, UI-021 | M |
-| T9 | Top-30 employers widget | SRC-020 | M |
+| T9 | Done: Top-30 employers widget | SRC-020 | M |
 | T10 | Employer logo cache | AD-010 | M |
 | T11 | Favorite lists and star-action popover | LST-009, LST-010, LST-011, LST-012, LST-013 | M |
 | T12 | Enrich older ads from newer taxonomy and geographic data | DAT-015, DAT-016 | L |
@@ -22,7 +22,7 @@ Planned work that is specified but not started, plus active tasks. Each task lin
 | T16 | Done: Datasets page and metadata editor | DAT-019, DAT-020, DAT-021, DAT-022 | M |
 | T17 | Done: Dataset chooser, statistics, switching and deletion | DAT-017, DAT-018, DAT-020, DAT-021, DAT-023, DAT-024 | M |
 
-T15–T17 completed 2026-10-18 (D39–D42). T7, T2, T13, T14, T1 and T8 are complete (D26, D27, D28, D31, D34, D35). T9 and T5 use the statistics bar. T3 goes with T4; T10 is independent. T6 follows the [full-scale performance plan](full-scale-performance-plan.md) when filtered use at full scale feels slow, and before T9 and T5 if their queries make it worse.
+T15–T17 completed 2026-10-18 (D39–D42). T7, T2, T13, T14, T1, T8 and T9 are complete (D26–D28, D31, D34–D36, D43–D44). T9 uses the statistics bar; T5 remains planned, with no placeholder shown. T3 goes with T4; T10 is independent. T6 follows the [full-scale performance plan](full-scale-performance-plan.md); filtered T9 latency on the full database remains unmeasured.
 
 ## T1. Done: vertically resizable filter widgets (UI-010)
 - Completed 2026-10-16; D34. Scope broadened to all six filter widgets at the user's request. Drag each bottom divider to resize the widget above; keyboard Up/Down and Home/End also work.
@@ -73,16 +73,15 @@ T15–T17 completed 2026-10-18 (D39–D42). T7, T2, T13, T14, T1 and T8 are comp
 - Renderer regression tests, browser fixture layout/keyboard/history/reload checks and Electron startup passed. Actual Electron quit/relaunch retention was not manually tested.
 
 ## T8. Done: statistics bar (UI-013, UI-011, UI-019, UI-020, UI-021)
-- Completed 2026-10-16; D35, D36. Right-hand column starts at 280 px and resizes in width through its left divider, with independent persistence, pointer capture and Left/Right/Home/End keyboard controls. It hosts Geography and Top employers shells, using the same title buttons, saved collapse state and vertically resizable bottom dividers as filters. Map/employer data stays in T5/T9; the timeline stays beside time filters.
+- Completed 2026-10-16; D35, D36. Right-hand column starts at 280 px and resizes in width through its left divider, with independent persistence, pointer capture and Left/Right/Home/End keyboard controls. It initially hosted Geography and Top employers shells, using the same title buttons, saved collapse state and vertically resizable bottom dividers as filters. D43 removes the unavailable Geography shell; T5 remains planned. The timeline stays beside time filters.
 - Filter and statistics columns have independent remembered icon toggles with accessible names and expanded states, consistent with the menu. Statistics starts hidden below 1200 px; opening a column takes priority when both cannot leave 420 px for results, without overwriting the other column's preference. Preferred filter width returns after narrowing/reload/widening.
 - All 23 renderer tests and syntax checks passed. Browser fixture passed both statistics-widget pointer drags, keyboard resize/title collapse, column toggles, reload persistence, sidebar-width restoration and non-overlapping layout at 960x600 and 1400x900 in both fonts. Sidebar-width follow-up verified real 280-to-400 px dragging, keyboard resizing and collapse/reload retention; saved 720 px width clamps to 467 px at minimum size, leaving 420 px for results, then restores on widening. Statistics screenshot reviewed within the browser's visible area. Initial T8 Electron startup opened 11.25M ads in 578 ms; native interaction/resize and actual quit/relaunch persistence not manually tested.
 
 ## T9. Top-30 employers widget (SRC-020)
-- Query: group the filtered ads by employer name (`ads.employer`) and return the 30 most frequent, as part of the facets worker (`facets()` in `db.js`, like `timeline()`), following all active filters.
-- Index: `employer` has no index; at full scale a grouped scan over millions of rows is slow, so add an index or fold it into the summary-table work (T6); measure before deciding.
-- Display: labels (chip style) with the ad count, ordered by count descending; full name in a tooltip; collapsible like the other widgets.
-- Open questions: names differ in spelling and case (could group on `employer.organization_number` when present, which exists from 2018); whether clicking a label should filter by that employer (needs a new filter dimension, see "Adding a new filter dimension" in `data-model.md`, and its own requirement).
-- Docs: decision if grouping by organisation number or adding an index or filter; `data-model.md` if the schema changes.
+- Completed 2026-10-18; D43–D44. `facets()` groups exact stored employer text under all active filters and returns the 30 most frequent; unfiltered totals come from `sum_employer`. Labels show counts and full-name tooltips and collapse like other widgets.
+- Names differing in spelling or case remain distinct; organization numbers are not used, and labels do not filter. Summary version 2 rebuilds derived tables once in the background; source ads need no re-import. Filtered results use the existing bounded per-worker facet cache.
+- Before summary precomputation, an unfiltered group-by took 167,837 ms on 11.25M ads. Filtered full-scale latency and the version-2 rebuild have not been verified; track remaining query cost under T6.
+- `node --test src/main/db.test.js src/renderer/app.test.js` covers active filters, count ordering, top-30 cap and escaped display.
 
 ## T10. Employer logo cache (AD-010)
 - Today the ad view loads `logo_url` directly in an `<img>` (CSP `img-src` allows any `https:`); nothing is stored, so every view hits the remote host and fails offline.

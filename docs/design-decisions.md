@@ -240,3 +240,15 @@ Format: decision, requirements it satisfies, rationale, consequences. Every deci
 - **Decision**: successful switch or active-dataset deletion clears session filters, invalidates list/ad/facet requests, opens Datasets, and starts a fresh Search query. History entries carry dataset identity; traversal into a prior dataset is rejected. Failed activation leaves current view and filters intact. Dirty metadata uses T16's Save / Discard / Cancel guard before chooser opens.
 - **Why**: dataset-specific state must not leak between isolated databases, and chooser counts must be cheap even when datasets are large.
 - **Consequence**: no DB schema or dependency change. Catalog stats are backward-compatible optional metadata; old entries are filled once in workers. Dataset operations are briefly rejected while unknown summaries are being backfilled.
+
+## D43. Top-employer statistics; defer Geography placeholder
+- **Requirements**: SRC-020, SRC-019
+- **Decision**: Group ads by exact stored `ads.employer` text, return top 30 with counts under every active filter, and show full-name tooltips. Use the summary table for unfiltered results and keep filtered grouping in the existing `facets()` read-worker request, cached by predicate. Do not merge spelling/case variants, use organization numbers, or make labels clickable. Remove the unavailable Geography shell while SRC-019/T5 remains planned.
+- **Why**: SRC-020 asks for company names and frequencies, not a new filter dimension. An empty Geography shell suggests functionality that does not exist.
+- **Consequence**: no ad-column, IPC or dependency change. D44 records the derived summary table. Filtered employer grouping scans matching ads; full-scale filtered latency remains unverified and belongs to T6.
+
+## D44. Precompute unfiltered employer counts
+- **Requirements**: SRC-020, NFR-005
+- **Decision**: Add `sum_employer` to the derived summary tables and maintain it with the existing importer and source-removal accumulator. Bump summary version to 2 so existing databases rebuild all summaries once in the background; source ads do not need re-importing.
+- **Why**: An unfiltered group-by on the existing 11.25M-ad database took 167,837 ms. Precomputed totals make the initial top-employer widget independent of an ads-table scan.
+- **Consequence**: the first startup after this update runs the one-time summary rebuild and blocks import/removal until ready. Filtered employer grouping still scans matching ads; measure under T6 before further optimization.

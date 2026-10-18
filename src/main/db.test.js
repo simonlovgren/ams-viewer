@@ -51,18 +51,19 @@ test('chronological filtering preserves ordering, offsets and sparse fallback', 
 test('facet cache reuses dimension counts and invalidates after local writes', () => {
   const db = dbm.open(':memory:');
   try {
-    const row = dbm.toRow({ id: '1', publication_date: '2026-01-02', employment_type: { label: 'E' } }, 'test');
+    const row = dbm.toRow({ id: '1', publication_date: '2026-01-02', employer: { name: 'Cached Employer' }, employment_type: { label: 'E' } }, 'test');
     db.prepare(dbm.INSERT_SQL).run(...row.values);
     dbm.ensureSummary(db);
     const prepare = db.prepare.bind(db);
     let scans = 0;
     db.prepare = sql => {
-      if (sql.includes('COUNT(*) n FROM')) scans++;
+      if (sql.includes('FROM (SELECT')) scans++;
       return prepare(sql);
     };
     const filter = { emp: 'E' };
     const first = dbm.facets(db, filter);
     assert.equal(scans, 1);
+    assert.deepEqual(dbm.facets(db, {}).employers, [{ v: 'Cached Employer', n: 1 }]);
     assert.deepEqual(dbm.facets(db, filter), first);
     assert.equal(scans, 1);
     dbm.facets(db, { ...filter, hours: 'H' });
@@ -85,7 +86,7 @@ test('facet cache invalidates after another connection imports or removes a sour
     dbm.ensureSummary(writer);
     const filter = { emp: 'E' };
     assert.deepEqual(dbm.facets(db, filter).year, []);
-    const row = dbm.toRow({ id: '1', publication_date: '2026-01-02', employment_type: { label: 'E' } }, 'new-source');
+    const row = dbm.toRow({ id: '1', publication_date: '2026-01-02', employer: { name: 'Cached Employer' }, employment_type: { label: 'E' } }, 'new-source');
     writer.exec('BEGIN');
     const inserted = writer.prepare(dbm.INSERT_SQL).run(...row.values);
     writer.prepare('INSERT INTO ads_fts(rowid,headline,employer,body) VALUES (?,?,?,?)').run(inserted.lastInsertRowid, ...row.fts);
@@ -94,8 +95,10 @@ test('facet cache invalidates after another connection imports or removes a sour
     dbm.accFlush(writer, acc);
     writer.exec('COMMIT');
     assert.deepEqual(dbm.facets(db, filter).year, [{ y: 2026, n: 1 }]);
+    assert.deepEqual(dbm.facets(db, {}).employers, [{ v: 'Cached Employer', n: 1 }]);
     dbm.removeSource(writer, 'new-source');
     assert.equal(dbm.facets(db, filter).year.reduce((sum, row) => sum + row.n, 0), 0);
+    assert.deepEqual(dbm.facets(db, {}).employers, []);
   } finally {
     writer.close();
     db.close();
@@ -111,7 +114,7 @@ test('facet cache evicts old groupings and never caches failed queries', () => {
     let scans = 0;
     let fail = false;
     db.prepare = sql => {
-      if (sql.includes('COUNT(*) n FROM')) {
+      if (sql.includes('FROM (SELECT')) {
         scans++;
         if (fail) throw new Error('Test query failure');
       }
@@ -195,6 +198,30 @@ test('facet counts follow other filters and exclude only their own dimension', (
         assert.ok(facets.loc.some(loc => loc.r === row.region && loc.m === row.muni && loc.n > 0));
       }
     }
+  } finally {
+    db.close();
+  }
+});
+
+test('employer statistics follow active filters and return top 30 by count', () => {
+  const db = dbm.open(':memory:');
+  try {
+    const insert = db.prepare(dbm.INSERT_SQL);
+    for (let index = 0; index < 32; index++) {
+      for (let count = 0; count < 32 - index; count++) {
+        const row = dbm.toRow({ id: `${index}-${count}`, employer: { name: `Employer ${String(index).padStart(2, '0')}` }, employment_type: { label: 'Match' } }, 'test');
+        insert.run(...row.values);
+      }
+    }
+    const excluded = dbm.toRow({ id: 'excluded', employer: { name: 'Excluded employer' }, employment_type: { label: 'Other' } }, 'test');
+    insert.run(...excluded.values);
+    dbm.ensureSummary(db);
+
+    const employers = dbm.facets(db, { emp: 'Match' }).employers;
+    assert.equal(employers.length, 30);
+    assert.deepEqual(employers.slice(0, 2), [{ v: 'Employer 00', n: 32 }, { v: 'Employer 01', n: 31 }]);
+    assert.equal(employers.some(row => row.v === 'Excluded employer'), false);
+    assert.equal(dbm.facets(db, { emp: 'Other' }).employers[0].v, 'Excluded employer');
   } finally {
     db.close();
   }

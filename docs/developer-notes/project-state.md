@@ -4,7 +4,7 @@ Last updated: 2026-10-18.
 
 ## User preferences
 - 2026-10-18: dataset metadata editing must edit the visible heading and description in place, preserving their CSS typography rather than showing separate native form fields (D41).
-- 2026-10-16: all filter and statistics widgets resize vertically by grabbing their bottom divider, not only hierarchical trees (D34, D35). T1/T8 are complete; statistics data remains T5/T9. Filter/statistics columns collapse independently like the menu; both also resize in width, with statistics using its left divider (D36). Saved preferences survive automatic narrow-layout hiding and viewport clamping.
+- 2026-10-16: all filter and statistics widgets resize vertically by grabbing their bottom divider, not only hierarchical trees (D34, D35). T1/T8 are complete; T9 now supplies employer statistics, while T5 remains planned. Filter/statistics columns collapse independently like the menu; both also resize in width, with statistics using its left divider (D36). Saved preferences survive automatic narrow-layout hiding and viewport clamping.
 - 2026-10-16: ads-over-time chart stays in the filter column beside publication-date filters, not in the planned statistics bar (D27). T2 is complete.
 - 2026-10-16: Settings on/off controls should use slider-style switches, not plain checkboxes. The monospace switch retains native checkbox keyboard behavior and exposes `role="switch"`; browser click/Space behavior and focus styling verified.
 - 2026-10-16: monospace applies to all main-window text, including headings and ad descriptions; user can disable it in top-level Settings > Appearance (D26). Keep future application preferences here, outside search/ad controls.
@@ -15,6 +15,8 @@ Last updated: 2026-10-18.
 
 ## Implemented highlights
 Import to SQLite with progress (multi-file, drag and drop); keyword search with multiple free-text entries; multi-select occupation and location trees with always-visible options and counts; date range, year, employment, hours filters; job-ad style ad view with breadcrumb and in-ad find/highlight/navigation (AD-011); history navigation (Backspace, mouse buttons); electron-builder packaging.
+
+- 2026-10-18: T9/D43–D44 adds filtered top-30 employer counts to the statistics column; exact stored employer text defines groups, unfiltered totals use `sum_employer`. Geography placeholder removed; T5/SRC-019 remains planned. Next startup rebuilds summary version 2 in background; this migration and filtered full-scale latency remain unverified (T6).
 
 ## Not verified / known gaps
 - 2026-10-18: T15/D39–T17/D42 complete. Dataset chooser supports cached/backfilled stats, creation, switching and confirmed deletion. Switching resets session filters, invalidates stale results and blocks prior-dataset history. 51 focused catalog/DB/renderer tests pass; native chooser interaction, multiple full-scale DB latency and close prompt remain unverified. DAT-017–024 now Implemented. See [T15-T17](../tasks.md#t15-done-named-dataset-storage-and-lifecycle-dat-017-dat-018-dat-021-dat-022).
@@ -30,4 +32,4 @@ Import to SQLite with progress (multi-file, drag and drop); keyword search with 
 
 ## Real data import (2026-10-15)
 - Data lives in `~/storage/ams_data` (21 `.jsonl`/`.json` files, ~57 GB, plus `.zip`/`.zst` copies the importer ignores). The real DB now lives at `~/.config/AMS Viewer/datasets/default.db`; it contains 11,252,350 ads (~70.4 GB). `2016.jsonl` previously imported with 0 ads before ids were synthesized; re-import it if needed. `2018.json` and `2006.jsonl` were only tested in a scratch DB.
-- All files are imported (11.25M ads). Startup is fast since D22 (window in ~3 s). Facets, counts and the chart were made fast with summary tables (D23, NFR-010, user request: filters took minutes even for one-ad filters). Implemented and verified on scratch DBs only; the first start on the real 70 GB DB runs the one-time background build (not yet run by the agent): check `[perf]` logs and time to filters/chart, then mark NFR-010 Implemented. Filtered group-by on broad filters (1-letter FTS prefix) may still be slow; consider a minimum prefix length.
+- All files are imported (11.25M ads). Startup is fast since D22 (window in ~3 s). Facets, counts and the chart use summary tables (D23, NFR-010). D44 bumps summary version to 2 for `sum_employer`; next startup rebuilds summaries in the background on the real 70 GB DB, with no source re-import. This migration has not run yet. Filtered group-by on broad filters (including employer stats) may still be slow; measure under T6.

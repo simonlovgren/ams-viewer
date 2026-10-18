@@ -2,6 +2,9 @@
 
 Count logic has headless regression tests; visual layout still needs manual review.
 
+## Top-employer statistics (T9 / D43)
+`node --test src/main/db.test.js src/renderer/app.test.js` covers active-filter counts, descending ranking, top-30 cap, summary updates on import/removal and safe rendering of employer names/count tooltips. An unfiltered raw group-by took 167,837 ms on 11.25M ads; `sum_employer` now serves that case. Summary-version-2 rebuild, filtered full-scale latency and visual layout remain unverified.
+
 ## Dataset chooser, switching and deletion (T17 / D42)
 `node --check src/main/main.js && node --check src/main/preload.js && node --check src/main/db.js && node --check src/renderer/app.js && node --test src/main/dataset-catalog.test.js src/main/db.test.js src/renderer/app.test.js` covers cached/backfilled chooser counts, one-line descriptions, creation entry, switch success/failure, filter reset, old-history rejection, deletion confirmation and last-dataset replacement. The stats query reads `sources` rows only. Native chooser rendering and switching across multiple full-scale DBs remain unverified.
 

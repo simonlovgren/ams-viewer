@@ -434,17 +434,21 @@
   let summaryInfo = { state: 'unknown' };
   function showBuilding(s) {
     const msg = `<div class="empty-mini">${esc((s && s.text) || 'Statistics are being prepared (one-time)…')}</div>`;
-    for (const id of ['#tree-occ', '#tree-loc', '#chart']) $(id).innerHTML = msg;
+    for (const id of ['#tree-occ', '#tree-loc', '#chart', '#widget-employers']) $(id).innerHTML = msg;
   }
   function loadStats() {
     markFacetsPending();
+    $('#widget-employers').innerHTML = '<div class="empty-mini">Updating statistics…</div>';
     const fs_ = ++fseq;
     api.facets(F).then((data) => {
       if (fs_ !== fseq || !data || data.stale) return;
       if (data.building) { showBuilding(summaryInfo); return; }
       summaryInfo = { state: 'ready' };
       renderFacets(data);
-    }).catch((error) => console.error('Failed to update filter counts:', error));
+    }).catch((error) => {
+      if (fs_ === fseq) $('#widget-employers').innerHTML = '<div class="empty-mini">Employer statistics unavailable</div>';
+      console.error('Failed to update filter counts:', error);
+    });
     const ts = ++tseq;
     api.timeline(F).then((t) => {
       if (ts !== tseq || !t || t.stale || t.building) return;
@@ -579,12 +583,19 @@
     facetData = d;
     facetPending = false;
     renderTrees();
+    renderEmployers(d.employers);
     $('#chips-year').innerHTML = chipsHtml(
       d.year.filter((r) => r.y).map((r) => ({ v: r.y, label: r.y, n: r.n })),
       (i) => F.from === `${i.v}-01-01` && F.to === `${i.v}-12-31`
     );
     $('#chips-emp').innerHTML = chipsHtml(d.emp.filter((r) => r.v).map((r) => ({ v: r.v, label: r.v, n: r.n })), (i) => F.emp === i.v);
     $('#chips-hours').innerHTML = chipsHtml(d.hours.filter((r) => r.v).map((r) => ({ v: r.v, label: r.v, n: r.n })), (i) => F.hours === i.v);
+  }
+
+  function renderEmployers(rows) {
+    $('#widget-employers').innerHTML = rows.length
+      ? `<div class="employer-list">${rows.map((r) => `<span class="chip employer-chip" title="${esc(r.v)}"><span class="employer-name">${esc(r.v)}</span><small title="${fmtNum(r.n)}">${fmtCount(r.n)}</small></span>`).join('')}</div>`
+      : '<div class="empty-mini">No employer data</div>';
   }
 
   /* ---------- ads-over-time chart ---------- */
