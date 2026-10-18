@@ -499,6 +499,67 @@ test('dataset editor Discard restores stored metadata without writing', async ()
   assert.equal(renders, 1);
 });
 
+test('dataset reprocessing requires confirmation, prevents duplicate work and refreshes after success', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  for (const outcome of ['cancel', 'success', 'error', 'reject']) {
+    const messages = [];
+    const button = { disabled: false };
+    let calls = 0, renders = 0, reloads = 0, stats = 0, finish;
+    let started;
+    const didStart = new Promise(resolve => { started = resolve; });
+    const context = vm.createContext({
+      $: () => button,
+      showMessage: async options => { messages.push(options); return outcome !== 'cancel'; },
+      api: { reprocessDataset: async id => {
+        assert.equal(id, 'active');
+        calls++;
+        assert.equal(button.disabled, true);
+        started();
+        if (outcome === 'reject') throw new Error('Worker failed');
+        if (outcome === 'error') return { ok: false, error: 'Busy' };
+        return new Promise(resolve => { finish = () => resolve({ ok: true }); });
+      } },
+      renderData: async () => { renders++; }, reload() { reloads++; }, loadStats() { stats++; },
+    });
+    vm.runInContext(`let reprocessBusy = false; let activeDataset = {id:'active',name:'Test dataset'}; let curView = 'data';`
+      + source.slice(source.indexOf('  async function reprocessDataset()'), source.indexOf('  function renderProgress()')), context);
+    const result = vm.runInContext('reprocessDataset()', context);
+    if (outcome === 'success') {
+      await didStart;
+      await vm.runInContext('reprocessDataset()', context);
+      assert.equal(calls, 1);
+      finish();
+    }
+    await result;
+    assert.equal(calls, outcome === 'cancel' ? 0 : 1);
+    assert.equal(renders, outcome === 'success' ? 1 : 0);
+    assert.equal(reloads, outcome === 'success' ? 1 : 0);
+    assert.equal(stats, outcome === 'success' ? 1 : 0);
+    assert.equal(button.disabled, false);
+    assert.equal(vm.runInContext('reprocessBusy', context), false);
+    assert.equal(messages[0].title, 'Reprocess dataset?');
+    assert.match(messages[0].message, /Test dataset/);
+    assert.match(messages[0].message, /may take a long time/);
+    assert.match(messages[0].message, /temporary disk space/);
+    if (outcome === 'error' || outcome === 'reject') {
+      assert.equal(messages[1].title, 'Dataset reprocessing failed');
+      assert.equal(messages[1].message, outcome === 'error' ? 'Busy' : 'Worker failed');
+    }
+  }
+});
+
+test('dataset reprocess button routes through its confirmation handler', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  let click, calls = 0;
+  const context = vm.createContext({
+    $: () => ({ addEventListener: (_event, listener) => { click = listener; } }),
+    reprocessDataset() { calls++; },
+  });
+  vm.runInContext(source.slice(source.indexOf('  const dataEl ='), source.indexOf("  window.addEventListener('dragover'")), context);
+  await click({ target: { closest: selector => selector === '#dataset-reprocess' ? {} : null } });
+  assert.equal(calls, 1);
+});
+
 test('source removal requires confirmation and shows returned or rejected errors in a modal', async () => {
   const source = readFileSync(require.resolve('./app.js'), 'utf8');
   for (const outcome of ['cancel', 'success', 'error', 'reject']) {

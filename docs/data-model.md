@@ -72,6 +72,10 @@ sum_employer(v, n)         -- exact employer text and total count; included in s
 
 `ensureSummary()` also checks `meta.array_tags_version`. When absent, it scans for missing promoted taxonomy IDs/labels, employment or hours backed by array-valued fields in `raw`, normalizes with `toRow()` and fills only NULL columns in 500-row transactions. Raw JSON and existing values stay unchanged. Changed batches atomically invalidate `summary_version`; summaries rebuild before the build task completes. The marker becomes `'1'` only after the scan, so interrupted repairs retry safely. This runs once per dataset on startup/activation, not on every connection open; no re-import is required.
 
+### Manual reprocessing (DAT-026, D49)
+
+Manual reprocessing (DAT-026, D49) reads stored `raw` in 500-row batches within one build-worker transaction. Current `toRow()` rules replace all promoted columns except identity/source/raw, including stale non-null values. It clears and repopulates contentless `ads_fts` with preserved rowids, regenerates every `sum_*` table and per-source ad count, ensures deferred employer/employment/hours indexes, runs `REINDEX` and `ANALYZE`, and marks summary/array-tag migrations complete. Original raw JSON, ad IDs, source paths/import timestamps and catalog metadata are preserved. Empty datasets and repeated runs are supported; failure rolls back every database change. Catalog statistics refresh after commit. No original source files or re-import are needed; missing information absent from stored raw JSON cannot be recovered.
+
 ## Filter object (renderer ↔ main)
 
 ```js

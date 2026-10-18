@@ -5,8 +5,61 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { Worker } = require('node:worker_threads');
+const vm = require('node:vm');
 const { open } = require('./dataset-catalog');
 const dbm = require('./db');
+
+test('manual reprocessing gates dataset mutations and reports progress, completion and failures', async () => {
+  const source = fs.readFileSync(require.resolve('./main'), 'utf8');
+  const code = source.slice(source.indexOf('async function reprocessDataset(id)'), source.indexOf('async function deleteDataset(id)'));
+  for (const outcome of ['success', 'error']) {
+    const events = [];
+    let calls = 0;
+    const context = vm.createContext({
+      datasets: { active: () => ({ id: 'active' }), updateStats: (id, info) => events.push(['stats', id, info.total]) },
+      sendSummary: state => events.push(['summary', state]),
+      sendTask: (...args) => events.push(['task', ...args]),
+      errorText: error => error.message,
+      build: { request: async (type, _payload, _latest, progress) => {
+        calls++;
+        assert.equal(type, 'reprocess');
+        assert.equal(vm.runInContext('buildBusy', context), true);
+        progress({ pct: 50, text: 'Halfway' });
+        if (outcome === 'error') throw new Error('Rebuild failed');
+        return { processed: 7 };
+      } },
+      lists: { request: async () => ({ total: 7 }) },
+    });
+    vm.runInContext("let summaryState = {state:'ready'}; let buildBusy = false, datasetChanging = false, datasetStatsBusy = false, importing = false;" + code, context);
+    for (const id of ['other', null, {}]) {
+      context.id = id;
+      assert.equal((await vm.runInContext('reprocessDataset(id)', context)).ok, false);
+    }
+    for (const flag of ['buildBusy', 'datasetChanging', 'datasetStatsBusy', 'importing']) {
+      vm.runInContext(`${flag} = true`, context);
+      assert.equal((await vm.runInContext("reprocessDataset('active')", context)).ok, false);
+      vm.runInContext(`${flag} = false`, context);
+    }
+    assert.equal(calls, 0);
+    const result = await vm.runInContext("reprocessDataset('active')", context);
+    assert.equal(result.ok, outcome === 'success');
+    assert.equal(calls, 1);
+    assert.equal(vm.runInContext('buildBusy', context), false);
+    assert.ok(events.some(event => event[0] === 'task' && event[2] === 'running' && event[4] === 50));
+    assert.deepEqual(events.at(-1), ['task', 'reprocess', 'done']);
+    if (outcome === 'success') {
+      assert.equal(result.processed, 7);
+      assert.equal(events.some(event => event[0] === 'task' && event[2] === 'error'), false);
+      assert.ok(events.some(event => event[0] === 'stats' && event[1] === 'active' && event[2] === 7));
+      assert.ok(events.some(event => event[0] === 'summary' && event[1].state === 'ready'));
+    } else {
+      assert.equal(result.error, 'Rebuild failed');
+      assert.deepEqual(events.find(event => event[0] === 'task' && event[2] === 'error'),
+        ['task', 'reprocess', 'error', 'Dataset reprocessing failed: Rebuild failed']);
+      assert.equal(events.filter(event => event[0] === 'summary').at(-1)[1].state, 'ready');
+    }
+  }
+});
 
 test('migrates legacy database and SQLite sidecars without copying', (t) => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ams-datasets-'));
@@ -141,6 +194,45 @@ test('separate dataset databases isolate identical ad IDs', (t) => {
   assert.equal(secondDb.prepare('SELECT COUNT(*) n FROM ads').get().n, 1);
   assert.equal(firstDb.prepare('SELECT headline FROM ads').get().headline, 'First dataset ad');
   assert.equal(secondDb.prepare('SELECT headline FROM ads').get().headline, 'Second dataset ad');
+});
+
+test('read worker reprocesses multiple batches and reports progress before completion', { timeout: 10000 }, async (t) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ams-reprocess-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  const databasePath = path.join(dataDir, 'worker.db');
+  const db = dbm.open(databasePath);
+  const insert = db.prepare(dbm.INSERT_SQL);
+  for (let index = 0; index < 501; index++) {
+    insert.run(...dbm.toRow({ id: String(index), headline: 'Engineer', publication_date: '2026-01-01' }, 'test').values);
+  }
+  db.prepare("INSERT INTO sources(name, ads) VALUES ('test', 0)").run();
+  db.close();
+  const worker = new Worker(path.join(__dirname, 'read-worker.js'), { workerData: { dbPath: databasePath } });
+  t.after(() => worker.terminate());
+  const events = [];
+  await new Promise((resolve, reject) => {
+    worker.on('message', message => {
+      if (message.type === 'ready') worker.postMessage({ id: 1, type: 'reprocess' });
+      if (message.error) return reject(new Error(message.error));
+      if (message.progress) events.push(message.progress);
+      else if (message.id === 1) {
+        assert.equal(message.data.processed, 501);
+        assert.equal(events.at(-1).pct, 100);
+        worker.postMessage({ type: 'close' });
+      }
+      if (message.type === 'closed') resolve();
+    });
+    worker.on('error', reject);
+  });
+  assert.ok(events.some(event => /500 of 501/.test(event.text)));
+  const rebuilt = dbm.open(databasePath);
+  try {
+    assert.equal(dbm.count(rebuilt, { q: 'Engineer' }), 501);
+    assert.equal(dbm.datasetStats(rebuilt).total, 501);
+    assert.equal(dbm.facets(rebuilt, {}).year[0].n, 501);
+  } finally {
+    rebuilt.close();
+  }
 });
 
 test('read worker closes its SQLite connection before exit', async (t) => {

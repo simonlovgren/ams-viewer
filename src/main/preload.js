@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('api', {
   updateDataset: (id, name, description) => ipcRenderer.invoke('datasets:update', id, name, description),
   activateDataset: (id) => ipcRenderer.invoke('datasets:activate', id),
   deleteDataset: (id) => ipcRenderer.invoke('datasets:delete', id),
+  reprocessDataset: (id) => ipcRenderer.invoke('datasets:reprocess', id),
   openExternal: (url) => ipcRenderer.invoke('open:external', url),
   pathFor: (file) => webUtils.getPathForFile(file),
   onImport: (cb) => ipcRenderer.on('import:event', (_e, m) => cb(m)),

@@ -18,6 +18,7 @@ const handlers = {
   timeline: ({ f }) => (dbm.isBuilt(db) ? dbm.timeline(db, f || {}) : { building: true }),
   remove: ({ name }) => { dbm.removeSource(db, name); return true; },
   ensure: (_p, progress) => dbm.ensureSummary(db, progress),
+  reprocess: (_p, progress) => dbm.reprocess(db, progress),
 };
 
 parentPort.on('message', ({ id, type, payload }) => {

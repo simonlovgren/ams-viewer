@@ -77,7 +77,7 @@ function startImport(files) {
   if (datasetChanging) return { ok: false, error: 'Dataset transition in progress' };
   if (datasetStatsBusy) return { ok: false, error: 'Dataset statistics are being refreshed' };
   if (importing) return { ok: false, error: 'Import already running' };
-  if (buildBusy) return { ok: false, error: 'Statistics are being built (one-time); try again when it has finished.' };
+  if (buildBusy) return { ok: false, error: 'Statistics are being built; try again when it has finished.' };
   const valid = files.filter((f) => typeof f === 'string' && DATA_EXT.test(f));
   if (!valid.length) return { ok: false, error: 'No .jsonl/.ndjson/.json files' };
   importing = true;
@@ -471,6 +471,32 @@ async function createDataset(name, description) {
   }
 }
 
+async function reprocessDataset(id) {
+  if (typeof id !== 'string' || id !== datasets.active().id) return { ok: false, error: 'Active dataset changed; confirm reprocessing again.' };
+  if (datasetChanging || datasetStatsBusy || importing || buildBusy) return { ok: false, error: 'Background work is running; try again when it has finished.' };
+  const previousSummary = summaryState;
+  buildBusy = true;
+  sendSummary({ state: 'building', text: 'Reprocessing dataset…', pct: 0 });
+  sendTask('reprocess', 'running', 'Reprocessing dataset…', 0);
+  try {
+    const result = await build.request('reprocess', {}, false, (event) => {
+      sendSummary({ state: 'building', text: event.text, pct: event.pct });
+      sendTask('reprocess', 'running', event.text, event.pct);
+    });
+    const info = await lists.request('info');
+    datasets.updateStats(id, info);
+    sendSummary({ state: 'ready' });
+    return { ok: true, ...result };
+  } catch (error) {
+    sendSummary(previousSummary);
+    sendTask('reprocess', 'error', `Dataset reprocessing failed: ${errorText(error)}`);
+    return { ok: false, error: errorText(error) };
+  } finally {
+    buildBusy = false;
+    sendTask('reprocess', 'done');
+  }
+}
+
 async function deleteDataset(id) {
   if (typeof id !== 'string') throw new Error('Invalid dataset id');
   const snapshot = datasets.snapshot();
@@ -613,6 +639,7 @@ function registerHandlers() {
   ipcMain.handle('datasets:update', (_e, id, name, description) => datasetOperation('Saving dataset details…', () => ({ dataset: datasets.update(id, name, description) })));
   ipcMain.handle('datasets:activate', (_e, id) => datasetOperation('Switching dataset…', async () => ({ dataset: await switchDataset(id) })));
   ipcMain.handle('datasets:delete', (_e, id) => datasetOperation('Deleting dataset…', () => deleteDataset(id)));
+  ipcMain.handle('datasets:reprocess', (_e, id) => reprocessDataset(id));
   ipcMain.handle('import:dialog', async () => {
     if (datasetChanging) return { ok: false, error: 'Dataset transition in progress' };
     const r = await dialog.showOpenDialog(win, {

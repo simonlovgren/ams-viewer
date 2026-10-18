@@ -375,6 +375,53 @@ function ensureSummary(db, onProgress = () => {}) {
   return { built: true, fresh: true };
 }
 
+function reprocess(db, onProgress = () => {}) {
+  const total = db.prepare('SELECT COUNT(*) n FROM ads').get().n;
+  const batch = db.prepare('SELECT rowid, raw, source FROM ads WHERE rowid > ? ORDER BY rowid LIMIT 500');
+  const columns = ['headline', 'pub_date', 'year', 'deadline', 'employer', 'region', 'muni', 'field_id', 'field', 'group_id', 'grp', 'occ_id', 'occ', 'emp_type', 'hours'];
+  const update = db.prepare(`UPDATE ads SET ${columns.map(name => `${name} = ?`).join(', ')} WHERE rowid = ?`);
+  const insertFts = db.prepare('INSERT INTO ads_fts(rowid, headline, employer, body) VALUES (?, ?, ?, ?)');
+  const acc = newAcc();
+  const sources = new Map();
+  let last = 0;
+  let processed = 0;
+  onProgress({ pct: 0, text: 'Reprocessing dataset: preparing…' });
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.exec("INSERT INTO ads_fts(ads_fts) VALUES ('delete-all')");
+    for (;;) {
+      const rows = batch.all(last);
+      if (!rows.length) break;
+      for (const row of rows) {
+        const mapped = toRow(JSON.parse(row.raw), row.source);
+        update.run(...mapped.values.slice(1, 16), row.rowid);
+        insertFts.run(row.rowid, ...mapped.fts);
+        accAdd(acc, mapped.values);
+        sources.set(row.source, (sources.get(row.source) || 0) + 1);
+      }
+      last = rows[rows.length - 1].rowid;
+      processed += rows.length;
+      onProgress({ pct: 75 * processed / Math.max(1, total), text: `Reprocessing dataset: ${processed.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} ads` });
+    }
+    onProgress({ pct: 80, text: 'Reprocessing dataset: rebuilding statistics…' });
+    for (const table of Object.values(SUM_TABLE)) db.exec(`DELETE FROM ${table}`);
+    accFlush(db, acc);
+    db.exec('UPDATE sources SET ads = 0');
+    const updateSource = db.prepare('UPDATE sources SET ads = ? WHERE name = ?');
+    for (const [source, count] of sources) updateSource.run(count, source);
+    onProgress({ pct: 85, text: 'Reprocessing dataset: rebuilding indexes…' });
+    db.exec('CREATE INDEX IF NOT EXISTS ix_employer ON ads(employer COLLATE BINARY, pub_date); CREATE INDEX IF NOT EXISTS ix_emp ON ads(emp_type); CREATE INDEX IF NOT EXISTS ix_hours ON ads(hours); REINDEX;');
+    onProgress({ pct: 95, text: 'Reprocessing dataset: updating query planner statistics…' });
+    db.exec('ANALYZE');
+    db.exec("INSERT OR REPLACE INTO meta(key, value) VALUES ('summary_version', '2'), ('array_tags_version', '1'); COMMIT;");
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  onProgress({ pct: 100, text: 'Dataset reprocessing complete', ready: true });
+  return { built: true, processed };
+}
+
 function summaryFacets(db) {
   return {
     occ: db.prepare('SELECT field_id fi, field f, group_id gi, grp g, occ_id oi, occ o, n FROM sum_occ').all()
@@ -569,6 +616,7 @@ function removeSource(db, name) {
 }
 
 module.exports = {
+  reprocess,
   open, toRow, INSERT_SQL, search, count, facets, timeline, getAd, info, datasetStats, removeSource,
   isBuilt, ensureSummary, newAcc, accAdd, accFlush,
 };

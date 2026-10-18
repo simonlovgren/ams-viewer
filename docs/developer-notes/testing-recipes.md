@@ -2,6 +2,11 @@
 
 Count logic has headless regression tests; visual layout still needs manual review.
 
+## Manual dataset reprocessing (DAT-026 / D49)
+`node --test --test-name-pattern='reprocess|error notices' src/main/db.test.js src/main/dataset-catalog.test.js src/renderer/app.test.js` covers stale projections/FTS/summaries/source counts, preserved raw records and identity, indexes/planner statistics, repeated and empty rebuilds, rollback, active-ID/concurrency guards, confirmation cancellation, duplicate work, failure recovery, persistent failure notifications and refresh. A disposable worker fixture spans 501 ads to exercise multiple read batches and progress before completion. Never test `reprocess()` against the real dataset without intending a full write rebuild. Full-scale runtime and disk usage remain unverified.
+
+2026-10-18: all 68 tests, changed-JS syntax/editor checks and disposable `npm start -- --no-sandbox` startup pass. Browser fixture verifies warning/Cancel focus and modal fit at 960x600, injected 43% progress at 960x600 and 1400x900 with content pushed down and no overflow, progress retained in Settings, and dismissible error surviving `done`. Native confirmation-to-rebuild interaction was not exercised. Renderer VM duplicate-work tests must await an explicit IPC-start promise; one microtask tick is not enough across contexts and can hang the test.
+
 ## Stale listing tags (D48)
 `node --test --test-name-pattern='array.*tags|array tag repair' src/main/db.test.js` covers one-time repair of stale array-valued taxonomy/employment/hours, listing/filter/summary agreement, existing-value and raw-JSON preservation, empty arrays and rollback/retry across the 500-row batch boundary. Live DB inspection must use `new DatabaseSync(path, {readOnly: true})`; `ensureSummary()` is a write migration and must be tested on disposable copies/fixtures unless a real migration is intended. Full-scale migration and native post-repair listing remain unverified.
 

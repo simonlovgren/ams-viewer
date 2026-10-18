@@ -1155,6 +1155,7 @@
   let activeDataset = null;
   let datasetEditor = null;
   let dataRenderSeq = 0;
+  let reprocessBusy = false;
 
   function renderDatasetEditor() {
     if (!datasetEditor) return;
@@ -1260,6 +1261,7 @@
       <div class="drop" id="drop">${icon('upload').replace('<svg', '<svg style="width:32px;height:32px;color:var(--purple)"')}
         <div style="margin-top:8px">Drop .jsonl / .ndjson / .json files here</div>
         <button class="btn sec" id="pick" style="margin-top:12px">${icon('upload')}Choose files…</button></div>
+      <button class="btn sec" id="dataset-reprocess" type="button"${reprocessBusy ? ' disabled' : ''}>${icon('database')}Reprocess dataset</button>
       <div id="progress"></div>
       ${info.sources.length ? `<table><thead><tr><th>File</th><th class="r">Ads</th><th>Imported</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : ''}`;
     hydrateIcons($('#data'));
@@ -1364,6 +1366,34 @@
     }
   }
 
+  async function reprocessDataset() {
+    if (reprocessBusy || !activeDataset) return;
+    const dataset = activeDataset;
+    const confirmed = await showMessage({
+      title: 'Reprocess dataset?',
+      message: `Rebuild all statistics, search indexes and processed information for "${dataset.name}" from its stored ads? This may take a long time and require substantial temporary disk space. Imports and dataset changes will be unavailable until processing finishes. Original source files and stored ads will be preserved.`,
+      confirmLabel: 'Reprocess dataset',
+      danger: false,
+    });
+    if (!confirmed) return;
+    reprocessBusy = true;
+    const button = $('#dataset-reprocess');
+    if (button) button.disabled = true;
+    try {
+      const result = await api.reprocessDataset(dataset.id);
+      if (!result?.ok) throw new Error(result?.error || 'Could not reprocess dataset.');
+      if (curView === 'data') await renderData();
+      reload();
+      loadStats();
+    } catch (error) {
+      await showMessage({ title: 'Dataset reprocessing failed', message: error.message || 'Could not reprocess dataset.' });
+    } finally {
+      reprocessBusy = false;
+      const currentButton = $('#dataset-reprocess');
+      if (currentButton) currentButton.disabled = false;
+    }
+  }
+
   function renderProgress() {
     const el = $('#progress');
     if (!el || !importState) return;
@@ -1426,6 +1456,7 @@
     $('#dataset-meta').focus();
   });
   dataEl.addEventListener('click', async (e) => {
+    if (e.target.closest('#dataset-reprocess')) return reprocessDataset();
     if (e.target.closest('#dataset-swap')) return openDatasetChooser();
     if (e.target.closest('#dataset-edit')) return beginDatasetEdit();
     if (e.target.closest('#dataset-name') && !datasetEditor) return beginDatasetEdit(true);

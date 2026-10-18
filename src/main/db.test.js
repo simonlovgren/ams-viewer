@@ -6,6 +6,82 @@ const { tmpdir } = require('node:os');
 const path = require('node:path');
 const dbm = require('./db');
 
+test('manual reprocessing restores all projections, FTS, summaries, source counts and indexes', () => {
+  const db = dbm.open(':memory:');
+  try {
+    const ad = {
+      id: 'source-id', headline: 'Engineer', publication_date: '2026-06-23',
+      employer: { name: 'Acme' }, description: { text: 'Robotics specialist' },
+      workplace_address: { region: 'North', municipality: 'Town' },
+      occupation_field: [{ concept_id: 'field', label: 'Technology' }],
+      occupation_group: [{ concept_id: 'group', label: 'Engineering' }],
+      occupation: [{ concept_id: 'occupation', label: 'Engineer' }],
+      employment_type: [{ label: 'Permanent' }], working_hours_type: [{ label: 'Full time' }],
+    };
+    db.prepare(dbm.INSERT_SQL).run(...dbm.toRow(ad, 'test.jsonl').values);
+    db.prepare("INSERT INTO sources VALUES ('test.jsonl', '/missing/test.jsonl', 77, '2026-01-01')").run();
+    db.prepare("INSERT INTO sources VALUES ('empty.jsonl', '/missing/empty.jsonl', 9, '2026-01-02')").run();
+    dbm.ensureSummary(db);
+    db.exec(`UPDATE ads SET ad_id = 'preserved-id', headline = 'Stale', year = 2000, employer = 'Stale',
+      field = 'Stale', occ_id = NULL, emp_type = NULL, hours = NULL;
+      UPDATE sum_day SET n = 99; DROP INDEX ix_employer;`);
+    const before = db.prepare('SELECT rowid, ad_id, raw, source FROM ads').get();
+    const events = [];
+    assert.deepEqual(dbm.reprocess(db, event => events.push(event)), { built: true, processed: 1 });
+    assert.deepEqual(db.prepare('SELECT rowid, ad_id, raw, source FROM ads').get(), before);
+    const results = dbm.search(db, { q: 'Robotics', employers: ['Acme'], emp: 'Permanent', hours: 'Full time' }, 0, 60, true);
+    assert.equal(results.total, 1);
+    assert.equal(results.rows[0].headline, 'Engineer');
+    assert.equal(results.rows[0].field, 'Technology');
+    assert.equal(results.rows[0].grp, 'Engineering');
+    assert.equal(results.rows[0].occ, 'Engineer');
+    assert.equal(dbm.count(db, { from: '2026-01-01', to: '2026-12-31' }), 1);
+    const facets = dbm.facets(db, {});
+    assert.deepEqual(facets.employers, [{ v: 'Acme', n: 1 }]);
+    assert.deepEqual(facets.year, [{ y: 2026, n: 1 }]);
+    assert.deepEqual(facets.loc, [{ r: 'North', m: 'Town', n: 1 }]);
+    assert.equal(facets.occ[0].oi, 'occupation');
+    assert.equal(dbm.datasetStats(db).total, 1);
+    assert.deepEqual({ ...db.prepare("SELECT * FROM sources WHERE name = 'test.jsonl'").get() }, {
+      name: 'test.jsonl', path: '/missing/test.jsonl', ads: 1, imported_at: '2026-01-01',
+    });
+    assert.equal(db.prepare("SELECT ads FROM sources WHERE name = 'empty.jsonl'").get().ads, 0);
+    assert.equal(db.prepare("SELECT COUNT(*) n FROM sqlite_stat1 WHERE idx = 'ix_employer'").get().n, 1);
+    assert.equal(events[0].pct, 0);
+    assert.equal(events.at(-1).pct, 100);
+    assert.ok(events.every((event, index) => !index || event.pct >= events[index - 1].pct));
+    dbm.reprocess(db);
+    assert.equal(dbm.count(db, { q: 'Robotics' }), 1);
+    assert.equal(dbm.facets(db, {}).employers[0].n, 1);
+  } finally {
+    db.close();
+  }
+});
+
+test('manual reprocessing rolls back partial work and handles empty datasets', () => {
+  const db = dbm.open(':memory:');
+  try {
+    assert.deepEqual(dbm.reprocess(db), { built: true, processed: 0 });
+    const row = dbm.toRow({ id: 'one', headline: 'Original', publication_date: '2026-01-01' }, 'test');
+    db.prepare(dbm.INSERT_SQL).run(...row.values);
+    db.prepare('INSERT INTO ads_fts(rowid, headline, employer, body) VALUES (1, ?, ?, ?)').run(...row.fts);
+    dbm.ensureSummary(db);
+    db.exec("UPDATE ads SET headline = 'Old projection'");
+    const summaries = dbm.facets(db, {});
+    assert.throws(() => dbm.reprocess(db, event => {
+      if (event.pct === 95) throw new Error('Interrupted rebuild');
+    }), /Interrupted rebuild/);
+    assert.equal(db.prepare('SELECT headline FROM ads').get().headline, 'Old projection');
+    assert.equal(dbm.count(db, { q: 'Original' }), 1);
+    assert.deepEqual(dbm.facets(db, {}), summaries);
+    assert.equal(dbm.isBuilt(db), true);
+    dbm.reprocess(db);
+    assert.equal(db.prepare('SELECT headline FROM ads').get().headline, 'Original');
+  } finally {
+    db.close();
+  }
+});
+
 test('summary startup repairs stale array-valued tags and rebuilds affected counts once', () => {
   const db = dbm.open(':memory:');
   try {
