@@ -3,6 +3,7 @@
 Last updated: 2026-10-18.
 
 ## User preferences
+- 2026-10-18: prefer explicit manual exclusion of erroneous ads over silent import-time date culling (user-reported 2099 dates). Planned as DAT-025/T18; no implementation yet.
 - 2026-10-18: dataset metadata editing must edit the visible heading and description in place, preserving their CSS typography rather than showing separate native form fields (D41).
 - 2026-10-16: all filter and statistics widgets resize vertically by grabbing their bottom divider, not only hierarchical trees (D34, D35). T1/T8 are complete; T9 now supplies employer statistics, while T5 remains planned. Filter/statistics columns collapse independently like the menu; both also resize in width, with statistics using its left divider (D36). Saved preferences survive automatic narrow-layout hiding and viewport clamping.
 - 2026-10-16: ads-over-time chart stays in the filter column beside publication-date filters, not in the planned statistics bar (D27). T2 is complete.

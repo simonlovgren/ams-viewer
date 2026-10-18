@@ -21,6 +21,7 @@ Planned work that is specified but not started, plus active tasks. Each task lin
 | T15 | Done: Named dataset storage, lifecycle and existing-database migration | DAT-017, DAT-018, DAT-021, DAT-022 | L |
 | T16 | Done: Datasets page and metadata editor | DAT-019, DAT-020, DAT-021, DAT-022 | M |
 | T17 | Done: Dataset chooser, statistics, switching and deletion | DAT-017, DAT-018, DAT-020, DAT-021, DAT-023, DAT-024 | M |
+| T18 | Manually report and exclude erroneous ads | DAT-025 | M |
 
 T15–T17 completed 2026-10-18 (D39–D42). T7, T2, T13, T14, T1, T8 and T9 are complete (D26–D28, D31, D34–D36, D43–D44). T9 uses the statistics bar; T5 remains planned, with no placeholder shown. T3 goes with T4; T10 is independent. T6 follows the [full-scale performance plan](full-scale-performance-plan.md); filtered T9 latency on the full database remains unmeasured.
 
@@ -148,6 +149,14 @@ T15–T17 completed 2026-10-18 (D39–D42). T7, T2, T13, T14, T1, T8 and T9 are 
 - Delete requires permanent-removal confirmation; active deletion selects oldest remaining, and deleting last dataset recreates empty `default`. Source files are never deleted.
 - Cached counts refresh on startup, activation, import completion and source removal. Unknown legacy snapshots backfill in temporary read workers from source metadata, with visible pending/error states; no ad-table scan or main-thread DB access.
 - Verification: dataset/catalog, DB and renderer suites pass 51 tests; syntax checks pass. Browser fixture reviewed chooser layout at desktop and minimum window sizes; native Electron chooser interaction and performance against multiple full-scale DBs remain unverified.
+
+## T18. Manually report and exclude erroneous ads (DAT-025)
+- Status: planned only; no app implementation yet. Priority relative to existing tasks is not assigned.
+- Allow the user to explicitly report an individual ad as erroneous and exclude it from the active dataset. User-reported example: ads dated 2099, far beyond the current year. Do not silently cull ads during import based on suspect dates; retain existing malformed-record validation (DAT-008).
+- Reporting is local to the dataset, not submission to JobTech or another external service. Preserve original source files and leave other datasets unchanged.
+- Excluded ads must disappear from browsable ads, search results, filter options/counts, date ranges, timelines, employer statistics and dataset totals. Keep FTS, summary tables, worker caches and cached dataset statistics consistent; run expensive work off the main thread.
+- Before implementation, settle action placement, confirmation and optional reason capture; reversible exclusion versus physical deletion; reviewing/restoring excluded ads; persistence across restart, re-import and source removal. Record decisions with DAT-025 and update the data model, data flow and constraints as needed.
+- Verification: explicitly exclude a fixture ad dated 2099 and confirm all affected views and totals update; leave an unreported suspect-date ad visible; verify dataset isolation, unchanged source files, cancellation/failure handling and the chosen restart/re-import behavior.
 
 ## Other open items (not requirements yet)
 - Re-import `2016.jsonl` (shows 0 ads) and import the remaining files.
