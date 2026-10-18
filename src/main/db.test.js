@@ -6,6 +6,38 @@ const { tmpdir } = require('node:os');
 const path = require('node:path');
 const dbm = require('./db');
 
+test('employer selections use an index for counts, timeline and facet reads', () => {
+  const db = dbm.open(':memory:');
+  try {
+    dbm.ensureSummary(db);
+    for (const projection of ['COUNT(*)', 'pub_date', 'field_id, group_id, occ_id, region, muni, year, emp_type, hours']) {
+      const plan = db.prepare(`EXPLAIN QUERY PLAN SELECT ${projection} FROM ads a WHERE a.employer COLLATE BINARY IN (?, ?)`).all('Acme', 'Other');
+      assert.ok(plan.some(row => /SEARCH a USING (?:COVERING )?INDEX ix_employer/.test(row.detail)), JSON.stringify(plan));
+      if (projection !== 'field_id, group_id, occ_id, region, muni, year, emp_type, hours') {
+        assert.ok(plan.some(row => row.detail.includes('COVERING INDEX ix_employer')), JSON.stringify(plan));
+      }
+    }
+  } finally {
+    db.close();
+  }
+});
+
+test('existing summaries gain the employer index without rebuilding and skip it on repeat', () => {
+  const db = dbm.open(':memory:');
+  try {
+    dbm.ensureSummary(db);
+    db.exec('DROP INDEX ix_employer');
+    const progress = [];
+    assert.deepEqual(dbm.ensureSummary(db, event => progress.push(event)), { built: true, fresh: false });
+    assert.equal(progress.length, 1);
+    assert.match(progress[0].text, /Indexing employers/);
+    assert.deepEqual(db.prepare('PRAGMA index_info(ix_employer)').all().map(row => row.name), ['employer', 'pub_date']);
+    dbm.ensureSummary(db, () => assert.fail('Index must not rebuild'));
+  } finally {
+    db.close();
+  }
+});
+
 test('employer selections match exact names and combine with all filtered queries', () => {
   const db = dbm.open(':memory:');
   try {

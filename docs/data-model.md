@@ -64,6 +64,9 @@ sum_employer(v, n)         -- exact employer text and total count; included in s
 | `ix_group`, `ix_occ` | Direct group/occupation filters |
 | `ix_loc_cov (region, muni)` | Location filter + facet scan |
 | `ix_source (source)` | Removing a source |
+| `ix_employer (employer COLLATE BINARY, pub_date)` | Exact employer filters; covering counts and timeline date reads (D46) |
+
+`ix_employer` is created once by `ensureSummary()` in the build worker, including on databases whose summary version is already 2. It is not built when opening read connections. Startup/activation reports indexing progress; no re-import or summary rebuild is needed. SQLite maintains the index on subsequent imports/removals.
 
 ## Filter object (renderer ↔ main)
 
@@ -81,7 +84,7 @@ Dates are `YYYY-MM-DD` strings compared lexicographically. `sort` is `newest | o
 1. Reuse a suitable stored column when available; otherwise add a column (and index) in `db.js` `SCHEMA` and populate it in `toRow()`/`INSERT_SQL`.
 2. Handle it in `where()`. For a regular own-filter-excluded facet, add its definition to `FACETS` and keys to the materialized facet projection (D37). A statistics-driven filter such as `employers` reuses its existing filtered statistics query instead.
 3. Add UI in `index.html`/`app.js` and include it in `DEF`, `renderActive()`.
-4. If stored columns changed, migrate/backfill or re-import the data (existing rows are skipped by id, so remove the source first). Employer filtering needs no migration or re-import.
+4. If stored columns changed, migrate/backfill or re-import the data (existing rows are skipped by id, so remove the source first). Employer filtering needs only the automatic background index migration (D46), not re-import.
 
 ## Source data generations (files in `~/storage/ams_data`, checked 2026-10-15)
 

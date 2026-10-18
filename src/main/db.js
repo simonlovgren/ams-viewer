@@ -312,6 +312,10 @@ function scanRows(db, sql, ...params) {
 // One pass over all ads; slow on millions of rows (minutes), so it runs once in the background.
 // Indexes for the employment and hours filters are created afterwards.
 function ensureSummary(db, onProgress = () => {}) {
+  if (!db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'index' AND name = 'ix_employer'").get()) {
+    onProgress({ pct: 1, text: 'Indexing employers (one-time)…' });
+    db.exec('CREATE INDEX IF NOT EXISTS ix_employer ON ads(employer COLLATE BINARY, pub_date);');
+  }
   if (isBuilt(db)) return { built: true, fresh: false };
   const acc = newAcc();
   const total = db.prepare('SELECT MAX(rowid) m FROM ads').get().m || 1;
