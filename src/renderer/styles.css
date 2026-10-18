@@ -112,6 +112,12 @@ main { min-width: 0; min-height: 0; display: flex; }
 .widget-sized > :not(.tree) { flex-shrink: 0; }
 .widget-sized > .tree { flex: 1; min-height: 0; max-height: none; }
 .widget-body[hidden] { display: none; }
+.f-sec:has(> .stats-overlay) { display: grid; grid-template-columns: minmax(0, 1fr); }
+.f-sec:has(> .stats-overlay) > .widget-body { grid-area: 2 / 1; }
+.stats-overlay { grid-area: 2 / 1; z-index: 3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-width: 0; padding: 8px; background: rgba(15,20,36,.86); border: 1px solid var(--line); border-radius: 4px; color: var(--text); font-size: 12px; text-align: center; overflow-wrap: anywhere; pointer-events: none; }
+.stats-overlay svg { color: var(--teal); animation: notice-spin 1s linear infinite; }
+.stats-overlay[hidden], .f-sec:has(> .widget-body[hidden]) > .stats-overlay { display: none; }
+@media (prefers-reduced-motion: reduce) { .stats-overlay svg { animation: none; } }
 .f-sec:has(.widget-toggle[aria-expanded="false"]) .widget-resizer { visibility: hidden; }
 .f-sec:has(.widget-toggle[aria-expanded="false"]) h4 { margin-bottom: 0; }
 .date-row { display: flex; align-items: center; gap: 6px; color: var(--muted); }

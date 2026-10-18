@@ -2,6 +2,11 @@
 
 Count logic has headless regression tests; visual layout still needs manual review.
 
+## Filtered statistics loading feedback (UI-023 / D50)
+`node --test --test-name-pattern='statistics overlays|superseded statistics|statistics failures|facet refresh|background tasks|statistics errors' src/renderer/app.test.js` covers independent widget completion, the counts-only tail, stale/absent/building replies, failures and superseded successes/failures. The new deferred fixtures use `setImmediate` to drain complete promise/finally chains, not a fixed number of microtask ticks.
+
+2026-10-18: all 71 tests, changed-JS syntax/editor checks and disposable `npm start -- --no-sandbox` startup passed. Browser fixtures with held count/facet/timeline promises verified exact overlay/body bounds, spinner styling and text fit at 1400x900 and 960x600 in both fonts, collapse, keyboard resizing, top-notice push-down and persistence in Settings, independent overlay completion, count failure cleanup and error dismissal. Screenshots reviewed. Use `waitForFunction(..., { polling: 50 })` when waiting in the hidden browser; default animation-frame polling can time out even after the expected DOM appears. Live dataset untouched; native full-dataset interaction and latency not tested.
+
 ## Manual dataset reprocessing (DAT-026 / D49)
 `node --test --test-name-pattern='reprocess|error notices' src/main/db.test.js src/main/dataset-catalog.test.js src/renderer/app.test.js` covers stale projections/FTS/summaries/source counts, preserved raw records and identity, indexes/planner statistics, repeated and empty rebuilds, rollback, active-ID/concurrency guards, confirmation cancellation, duplicate work, failure recovery, persistent failure notifications and refresh. A disposable worker fixture spans 501 ads to exercise multiple read batches and progress before completion. Never test `reprocess()` against the real dataset without intending a full write rebuild. Full-scale runtime and disk usage remain unverified.
 

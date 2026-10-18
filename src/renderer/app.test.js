@@ -626,10 +626,11 @@ test('collapse all clears every tree level independently, preserves selections a
 
 test('facet refresh replaces pending counts and ignores superseded responses', async () => {
   const source = readFileSync(require.resolve('./app.js'), 'utf8');
-  const elements = Object.fromEntries(['#tf-occ', '#tf-loc', '#tree-occ', '#tree-loc', '#chips-year', '#chips-emp', '#chips-hours', '#widget-employers'].map(selector => [selector, { value: '', innerHTML: '', querySelector: () => null }]));
+  const elements = Object.fromEntries(['#tf-occ', '#tf-loc', '#tree-occ', '#tree-loc', '#chips-year', '#chips-emp', '#chips-hours', '#widget-employers', '#widget-timeline', '#loading-employers', '#loading-timeline'].map(selector => [selector, { value: '', innerHTML: '', querySelector: () => null, setAttribute() {} }]));
   const requests = [];
   const evaluate = rendererContext({ querySelectorAll: () => [] }, {
     $: selector => elements[selector],
+    showTask() {}, endTask() {},
     api: {
       facets: () => new Promise(resolve => requests.push(resolve)),
       timeline: async () => ({ stale: true }),
@@ -656,9 +657,10 @@ test('facet refresh failures report the underlying error', async () => {
   const failure = new Error('Facet worker failed');
   const errors = [];
   const notices = [];
-  const employerWidget = { innerHTML: '', querySelector: () => null };
+  const employerWidget = { innerHTML: '', querySelector: () => null, setAttribute() {} };
   const evaluate = rendererContext({ querySelectorAll: () => [] }, {
-    $: selector => selector === '#widget-employers' ? employerWidget : null,
+    $: () => employerWidget,
+    showTask() {}, endTask() {},
     console: { error: (...args) => errors.push(args) },
     reportStatsError: (what, error) => notices.push([what, error]),
     api: {
@@ -673,6 +675,95 @@ test('facet refresh failures report the underlying error', async () => {
   await Promise.resolve();
   assert.deepEqual(errors, [['Failed to update filter counts:', failure]]);
   assert.deepEqual(notices, [['filter counts', failure]]);
+});
+
+function statisticsRefreshContext() {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const elements = new Map();
+  const element = selector => {
+    if (!elements.has(selector)) elements.set(selector, {
+      innerHTML: '', hidden: true, attributes: {}, scrollTop: 0,
+      querySelector: () => ({}),
+      setAttribute(name, value) { this.attributes[name] = value; },
+    });
+    return elements.get(selector);
+  };
+  const requests = { count: [], facets: [], timeline: [] };
+  const tasks = new Set();
+  const errors = [];
+  const renders = [];
+  const context = vm.createContext({
+    $: element, F: {}, esc: String, console: { error() {} },
+    loadMore: async () => {}, updateCount() {}, markFacetsPending() {},
+    renderFacets: data => renders.push(['facets', data]), renderChart: () => renders.push(['timeline']),
+    showTask: key => tasks.add(key), endTask: key => tasks.delete(key),
+    reportStatsError: (what, error) => errors.push([what, error]),
+    api: Object.fromEntries([...Object.keys(requests).map(key => [key, () => new Promise((resolve, reject) => requests[key].push({ resolve, reject }))]), ['onSummary', () => {}]]),
+  });
+  vm.runInContext('let seq = 0, loaded = 0, done = false, loading = false, total = null, fseq = 0, timelineData = null; const listEl = {};'
+    + source.slice(source.indexOf('  function reload()'), source.indexOf("  listEl.addEventListener('click'")), context);
+  return { evaluate: expression => vm.runInContext(expression, context), element, requests, tasks, errors, renders };
+}
+
+test('statistics overlays settle independently while progress waits for the result count', async () => {
+  const state = statisticsRefreshContext();
+  await state.evaluate('reload()');
+  for (const widget of ['employers', 'timeline']) {
+    assert.equal(state.element('#widget-' + widget).attributes['aria-busy'], 'true');
+    assert.equal(state.element('#loading-' + widget).hidden, false);
+  }
+  assert.ok(state.tasks.has('stats-refresh'));
+  state.requests.facets[0].resolve({ employers: [] });
+  await new Promise(setImmediate);
+  assert.equal(state.element('#loading-employers').hidden, true);
+  assert.equal(state.element('#widget-employers').attributes['aria-busy'], 'false');
+  assert.equal(state.element('#loading-timeline').hidden, false);
+  assert.ok(state.tasks.has('stats-refresh'));
+  state.requests.timeline[0].resolve({ points: [] });
+  await new Promise(setImmediate);
+  assert.equal(state.element('#loading-timeline').hidden, true);
+  assert.ok(state.tasks.has('stats-refresh'));
+  state.requests.count[0].resolve({ total: 17 });
+  await new Promise(setImmediate);
+  assert.equal(state.evaluate('total'), 17);
+  assert.equal(state.tasks.size, 0);
+  assert.deepEqual(state.renders.map(render => render[0]), ['facets', 'timeline']);
+});
+
+test('superseded statistics successes and failures cannot clear current loading feedback', async () => {
+  const state = statisticsRefreshContext();
+  await state.evaluate('reload(); reload()');
+  state.requests.count[0].resolve({ total: 99 });
+  state.requests.facets[0].reject(new Error('Old request failed'));
+  state.requests.timeline[0].resolve({ points: [] });
+  await new Promise(setImmediate);
+  assert.equal(state.evaluate('total'), null);
+  assert.equal(state.renders.length, 0);
+  assert.equal(state.errors.length, 0);
+  for (const widget of ['employers', 'timeline']) assert.equal(state.element('#loading-' + widget).hidden, false);
+  assert.ok(state.tasks.has('stats-refresh'));
+  for (const key of ['count', 'facets', 'timeline']) state.requests[key][1].resolve({ stale: true });
+  await new Promise(setImmediate);
+  assert.equal(state.tasks.size, 0);
+  for (const widget of ['employers', 'timeline']) assert.equal(state.element('#loading-' + widget).hidden, true);
+});
+
+test('statistics failures and building responses always clear running feedback', async () => {
+  for (const failure of [true, false]) {
+    const state = statisticsRefreshContext();
+    await state.evaluate('reload()');
+    for (const key of ['count', 'facets', 'timeline']) {
+      if (failure) state.requests[key][0].reject(new Error(key + ' failed'));
+      else state.requests[key][0].resolve(key === 'count' ? null : { building: true });
+    }
+    await new Promise(setImmediate);
+    assert.equal(state.errors.length, failure ? 3 : 0);
+    assert.equal(state.tasks.size, 0);
+    for (const widget of ['employers', 'timeline']) {
+      assert.equal(state.element('#loading-' + widget).hidden, true);
+      assert.equal(state.element('#widget-' + widget).attributes['aria-busy'], 'false');
+    }
+  }
 });
 
 function noticeContext() {

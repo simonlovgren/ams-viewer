@@ -485,11 +485,12 @@
     total = null;
     updateCount();
     const firstPage = loadMore(true, s);
+    const finishCount = beginStatsRefresh('count');
     api.count(F).then((r) => {
       if (s !== seq || !r || r.stale) return;
       total = r.total;
       updateCount();
-    }).catch((error) => { if (s === seq) reportStatsError('the result count', error); });
+    }).catch((error) => { if (s === seq) reportStatsError('the result count', error); }).finally(finishCount);
     loadStats();
     return firstPage;
   }
@@ -497,6 +498,25 @@
   // Filter options and the chart come from summary tables; while those are built (once, in the background) a message is shown.
   let tseq = 0;
   let summaryInfo = { state: 'unknown' };
+  const statsPending = new Map();
+  function beginStatsRefresh(key, widget) {
+    const token = {};
+    statsPending.set(key, token);
+    if (widget) {
+      $('#widget-' + widget).setAttribute('aria-busy', 'true');
+      $('#loading-' + widget).hidden = false;
+    }
+    showTask('stats-refresh', 'Refreshing statistics…');
+    return () => {
+      if (statsPending.get(key) !== token) return;
+      statsPending.delete(key);
+      if (widget) {
+        $('#widget-' + widget).setAttribute('aria-busy', 'false');
+        $('#loading-' + widget).hidden = true;
+      }
+      if (!statsPending.size) endTask('stats-refresh');
+    };
+  }
   function showBuilding(s) {
     const msg = `<div class="empty-mini">${esc((s && s.text) || 'Statistics are being prepared (one-time)…')}</div>`;
     for (const id of ['#tree-occ', '#tree-loc', '#chart', '#widget-employers']) $(id).innerHTML = msg;
@@ -505,6 +525,7 @@
     markFacetsPending();
     if (!$('#widget-employers').querySelector('[data-employer]')) $('#widget-employers').innerHTML = '<div class="empty-mini">Updating statistics…</div>';
     const fs_ = ++fseq;
+    const finishFacets = beginStatsRefresh('facets', 'employers');
     api.facets(F).then((data) => {
       if (fs_ !== fseq || !data || data.stale) return;
       if (data.building) { showBuilding(summaryInfo); return; }
@@ -516,13 +537,14 @@
         reportStatsError('filter counts', error);
       }
       console.error('Failed to update filter counts:', error);
-    });
+    }).finally(finishFacets);
     const ts = ++tseq;
+    const finishTimeline = beginStatsRefresh('timeline', 'timeline');
     api.timeline(F).then((t) => {
       if (ts !== tseq || !t || t.stale || t.building) return;
       timelineData = t;
       renderChart();
-    }).catch((error) => { if (ts === tseq) reportStatsError('the ads-over-time chart', error); });
+    }).catch((error) => { if (ts === tseq) reportStatsError('the ads-over-time chart', error); }).finally(finishTimeline);
   }
   api.onSummary((s) => {
     const wasReady = summaryInfo.state === 'ready';
