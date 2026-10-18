@@ -14,6 +14,7 @@ Desktop app for browsing historical Swedish job ads (Arbetsförmedlingen / JobTe
 | Back / forward | Backspace, mouse back/forward buttons, Alt+← / Alt+→, or the back button in the ad view |
 | Focus keyword search | `/` |
 | Jump to a filter from an ad | Click a tag or breadcrumb item |
+| Filter by employer | Click a Top employers entry, or focus it and press Enter/Space; remove its "Employer: …" chip to clear it |
 | Remove imported data | Datasets → Remove |
 
 Filters are remembered while browsing a dataset and reset when switching datasets. Data is stored locally in `~/.config/AMS Viewer/datasets/` with the active dataset recorded in `datasets.json` (macOS: `~/Library/Application Support/AMS Viewer/`, Windows: `%APPDATA%\AMS Viewer\`); the source files are not needed after import.

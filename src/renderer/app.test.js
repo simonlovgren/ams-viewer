@@ -7,7 +7,7 @@ const vm = require('node:vm');
 function rendererContext(document = { querySelectorAll: () => [] }, globals = {}) {
   const source = readFileSync(require.resolve('./app.js'), 'utf8');
   const context = vm.createContext({ Intl, document, ...globals });
-  vm.runInContext("const F = {sel: [], loc: []}; const expanded = new Set(); let fseq = 0; const icon = () => '';" +
+  vm.runInContext("const F = {sel: [], loc: [], employers: []}; const expanded = new Set(); let fseq = 0; const icon = () => '';" +
     source.slice(source.indexOf('  const esc ='), source.indexOf('  /* ---------- filter state')) +
     source.slice(source.indexOf('  let facetData ='), source.indexOf('  /* ---------- ads-over-time chart')), context);
   return expression => vm.runInContext(expression, context);
@@ -28,6 +28,67 @@ test('top employers render escaped names, compact counts and full-name tooltips'
   assert.match(employerWidget.innerHTML, /title="&lt;Company &amp; Sons&gt;"/);
   assert.match(employerWidget.innerHTML, /&lt;Company &amp; Sons&gt;/);
   assert.match(employerWidget.innerHTML, /title="12,500">12\.5k/);
+  assert.match(employerWidget.innerHTML, /<button type="button"/);
+  assert.match(employerWidget.innerHTML, /data-employer="&lt;Company &amp; Sons&gt;" aria-pressed="false"/);
+  evaluate(`F.employers = ['<Company & Sons>']; renderEmployers([{v:'<Company & Sons>',n:12500}])`);
+  assert.match(employerWidget.innerHTML, /employer-chip on/);
+  assert.match(employerWidget.innerHTML, /aria-pressed="true"/);
+});
+
+test('employer toggles, chips and Clear all preserve unrelated state and persist session filters', () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const stored = new Map();
+  const elements = new Map();
+  const element = selector => {
+    if (!elements.has(selector)) elements.set(selector, {
+      value: '', innerHTML: '', classList: { toggle() {} },
+      addEventListener(name, listener) { this[name] = listener; },
+    });
+    return elements.get(selector);
+  };
+  const timers = [];
+  let pending = 0;
+  const context = vm.createContext({
+    $: element, esc: value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;'), icon: () => '',
+    sessionStorage: { getItem: key => stored.get(key), setItem: (key, value) => stored.set(key, value) },
+    localStorage: { removeItem() {}, getItem() { return null; }, setItem() {} },
+    setTimeout: callback => { timers.push(callback); return timers.length; }, clearTimeout() {},
+    reload() {}, updateWidgets() {}, markFacetsPending() { pending++; },
+  });
+  const state = source.slice(source.indexOf('  const DEF ='), source.indexOf('  /* ---------- collapsible widgets'));
+  const controls = source.slice(source.indexOf("  $('#widget-employers').addEventListener"), source.indexOf('  /* ---------- ad view'));
+  vm.runInContext(state + controls, context);
+  const snapshot = () => JSON.parse(vm.runInContext('JSON.stringify(F)', context));
+  const original = { terms: ['Engineer'], termMode: 'or', sel: [{ k: 'field', id: 'IT', label: 'IT' }], loc: [{ k: 'region', id: 'North', label: 'North' }], from: '2026-01-01', to: '2026-12-31', emp: 'Permanent', hours: 'Full time', sort: 'oldest' };
+  vm.runInContext(`setF(${JSON.stringify(original)})`, context);
+  element('#q').value = 'uncommitted text';
+  const toggle = name => element('#widget-employers').click({ target: { closest: () => ({ dataset: { employer: name } }) } });
+  toggle('<Acme & Sons>');
+  toggle('acme');
+  assert.deepEqual(snapshot(), { ...original, employers: ['<Acme & Sons>', 'acme'] });
+  assert.equal(element('#q').value, 'uncommitted text');
+  assert.match(element('#active').innerHTML, /<button type="button"[^>]+aria-label="Remove Employer: &lt;Acme &amp; Sons>"/);
+  assert.match(element('#active').innerHTML, /Employer: acme/);
+  toggle('acme');
+  assert.deepEqual(snapshot().employers, ['<Acme & Sons>']);
+  toggle('acme');
+  element('#active').onclick({ target: { closest: () => ({ dataset: { i: '5' } }) } });
+  assert.deepEqual(snapshot(), { ...original, employers: ['acme'] });
+  assert.deepEqual(JSON.parse(stored.get('filters')), snapshot());
+  const restored = vm.createContext({
+    sessionStorage: { getItem: key => stored.get(key) },
+    localStorage: { removeItem() {}, getItem() { return null; } },
+  });
+  vm.runInContext(state, restored);
+  assert.deepEqual(JSON.parse(vm.runInContext('JSON.stringify(F)', restored)), snapshot());
+  assert.equal(pending, 6);
+  assert.equal(timers.length, 6);
+  element('#clear-all').click();
+  assert.deepEqual(snapshot().employers, []);
+  assert.deepEqual(snapshot().terms, []);
+  assert.equal(snapshot().sort, 'oldest');
+  assert.equal(element('#q').value, '');
+  assert.doesNotMatch(element('#active').innerHTML, /Employer:/);
 });
 
 test('ad-view find matches case-insensitively and ignores empty queries', () => {
@@ -330,7 +391,7 @@ test('dataset chooser shows one-line previews, counts, final creation action, an
     history: { pushState: state => calls.push(['history', state]) },
   });
   const code = source.slice(source.indexOf('  function applyDatasetChange('), source.indexOf('  function renderProgress()'));
-  vm.runInContext(`const DEF = {terms:[],sel:[],loc:[]}; let F = {terms:['old'],sel:[1],loc:[2]}; let activeDataset = ${JSON.stringify(catalog.active)};
+  vm.runInContext(`const DEF = {terms:[],sel:[],loc:[],employers:[]}; let F = {terms:['old'],sel:[1],loc:[2],employers:['Old employer']}; let activeDataset = ${JSON.stringify(catalog.active)};
     let datasetContextId = 'one', datasetHistoryBoundary = false, datasetEditor = null;
     let idx = 4, listScroll = 200, adSeq = 3, adMatches = [1]; ${code}`, context);
   vm.runInContext(`chooserCatalog = ${JSON.stringify(catalog)}`, context);
@@ -348,7 +409,7 @@ test('dataset chooser shows one-line previews, counts, final creation action, an
   await vm.runInContext("chooseDataset('two')", context);
   assert.equal(dialog.open, false);
   assert.equal(vm.runInContext('activeDataset.id', context), 'two');
-  assert.equal(vm.runInContext('JSON.stringify(F)', context), '{"terms":[],"sel":[],"loc":[]}');
+  assert.equal(vm.runInContext('JSON.stringify(F)', context), '{"terms":[],"sel":[],"loc":[],"employers":[]}');
   assert.equal(vm.runInContext('adSeq', context), 4);
   assert.deepEqual(calls.filter(call => call[0] === 'show' || call[0] === 'reload'), [['show', 'data'], ['reload']]);
   assert.equal(calls.find(call => call[0] === 'history')[1].datasetId, 'two');
@@ -504,7 +565,7 @@ test('collapse all clears every tree level independently, preserves selections a
 
 test('facet refresh replaces pending counts and ignores superseded responses', async () => {
   const source = readFileSync(require.resolve('./app.js'), 'utf8');
-  const elements = Object.fromEntries(['#tf-occ', '#tf-loc', '#tree-occ', '#tree-loc', '#chips-year', '#chips-emp', '#chips-hours', '#widget-employers'].map(selector => [selector, { value: '', innerHTML: '' }]));
+  const elements = Object.fromEntries(['#tf-occ', '#tf-loc', '#tree-occ', '#tree-loc', '#chips-year', '#chips-emp', '#chips-hours', '#widget-employers'].map(selector => [selector, { value: '', innerHTML: '', querySelector: () => null }]));
   const requests = [];
   const evaluate = rendererContext({ querySelectorAll: () => [] }, {
     $: selector => elements[selector],
@@ -533,7 +594,7 @@ test('facet refresh failures report the underlying error', async () => {
   const source = readFileSync(require.resolve('./app.js'), 'utf8');
   const failure = new Error('Facet worker failed');
   const errors = [];
-  const employerWidget = { innerHTML: '' };
+  const employerWidget = { innerHTML: '', querySelector: () => null };
   const evaluate = rendererContext({ querySelectorAll: () => [] }, {
     $: selector => selector === '#widget-employers' ? employerWidget : null,
     console: { error: (...args) => errors.push(args) },
@@ -553,12 +614,16 @@ test('facet refresh failures report the underlying error', async () => {
 test('pending counts hide stale values and zero styling, including rebuilt trees', () => {
   const count = { textContent: '0', title: '0' };
   let zeroRemoved = false;
-  const evaluate = rendererContext({ querySelectorAll: selector => selector === '[data-collapse-tree]' ? [] : selector.includes('.cnt') ? [count] : [{ classList: { remove: () => { zeroRemoved = true; } } }] });
+  const employer = { dataset: { employer: 'Acme' }, classList: { toggle(name, on) { employer.selected = on; } }, setAttribute(name, value) { employer[name] = value; } };
+  const evaluate = rendererContext({ querySelectorAll: selector => selector === '[data-collapse-tree]' ? [] : selector === '[data-employer]' ? [employer] : selector.includes('.cnt') ? [count] : [{ classList: { remove: () => { zeroRemoved = true; } } }] });
+  evaluate("F.employers = ['Acme']");
   evaluate('facetPending = false; markFacetsPending()');
   assert.equal(evaluate('fseq'), 1);
   assert.equal(count.textContent, '...');
   assert.equal(count.title, 'Updating counts');
   assert.equal(zeroRemoved, true);
+  assert.equal(employer.selected, true);
+  assert.equal(employer['aria-pressed'], 'true');
   const chips = "chipsHtml([{v:'a',label:'A',n:0}],()=>false)";
   assert.match(evaluate(chips), /Updating counts/);
   assert.doesNotMatch(evaluate(chips), /chip zero/);
@@ -714,7 +779,7 @@ function widgetContext(saved, storageFails = false, heights) {
       append(handle) { this.handle = handle; },
       querySelector: selector => selector === '.widget-toggle' ? button : selector === '.widget-active' ? badge : selector === '.widget-label' ? { textContent: key } : body };
   });
-  const filters = { from: '', to: '', sel: [], loc: [], emp: '', hours: '' };
+  const filters = { from: '', to: '', sel: [], loc: [], employers: [], emp: '', hours: '' };
   const context = vm.createContext({
     F: filters, document: { querySelectorAll: () => widgets, createElement }, window,
     $: (selector, root) => root.querySelector(selector),

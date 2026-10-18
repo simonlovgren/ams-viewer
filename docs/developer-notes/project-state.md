@@ -15,6 +15,7 @@ Last updated: 2026-10-18.
 - App name is **AMS Viewer** (`ams-viewer`). The workspace folder is still `ams_oldbrowser`.
 
 ## Implemented highlights
+- 2026-10-18: T9/D45/SRC-022 adds exact-name employer toggles and removable active chips. Shared predicates retain filtered Top-30 semantics; session/ad return persists selections and dataset switch resets them. DB/renderer suites and browser Enter/Space fixture pass; actual Tab traversal, native Electron interaction and full-scale employer-filter latency remain unverified.
 Import to SQLite with progress (multi-file, drag and drop); keyword search with multiple free-text entries; multi-select occupation and location trees with always-visible options and counts; date range, year, employment, hours filters; job-ad style ad view with breadcrumb and in-ad find/highlight/navigation (AD-011); history navigation (Backspace, mouse buttons); electron-builder packaging.
 
 - 2026-10-18: T9/D43–D44 adds filtered top-30 employer counts to the statistics column; exact stored employer text defines groups, unfiltered totals use `sum_employer`. Geography placeholder removed; T5/SRC-019 remains planned. Next startup rebuilds summary version 2 in background; this migration and filtered full-scale latency remain unverified (T6).

@@ -68,18 +68,20 @@ sum_employer(v, n)         -- exact employer text and total count; included in s
 ## Filter object (renderer ↔ main)
 
 ```js
-{ q, terms, termMode, sel, loc, from, to, emp, hours, sort }
+{ q, terms, termMode, sel, loc, employers, from, to, emp, hours, sort }
 ```
 
 `terms` is an array of committed free-text entries (added with Enter; text still being typed is not part of the filter; the backend still accepts a legacy `q`); `termMode` (`and` | `or`) selects how entries are combined; each entry is an AND of its own words (see `ftsMatch()` in `db.js`). `sel` is an array of `{ k: 'field'|'group'|'occ', id, label, fi, gi }` (occupation selections) and `loc` an array of `{ k: 'region'|'muni', id, label, ri }` (location selections); each list is OR-combined.
 Dates are `YYYY-MM-DD` strings compared lexicographically. `sort` is `newest | oldest | relevance`.
 
+`employers` is an array of exact stored employer-name strings, default `[]`. Values are OR-combined by parameterized `ads.employer COLLATE BINARY IN (...)`; all other dimensions are AND-combined with this predicate. Names are not trimmed, normalized or folded; case and spelling variants remain distinct. Every shared query, including employer statistics, applies this filter. Unlike regular facet options, Top-30 employers remain statistics over all active filters, not an own-filter-excluded option universe (D45/SRC-020/SRC-022). Session persistence, ad return, Clear all and dataset reset use the existing renderer filter lifecycle.
+
 ## Adding a new filter dimension
 
-1. Add a column (and index) in `db.js` `SCHEMA` and populate it in `toRow()`/`INSERT_SQL`.
-2. Handle it in `where()` and add a facet query in `facets()`. Include its keys in the materialized facet projection (D37), so shared-predicate queries can group it.
+1. Reuse a suitable stored column when available; otherwise add a column (and index) in `db.js` `SCHEMA` and populate it in `toRow()`/`INSERT_SQL`.
+2. Handle it in `where()`. For a regular own-filter-excluded facet, add its definition to `FACETS` and keys to the materialized facet projection (D37). A statistics-driven filter such as `employers` reuses its existing filtered statistics query instead.
 3. Add UI in `index.html`/`app.js` and include it in `DEF`, `renderActive()`.
-4. Re-import the data (existing rows are skipped by id, so remove the source first).
+4. If stored columns changed, migrate/backfill or re-import the data (existing rows are skipped by id, so remove the source first). Employer filtering needs no migration or re-import.
 
 ## Source data generations (files in `~/storage/ams_data`, checked 2026-10-15)
 

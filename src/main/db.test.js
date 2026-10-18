@@ -6,6 +6,40 @@ const { tmpdir } = require('node:os');
 const path = require('node:path');
 const dbm = require('./db');
 
+test('employer selections match exact names and combine with all filtered queries', () => {
+  const db = dbm.open(':memory:');
+  try {
+    const names = ['Acme', 'acme', 'Acme ', 'Acme subsidiary', 'Other', "O'Reilly & Sons"];
+    names.forEach((name, index) => {
+      const row = dbm.toRow({
+        id: String(index), headline: index === 4 ? 'Different' : 'Engineer',
+        publication_date: '2026-01-02', employer: { name },
+        workplace_address: { region: index === 1 ? 'South' : 'North' },
+        employment_type: { label: 'Permanent' }, working_hours_type: { label: 'Full time' },
+      }, 'test');
+      const inserted = db.prepare(dbm.INSERT_SQL).run(...row.values);
+      db.prepare('INSERT INTO ads_fts(rowid,headline,employer,body) VALUES (?,?,?,?)').run(inserted.lastInsertRowid, ...row.fts);
+    });
+    dbm.ensureSummary(db);
+    const ids = filter => dbm.search(db, filter, 0, 60, true).rows.map(row => row.ad_id).sort();
+    assert.deepEqual(ids({ employers: ['Acme'] }), ['0']);
+    assert.deepEqual(ids({ employers: ['acme', 'Acme '] }), ['1', '2']);
+    assert.deepEqual(ids({ employers: ["O'Reilly & Sons"] }), ['5']);
+    assert.deepEqual(ids({ employers: ["' OR 1=1 --"] }), []);
+    assert.equal(dbm.count(db, { employers: [] }), 6);
+    const filter = { employers: ['Acme', 'acme', 'Other'], terms: ['Engineer'], loc: [{ k: 'region', id: 'North' }], emp: 'Permanent', hours: 'Full time', from: '2026-01-01', to: '2026-12-31' };
+    assert.deepEqual(ids(filter), ['0']);
+    assert.deepEqual(ids({ ...filter, sort: 'relevance' }), ['0']);
+    assert.equal(dbm.count(db, filter), 1);
+    assert.equal(dbm.timeline(db, filter).points.reduce((sum, point) => sum + point.n, 0), 1);
+    assert.deepEqual(dbm.facets(db, filter).employers, [{ v: 'Acme', n: 1 }]);
+    assert.equal(dbm.facets(db, filter).loc.reduce((sum, row) => sum + row.n, 0), 2);
+    assert.deepEqual(ids({ ...filter, from: '2027-01-01' }), []);
+  } finally {
+    db.close();
+  }
+});
+
 test('dataset chooser statistics read only imported-source metadata', () => {
   const db = dbm.open(':memory:');
   try {

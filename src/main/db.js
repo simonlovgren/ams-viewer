@@ -173,6 +173,10 @@ function where(f, skip = []) {
   }
   if (has('emp') && f.emp) { w.push('a.emp_type = ?'); p.push(f.emp); }
   if (has('hours') && f.hours) { w.push('a.hours = ?'); p.push(f.hours); }
+  if (has('employers') && Array.isArray(f.employers) && f.employers.length) {
+    w.push(`a.employer COLLATE BINARY IN (${f.employers.map(() => '?').join(',')})`);
+    p.push(...f.employers);
+  }
   return { sql: w.length ? w.join(' AND ') : '1', params: p };
 }
 

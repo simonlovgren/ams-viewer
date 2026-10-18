@@ -131,8 +131,9 @@ input.mini { width: 100%; margin-bottom: 6px; padding: 5px 9px; font-size: 12px;
 
 /* chips */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); color: #c6cde6; font-size: 12px; cursor: pointer; user-select: none; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); color: #c6cde6; font-family: inherit; font-size: 12px; cursor: pointer; user-select: none; }
 .chip:hover { border-color: var(--purple); }
+.chip:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 .chip.on { background: linear-gradient(120deg, rgba(45,212,191,.25), rgba(167,139,250,.25)); border-color: var(--teal); color: #fff; }
 .chip.zero { color: #566086; }
 .chip.zero small { color: #475073; }

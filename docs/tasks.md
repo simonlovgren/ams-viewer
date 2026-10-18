@@ -12,7 +12,7 @@ Planned work that is specified but not started, plus active tasks. Each task lin
 | T6 | Full-scale performance of filtering, counts and statistics (lower priority since startup is fixed; [plan](full-scale-performance-plan.md)) | NFR-003, NFR-004, NFR-005 | L |
 | T7 | Done: monospace typography and top-level Settings | UI-012, UI-016, NAV-009 | S |
 | T8 | Done: matching, resizable statistics widgets and collapsible columns | UI-013, UI-011, UI-019, UI-020, UI-021 | M |
-| T9 | Done: Top-30 employers widget | SRC-020 | M |
+| T9 | Done: Top-30 employers widget and exact-name selection | SRC-020, SRC-022 | M |
 | T10 | Employer logo cache | AD-010 | M |
 | T11 | Favorite lists and star-action popover | LST-009, LST-010, LST-011, LST-012, LST-013 | M |
 | T12 | Enrich older ads from newer taxonomy and geographic data | DAT-015, DAT-016 | L |
@@ -78,11 +78,12 @@ T15–T17 completed 2026-10-18 (D39–D42). T7, T2, T13, T14, T1, T8 and T9 are 
 - Filter and statistics columns have independent remembered icon toggles with accessible names and expanded states, consistent with the menu. Statistics starts hidden below 1200 px; opening a column takes priority when both cannot leave 420 px for results, without overwriting the other column's preference. Preferred filter width returns after narrowing/reload/widening.
 - All 23 renderer tests and syntax checks passed. Browser fixture passed both statistics-widget pointer drags, keyboard resize/title collapse, column toggles, reload persistence, sidebar-width restoration and non-overlapping layout at 960x600 and 1400x900 in both fonts. Sidebar-width follow-up verified real 280-to-400 px dragging, keyboard resizing and collapse/reload retention; saved 720 px width clamps to 467 px at minimum size, leaving 420 px for results, then restores on widening. Statistics screenshot reviewed within the browser's visible area. Initial T8 Electron startup opened 11.25M ads in 578 ms; native interaction/resize and actual quit/relaunch persistence not manually tested.
 
-## T9. Top-30 employers widget (SRC-020)
+## T9. Top-30 employers widget (SRC-020, SRC-022)
 - Completed 2026-10-18; D43–D44. `facets()` groups exact stored employer text under all active filters and returns the 30 most frequent; unfiltered totals come from `sum_employer`. Labels show counts and full-name tooltips and collapse like other widgets.
-- Names differing in spelling or case remain distinct; organization numbers are not used, and labels do not filter. Summary version 2 rebuilds derived tables once in the background; source ads need no re-import. Filtered results use the existing bounded per-worker facet cache.
+- Names differing in spelling or case remain distinct; organization numbers are not used. D45 adds exact-name native toggle buttons and removable "Employer: …" chips, OR within employer selections and AND with other filters. Existing filters, committed keywords and draft text remain unchanged. Session/ad navigation retains selections; Clear all and dataset switch reset them. Statistics retain SRC-020's filtered Top-30 behavior, not an own-filter-excluded employer option list.
+- Summary version 2 rebuilds derived tables once in the background; source ads need no re-import. Filtered results use the existing bounded per-worker facet cache. D45 adds no schema/index or migration.
 - Before summary precomputation, an unfiltered group-by took 167,837 ms on 11.25M ads. Filtered full-scale latency and the version-2 rebuild have not been verified; track remaining query cost under T6.
-- `node --test src/main/db.test.js src/renderer/app.test.js` covers active filters, count ordering, top-30 cap and escaped display.
+- `node --test src/main/db.test.js src/renderer/app.test.js` passes 46 tests, covering exact case/spacing, multi-employer OR, combined filters, all query paths, toggles, chips, Clear all, dataset reset and session state. Browser fixture verifies native Enter/Space, focus retention, request propagation, draft preservation and ad/reload retention; native Electron interaction and full-scale latency remain unverified.
 
 ## T10. Employer logo cache (AD-010)
 - Today the ad view loads `logo_url` directly in an `<img>` (CSP `img-src` allows any `https:`); nothing is stored, so every view hits the remote host and fails offline.

@@ -70,7 +70,7 @@
   };
 
   /* ---------- filter state ---------- */
-  const DEF = { terms: [], termMode: 'and', sel: [], loc: [], from: '', to: '', emp: '', hours: '', sort: 'newest' };
+  const DEF = { terms: [], termMode: 'and', sel: [], loc: [], employers: [], from: '', to: '', emp: '', hours: '', sort: 'newest' };
   let F = { ...DEF };
   // Filters live only while the app is open (sessionStorage); they are not restored on the next start.
   try { F = { ...DEF, ...JSON.parse(sessionStorage.getItem('filters') || '{}') }; } catch { /* ignore */ }
@@ -104,6 +104,7 @@
       location: F.loc.length,
       employment: Number(!!F.emp),
       hours: Number(!!F.hours),
+      employers: F.employers.length,
     };
     document.querySelectorAll('[data-widget]').forEach((widget) => {
       const key = widget.dataset.widget;
@@ -438,7 +439,7 @@
   }
   function loadStats() {
     markFacetsPending();
-    $('#widget-employers').innerHTML = '<div class="empty-mini">Updating statistics…</div>';
+    if (!$('#widget-employers').querySelector('[data-employer]')) $('#widget-employers').innerHTML = '<div class="empty-mini">Updating statistics…</div>';
     const fs_ = ++fseq;
     api.facets(F).then((data) => {
       if (fs_ !== fseq || !data || data.stale) return;
@@ -480,11 +481,16 @@
   function markFacetsPending() {
     ++fseq;
     facetPending = true;
-    document.querySelectorAll('#filters .cnt, #filters .chip small').forEach((el) => {
+    document.querySelectorAll('#filters .cnt, #filters .chip small, #widget-employers small').forEach((el) => {
       el.textContent = '...';
       el.title = 'Updating counts';
     });
     document.querySelectorAll('#filters .zero').forEach((el) => el.classList.remove('zero'));
+    document.querySelectorAll('[data-employer]').forEach((button) => {
+      const selected = F.employers.includes(button.dataset.employer);
+      button.classList.toggle('on', selected);
+      button.setAttribute('aria-pressed', String(selected));
+    });
   }
 
   const facetTitle = (n) => facetPending ? 'Updating counts' : fmtNum(n);
@@ -593,9 +599,13 @@
   }
 
   function renderEmployers(rows) {
+    const focused = document.activeElement?.closest?.('[data-employer]')?.dataset.employer;
     $('#widget-employers').innerHTML = rows.length
-      ? `<div class="employer-list">${rows.map((r) => `<span class="chip employer-chip" title="${esc(r.v)}"><span class="employer-name">${esc(r.v)}</span><small title="${fmtNum(r.n)}">${fmtCount(r.n)}</small></span>`).join('')}</div>`
+      ? `<div class="employer-list">${rows.map((r) => `<button type="button" class="chip employer-chip${F.employers.includes(r.v) ? ' on' : ''}" data-employer="${esc(r.v)}" aria-pressed="${F.employers.includes(r.v)}" title="${esc(r.v)}"><span class="employer-name">${esc(r.v)}</span><small title="${fmtNum(r.n)}">${fmtCount(r.n)}</small></button>`).join('')}</div>`
       : '<div class="empty-mini">No employer data</div>';
+    if (focused !== undefined) {
+      [...$('#widget-employers').querySelectorAll('[data-employer]')].find(button => button.dataset.employer === focused)?.focus();
+    }
   }
 
   /* ---------- ads-over-time chart ---------- */
@@ -764,6 +774,12 @@
   });
   singleChip('#chips-emp', 'emp');
   singleChip('#chips-hours', 'hours');
+  $('#widget-employers').addEventListener('click', (e) => {
+    const button = e.target.closest('[data-employer]');
+    if (!button) return;
+    const name = button.dataset.employer;
+    setF({ employers: F.employers.includes(name) ? F.employers.filter(value => value !== name) : [...F.employers, name] });
+  });
 
   $('#f-from').addEventListener('change', (e) => setF({ from: e.target.value }));
   $('#f-to').addEventListener('change', (e) => setF({ to: e.target.value }));
@@ -811,21 +827,24 @@
     if (F.from || F.to) items.push(['date', 'calendar', `${F.from || '…'} → ${F.to || '…'}`, ['from', 'to']]);
     if (F.emp) items.push(['emp', 'briefcase', F.emp, ['emp']]);
     if (F.hours) items.push(['hours', 'clock', F.hours, ['hours']]);
+    F.employers.forEach((name, i) => items.push(['employer', 'building', `Employer: ${name}`, ['employers#' + i]]));
     $('#active').innerHTML = items
-      .map(([k, ic, text], i) => `<span class="chip fl on" data-i="${i}">${icon(ic)}${esc(text)}<span class="x">${icon('x')}</span></span>`)
+      .map(([k, ic, text], i) => k === 'employer'
+        ? `<button type="button" class="chip fl on" data-i="${i}" aria-label="Remove ${esc(text)}">${icon(ic)}${esc(text)}<span class="x">${icon('x')}</span></button>`
+        : `<span class="chip fl on" data-i="${i}">${icon(ic)}${esc(text)}<span class="x">${icon('x')}</span></span>`)
       .join('');
     $('#active').onclick = (e) => {
       const c = e.target.closest('.chip');
       if (!c) return;
       const clear = items[+c.dataset.i][3];
       const patch = {};
-      const drop = { sel: new Set(), loc: new Set() };
+      const drop = { sel: new Set(), loc: new Set(), employers: new Set() };
       clear.forEach((k) => {
-        const m = /^(sel|loc)#(\d+)$/.exec(k);
+        const m = /^(sel|loc|employers)#(\d+)$/.exec(k);
         if (m) drop[m[1]].add(+m[2]);
         else patch[k] = '';
       });
-      for (const l of ['sel', 'loc']) if (drop[l].size) patch[l] = F[l].filter((_, i) => !drop[l].has(i));
+      for (const l of ['sel', 'loc', 'employers']) if (drop[l].size) patch[l] = F[l].filter((_, i) => !drop[l].has(i));
       setF(patch);
     };
   }
