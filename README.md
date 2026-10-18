@@ -7,6 +7,7 @@ Desktop app for browsing historical Swedish job ads (Arbetsförmedlingen / JobTe
 1. Start the app (see below).
 2. Open **Datasets** in the side menu and click **Choose files…** (or drag and drop). Select one or more `.jsonl`, `.ndjson` or `.json` files. A quarter-sized file (~130k ads, ~770 MB) imports in roughly half a minute.
 3. Go to **Search ads**. Filter with the left panel, search by keyword at the top, click an ad to open it.
+4. Use **Swap dataset** on the Datasets page to switch collections, create one, or delete a dataset. Switching clears current filters; source files are never deleted.
 
 | Action | How |
 |---|---|
@@ -15,7 +16,7 @@ Desktop app for browsing historical Swedish job ads (Arbetsförmedlingen / JobTe
 | Jump to a filter from an ad | Click a tag or breadcrumb item |
 | Remove imported data | Datasets → Remove |
 
-Filters are remembered when you open an ad and when you restart the app. Data is stored locally in `~/.config/AMS Viewer/ads.db` (macOS: `~/Library/Application Support/AMS Viewer/`, Windows: `%APPDATA%\AMS Viewer\`); the source files are not needed after import.
+Filters are remembered while browsing a dataset and reset when switching datasets. Data is stored locally in `~/.config/AMS Viewer/datasets/` with the active dataset recorded in `datasets.json` (macOS: `~/Library/Application Support/AMS Viewer/`, Windows: `%APPDATA%\AMS Viewer\`); the source files are not needed after import.
 
 ## Running as a developer
 

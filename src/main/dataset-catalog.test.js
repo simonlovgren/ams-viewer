@@ -91,6 +91,20 @@ test('keeps dataset metadata persistent and rejects blank or duplicate names', (
   assert.equal(reopened.databasePath(), catalog.databasePath(created.id));
 });
 
+test('persists cheap dataset statistics for chooser entries', (t) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ams-datasets-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  const catalog = open(dataDir);
+  const dataset = catalog.create('Research');
+  catalog.updateStats(dataset.id, { total: 12, sources: [{ name: 'one.jsonl' }, { name: 'two.jsonl' }], min: '2020-01-01', max: '2021-12-31' });
+
+  const reopened = open(dataDir);
+  assert.deepEqual(reopened.list().find(item => item.id === dataset.id).stats, {
+    total: 12, sourceCount: 2, min: '2020-01-01', max: '2021-12-31',
+  });
+  assert.equal(reopened.list().find(item => item.id === 'default').stats, null);
+});
+
 test('deleting active dataset selects oldest remaining and last deletion restores default', (t) => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ams-datasets-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
@@ -103,7 +117,9 @@ test('deleting active dataset selects oldest remaining and last deletion restore
   assert.equal(catalog.active().id, 'default');
   catalog.remove(first.id);
   catalog.remove('default');
-  assert.deepEqual(catalog.list(), [{ id: 'default', name: 'default', description: '' }]);
+  assert.deepEqual(catalog.list(), [{
+    id: 'default', name: 'default', description: '', stats: { total: 0, sourceCount: 0, min: null, max: null },
+  }]);
   assert.equal(catalog.active().id, 'default');
 });
 
@@ -132,13 +148,18 @@ test('read worker closes its SQLite connection before exit', async (t) => {
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   const databasePath = path.join(dataDir, 'worker.db');
   const db = dbm.open(databasePath);
+  db.prepare('INSERT INTO sources(name, ads) VALUES (?, ?), (?, ?)').run('one.jsonl', 3, 'two.jsonl', 4);
   db.close();
   const worker = new Worker(path.join(__dirname, 'read-worker.js'), { workerData: { dbPath: databasePath } });
   t.after(() => worker.terminate());
 
   await new Promise((resolve, reject) => {
     worker.on('message', (message) => {
-      if (message.type === 'ready') worker.postMessage({ type: 'close' });
+      if (message.type === 'ready') worker.postMessage({ id: 1, type: 'datasetStats' });
+      if (message.id === 1) {
+        assert.deepEqual(message.data, { total: 7, sourceCount: 2 });
+        worker.postMessage({ type: 'close' });
+      }
       if (message.type === 'closed') resolve();
       if (message.type === 'close-error') reject(new Error(message.error));
     });

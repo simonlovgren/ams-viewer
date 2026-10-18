@@ -18,11 +18,11 @@ Planned work that is specified but not started, plus active tasks. Each task lin
 | T12 | Enrich older ads from newer taxonomy and geographic data | DAT-015, DAT-016 | L |
 | T13 | Done: Find and navigate text matches in the ad view | AD-011 | S |
 | T14 | Done: Contextual keyboard-shortcut help modal | NAV-011, NAV-010, UI-001 | S |
-| T15 | Named dataset storage, lifecycle and existing-database migration | DAT-017, DAT-018, DAT-021, DAT-022 | L |
-| T16 | Datasets page and dataset metadata editor | DAT-019, DAT-020, DAT-021, DAT-022 | M |
-| T17 | Dataset chooser, summary statistics and switching | DAT-017, DAT-023, DAT-024 | M |
+| T15 | Done: Named dataset storage, lifecycle and existing-database migration | DAT-017, DAT-018, DAT-021, DAT-022 | L |
+| T16 | Done: Datasets page and metadata editor | DAT-019, DAT-020, DAT-021, DAT-022 | M |
+| T17 | Done: Dataset chooser, statistics, switching and deletion | DAT-017, DAT-018, DAT-020, DAT-021, DAT-023, DAT-024 | M |
 
-Current focus: T16, following T15/D39. T7, T2, T13, T14, T1 and T8 are complete (D26, D27, D28, D31, D34, D35). T9 and T5 use the statistics bar. T3 goes with T4; T10 is independent. T6 follows the [full-scale performance plan](full-scale-performance-plan.md) when filtered use at full scale feels slow, and before T9 and T5 if their queries make it worse.
+T15–T17 completed 2026-10-18 (D39–D42). T7, T2, T13, T14, T1 and T8 are complete (D26, D27, D28, D31, D34, D35). T9 and T5 use the statistics bar. T3 goes with T4; T10 is independent. T6 follows the [full-scale performance plan](full-scale-performance-plan.md) when filtered use at full scale feels slow, and before T9 and T5 if their queries make it worse.
 
 ## T1. Done: vertically resizable filter widgets (UI-010)
 - Completed 2026-10-16; D34. Scope broadened to all six filter widgets at the user's request. Drag each bottom divider to resize the widget above; keyboard Up/Down and Home/End also work.
@@ -131,26 +131,24 @@ Current focus: T16, following T15/D39. T7, T2, T13, T14, T1 and T8 are complete 
 - Existing `ads.db` and WAL/SHM sidecars move into `datasets/default.db` without copying or re-importing. Migration resumes partial moves and refuses conflicts. The user confirmed an existing backup before the real migration.
 - Imports, source removal, search, filters, ad lookup and summaries use active dataset DB. Activation drains and restarts all five read lanes. Dataset changes/deletion are rejected during import or summary build.
 - Deleting active dataset selects oldest remaining. `default` may be deleted if another dataset remains; deleting the last dataset creates an empty active `default`. DB/WAL/SHM deletion is staged, with rollback and startup recovery. Original source files are untouched.
-- Verified: migration and crash-recovery tests; same ad IDs/source names remain isolated across DBs; real startup preserved 11,252,350 ads after moving the 70.4 GB DB. IPC create/switch/delete failure paths and renderer refresh still need integrated verification with T16/T17.
+- Verified: migration and crash-recovery tests; same ad IDs/source names remain isolated across DBs; real startup preserved 11,252,350 ads after moving the 70.4 GB DB. Catalog lifecycle tests and T17 renderer tests cover creation, switching, deletion and error recovery.
 - Docs: D39; data model, system description, constraints, README and developer notes updated. Heavy database work remains in workers.
 
-## T16. Datasets page and metadata editor (DAT-019–DAT-022)
-- Status: In progress 2026-10-18; D40 records the user-approved workflow. Page rename, active-name heading, description display, metadata editor and guarded navigation/close are implemented. Preserve current source-management layout, import progress, source list, totals and source-removal behavior. Coordinate T3/T4 against renamed view.
+## T16. Done: Datasets page and metadata editor (DAT-019–DAT-022)
+- Completed 2026-10-18; D40/D41. Page rename, active-name heading, description display, inline metadata editor, guarded navigation/close and creation editor are complete. Preserve current source-management layout, import progress, source list, totals and source-removal behavior. Coordinate T3/T4 against renamed view.
 - Rename the navigation entry and former Data sources view to "Datasets". Use the active dataset name as the page heading, with adjacent Edit and Swap dataset icon buttons and accessible names/tooltips.
 - Edit enters inline metadata editing with Save and Discard controls beside the heading (D41). Clicking the heading enters the same editor and additionally selects the full name text. Edit the heading and multiline description directly in their display typography; persist both values only on Save and restore stored values on Discard.
 - New-dataset creation starts in this editor with the name field focused and its text selected. Reject empty/whitespace-only names and allow empty descriptions. Discarding creation must not leave an unnamed dataset.
-- Dirty edits prompt Save / Discard / Cancel on view navigation, browser-history movement and app close; T17 dataset switching must use same guard. Description displays below heading with line breaks preserved. Swap control remains inactive until T17 chooser is implemented.
-- Verification: 30 renderer tests and syntax checks pass. Browser fixture verified heading-click selection, matching display/edit typography, inline metadata edit/save, multiline keyboard input, Discard restoration and long-text layouts without overlap or overflow at 960×600 and 1400×900 (D41). Real Electron startup reached active 11.25M-ad window in 603 ms before D41. Native close prompt, dataset creation through chooser, import/source-removal interaction and Swap chooser await T17/manual verification.
+- Dirty edits prompt Save / Discard / Cancel on view navigation, browser-history movement, dataset switching and app close. Description displays below heading with line breaks preserved.
+- Verification: renderer tests cover metadata editing and dirty-exit choices. Browser fixture verified heading-click selection, matching display/edit typography, inline metadata edit/save, multiline keyboard input, Discard restoration and long-text layouts without overlap or overflow at 960×600 and 1400×900 (D41). Native close prompt remains untested.
 - Docs: D40 records resolved UX. Update requirement names, user docs and architecture references with the rename.
 
-## T17. Dataset chooser and switching (DAT-017, DAT-023, DAT-024)
-- Status: planned only; depends on T15 and integrates with T16.
-- Swap dataset opens a compact list consistent with the existing UI. Each selectable entry shows the dataset name, only the first description line when present, imported-file count and ad count; optional extra statistics can reuse the year range.
-- Keep "+ add new dataset" as the final option. It starts T16's creation editor, with the name field focused and its text selected. Choosing an existing dataset activates its database and refreshes the dataset page and all dataset-dependent views.
-- Coordinate main-process connections, read/import workers, in-memory caches, summary tables and sequence counters so late results from the previous dataset cannot populate the new one. Decide filter/history/ad-detail handling across datasets and how failed switches recover before implementation.
-- Fetch chooser summaries without scanning ad tables or opening every large database on the main thread; decide how counts stay current after imports and removals, and define pending/error states.
-- Verification: chooser ordering and final add option, missing/multiline description previews, accurate per-dataset statistics including empty datasets, mouse/keyboard selection and dismissal, successful and failed switches, and stale-response isolation. Measure switching and chooser latency with small and full-scale databases.
-- Docs: record switching/state/performance decisions with the related DAT IDs; update data flow, constraints and testing recipes as needed.
+## T17. Done: Dataset chooser and switching (DAT-017, DAT-018, DAT-023, DAT-024)
+- Completed 2026-10-18; D42. Swap opens compact native dialog with selectable dataset rows, first-line description, cached file/ad counts, per-dataset delete and final "+ add new dataset" action. Creation enters T16 editor focused with name selected.
+- Successful switch activates target DB, clears session filters and stale list/ad/facet results, shows Datasets and reloads Search. History is tagged by dataset; back/forward cannot reopen old-dataset ads. Failed activation preserves current view and filter state. Dirty editor uses T16 Save / Discard / Cancel guard.
+- Delete requires permanent-removal confirmation; active deletion selects oldest remaining, and deleting last dataset recreates empty `default`. Source files are never deleted.
+- Cached counts refresh on startup, activation, import completion and source removal. Unknown legacy snapshots backfill in temporary read workers from source metadata, with visible pending/error states; no ad-table scan or main-thread DB access.
+- Verification: dataset/catalog, DB and renderer suites pass 51 tests; syntax checks pass. Browser fixture reviewed chooser layout at desktop and minimum window sizes; native Electron chooser interaction and performance against multiple full-scale DBs remain unverified.
 
 ## Other open items (not requirements yet)
 - Re-import `2016.jsonl` (shows 0 ads) and import the remaining files.

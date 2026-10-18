@@ -6,6 +6,16 @@ const { tmpdir } = require('node:os');
 const path = require('node:path');
 const dbm = require('./db');
 
+test('dataset chooser statistics read only imported-source metadata', () => {
+  const db = dbm.open(':memory:');
+  try {
+    db.prepare('INSERT INTO sources(name, ads) VALUES (?, ?), (?, ?)').run('one.jsonl', 7, 'two.jsonl', 5);
+    assert.deepEqual(dbm.datasetStats(db), { total: 12, sourceCount: 2 });
+  } finally {
+    db.close();
+  }
+});
+
 test('chronological filtering preserves ordering, offsets and sparse fallback', () => {
   const db = dbm.open(':memory:');
   try {

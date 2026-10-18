@@ -17,7 +17,7 @@ Browse, filter and read historical job ads offline. Source data is published as 
   - Results update live while typing/selecting; the list loads incrementally while scrolling.
   - Active filters shown as removable chips; "Clear all".
 - **Ad view**: job-ad style presentation (hero header, formatted description, requirements, how to apply, at-a-glance facts, employer info), with a clickable breadcrumb and clickable tags that apply filters.
-- **Datasets view**: active dataset name and optional multiline description, editable in place in their displayed typography with adjacent Save/Discard controls (D41), plus import (file picker or drag & drop, multiple files), progress, per-source removal and totals. Editing accepts plain text only and preserves description line breaks. Dirty metadata prompts Save / Discard / Cancel on navigation and app close. Swap control awaits the T17 chooser.
+- **Datasets view**: active dataset name and optional multiline description, editable in place in their displayed typography with adjacent Save/Discard controls (D41), plus import (file picker or drag & drop, multiple files), progress, per-source removal and totals. Editing accepts plain text only and preserves description line breaks. Dirty metadata prompts Save / Discard / Cancel on navigation, dataset switching and app close. Swap opens the T17 dataset chooser; deletion requires confirmation.
 - **Settings view**: separate sidebar destination with an Appearance section; monospace typography for all main-window text defaults on and can be toggled immediately. Additional settings can be added here (D26).
 - **Navigation**: sidebar menu; Backspace, mouse back/forward buttons and Alt+Left/Right move through view history; `/` searches the current context (list search or in-ad find); `?` opens view-specific shortcut help (D31).
 - **Persistence of state**: filters are kept in `sessionStorage` (only while the app is open); tree expansion, layout (including per-widget collapse and heights) and application settings are saved in `localStorage`; the list view is kept alive (hidden) while another view is open, preserving scroll position.
@@ -33,7 +33,7 @@ flowchart LR
     M[main.js - window, IPC]
     D[db.js - schema, queries]
   end
-  RW[read-worker.js x2]
+  RW[read-worker.js x5 + temporary summary readers]
   IW[import-worker.js]
   C[(datasets.json<br/>catalog + active ID)]
   DB[(Active dataset SQLite DB<br/>WAL mode)]
@@ -51,7 +51,7 @@ flowchart LR
 | File | Role |
 |---|---|
 | `src/main/main.js` | Creates the window, owns the dataset catalog and active DB path, registers IPC handlers, coordinates worker lifecycle, validates input (file extensions, URL scheme). |
-| `src/main/dataset-catalog.js` | Persists stable dataset IDs, names, descriptions and active selection; migrates legacy `ads.db`; resolves only generated IDs to DB paths. |
+| `src/main/dataset-catalog.js` | Persists stable dataset IDs, names, descriptions, cached statistics and active selection; migrates legacy `ads.db`; resolves only generated IDs to DB paths. |
 | `src/main/preload.js` | Exposes a minimal `window.api` via `contextBridge`. |
 | `src/main/db.js` | Schema, row mapping, filter → SQL builder, search, facets, ad lookup, source removal. Shared by main and workers. |
 | `src/main/import-worker.js` | Streams a file, maps records, inserts into `ads` and `ads_fts` in batched transactions, reports progress. |
@@ -63,7 +63,7 @@ flowchart LR
 
 1. **Import**: renderer asks main to import → main starts `import-worker` → worker streams records → rows + FTS entries inserted (duplicates by ad id skipped) → progress events relayed to the UI → on completion the list and facets reload.
 2. **Search**: filter change → `setF` saves state → `ads:search` (page of 60), `ads:count`, `ads:timeline` and `ads:facets` run independently. Stale responses are discarded via sequence counters. Non-keyword chronological filters first try a bounded date-index traversal, with an exact original-query fallback (D37).
-3. **Dataset lifecycle**: main-process catalog selects one DB path. All read lanes reopen against that path on activation; imports and source removal use the same active path. Dataset changes/deletion are refused during imports or summary builds, and read lanes drain before DB files are staged or switched. Renderer edits catalog metadata through validated IPC; app-close requests wait for the renderer's dirty-edit decision.
+3. **Dataset lifecycle**: main-process catalog selects one DB path. All read lanes reopen against that path on activation; imports and source removal use the same active path. Dataset changes/deletion are refused during imports or summary builds, and read lanes drain before DB files are staged or switched. The chooser displays cached counts; missing legacy snapshots are backfilled by temporary read workers from `sources`, never by opening databases on the main thread. Successful switches clear session filters and stale async responses, move to Datasets, and reload Search; history entries from the prior dataset are rejected. Renderer edits catalog metadata through validated IPC; app-close and switch requests wait for the renderer's dirty-edit decision.
 4. **Open ad**: row click → history `pushState` → `ads:get` returns the stored (null-pruned) JSON from the active dataset → rendered as a job ad.
 
 ## Facet semantics

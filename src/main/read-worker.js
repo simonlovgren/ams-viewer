@@ -13,6 +13,7 @@ const handlers = {
   count: ({ f }) => ({ total: dbm.count(db, f || {}) }),
   get: ({ id }) => dbm.getAd(db, id),
   info: () => dbm.info(db),
+  datasetStats: () => dbm.datasetStats(db),
   facets: ({ f }) => dbm.facets(db, f || {}),
   timeline: ({ f }) => (dbm.isBuilt(db) ? dbm.timeline(db, f || {}) : { building: true }),
   remove: ({ name }) => { dbm.removeSource(db, name); return true; },

@@ -186,7 +186,7 @@ test('dataset editor selects heading names, creates in edit mode, and saves meta
       createDataset: async (...args) => { calls.push(['create', ...args]); return { ok: true, dataset: { id: 'new-id', name: args[0], description: args[1] } }; },
     },
     showMessage: async options => { calls.push(['message', options]); return true; },
-    renderData: async () => {}, reload() {}, loadStats() {},
+    renderData: async () => {}, reload() {}, loadStats() {}, applyDatasetChange: dataset => calls.push(['transition', dataset.id]),
   });
   const editorCode = source.slice(source.indexOf('  function renderDatasetEditor()'), source.indexOf('  async function renderData()'));
   vm.runInContext("let activeDataset = {id:'active',name:'Current',description:'first\\nsecond'}; let datasetEditor = null; let curView = 'data';" + editorCode, context);
@@ -267,9 +267,10 @@ test('inline dataset edits track text, preserve clicks and route Enter to descri
   const source = readFileSync(require.resolve('./app.js'), 'utf8');
   const handlers = {};
   const dataElement = { addEventListener: (name, listener) => { handlers[name] = listener; } };
+  const dialogElements = Object.fromEntries(['#dataset-dialog', '#dataset-dialog-close', '#dataset-options'].map(selector => [selector, { addEventListener() {} }]));
   let focused = false, saves = 0, edits = 0, prevented = 0;
   const context = vm.createContext({
-    $: selector => selector === '#data' ? dataElement : { focus() { focused = true; } },
+    $: selector => selector === '#data' ? dataElement : dialogElements[selector] || { focus() { focused = true; } },
     datasetEditor: { name: 'Current', description: '' },
     beginDatasetEdit() { edits++; },
     saveDatasetEditor() { saves++; },
@@ -290,6 +291,125 @@ test('inline dataset edits track text, preserve clicks and route Enter to descri
   assert.equal(prevented, 1);
   await handlers.click({ target: { closest: selector => selector === '[data-dataset-save]' ? {} : null } });
   assert.equal(saves, 1);
+});
+
+test('dataset chooser shows one-line previews, counts, final creation action, and switches cleanly', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const options = { innerHTML: '' };
+  const dialog = { showModal() { this.open = true; }, close() { this.open = false; } };
+  const focusTarget = { focus() { this.focused = true; } };
+  const calls = [];
+  const elements = { '#dataset-options': options, '#dataset-dialog': dialog, '#dataset-dialog-close': { focus() {} }, '#ad': { innerHTML: 'old ad' }, '#crumbs': { innerHTML: 'old crumbs' } };
+  const catalog = {
+    active: { id: 'one', name: 'Current', description: 'First line\nSecond line', stats: { total: 8, sourceCount: 2, min: '2020-01-01', max: '2022-01-01' } },
+    datasets: [
+      { id: 'one', name: 'Current', description: 'First line\nSecond line', stats: { total: 8, sourceCount: 2, min: '2020-01-01', max: '2022-01-01' } },
+      { id: 'two', name: 'Empty', description: '', stats: { total: 0, sourceCount: 0, min: null, max: null } },
+    ],
+  };
+  const context = vm.createContext({
+    $: selector => selector === '[data-dataset-select]' ? focusTarget : elements[selector],
+    esc: String, icon: name => `<svg>${name}</svg>`, fmtNum: String,
+    api: {
+      datasets: async () => catalog,
+      datasetSummaries: async () => catalog,
+      activateDataset: async id => { calls.push(['activate', id]); return { ok: true, dataset: catalog.datasets.find(item => item.id === id) }; },
+    },
+    leaveDatasetEditor: async () => true, showMessage: async options => calls.push(['message', options]),
+    syncInputs() {}, renderActive() {}, saveF() {}, show(view) { calls.push(['show', view]); },
+    reload() { calls.push(['reload']); }, setCount() {},
+    history: { pushState: state => calls.push(['history', state]) },
+  });
+  const code = source.slice(source.indexOf('  function applyDatasetChange('), source.indexOf('  function renderProgress()'));
+  vm.runInContext(`const DEF = {terms:[],sel:[],loc:[]}; let F = {terms:['old'],sel:[1],loc:[2]}; let activeDataset = ${JSON.stringify(catalog.active)};
+    let datasetContextId = 'one', datasetHistoryBoundary = false, datasetEditor = null;
+    let idx = 4, listScroll = 200, adSeq = 3, adMatches = [1]; ${code}`, context);
+  vm.runInContext(`chooserCatalog = ${JSON.stringify(catalog)}`, context);
+
+  await vm.runInContext('openDatasetChooser()', context);
+  await Promise.resolve();
+  assert.equal(dialog.open, true);
+  assert.match(options.innerHTML, /First line/);
+  assert.doesNotMatch(options.innerHTML, /Second line/);
+  assert.match(options.innerHTML, /2 files · 8 ads · 2020–2022/);
+  assert.match(options.innerHTML, /0 files · 0 ads/);
+  assert.ok(options.innerHTML.indexOf('data-dataset-add') > options.innerHTML.lastIndexOf('data-dataset-select'));
+  assert.equal(focusTarget.focused, true);
+
+  await vm.runInContext("chooseDataset('two')", context);
+  assert.equal(dialog.open, false);
+  assert.equal(vm.runInContext('activeDataset.id', context), 'two');
+  assert.equal(vm.runInContext('JSON.stringify(F)', context), '{"terms":[],"sel":[],"loc":[]}');
+  assert.equal(vm.runInContext('adSeq', context), 4);
+  assert.deepEqual(calls.filter(call => call[0] === 'show' || call[0] === 'reload'), [['show', 'data'], ['reload']]);
+  assert.equal(calls.find(call => call[0] === 'history')[1].datasetId, 'two');
+});
+
+test('dataset chooser closes on Escape and native cancellation', () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const listeners = {};
+  const dialog = { addEventListener: (name, listener) => { listeners[name] = listener; }, close() { this.closed = true; } };
+  const context = vm.createContext({
+    $: selector => selector === '#dataset-dialog' ? dialog : { addEventListener() {} },
+  });
+  const start = source.indexOf('  const dataEl =');
+  const end = source.indexOf("  dataEl.addEventListener('input'", start);
+  vm.runInContext(source.slice(start, end), context);
+  let prevented = false;
+  listeners.keydown({ key: 'Escape', preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(dialog.closed, true);
+  dialog.closed = false;
+  listeners.cancel({ preventDefault() { prevented = true; } });
+  assert.equal(dialog.closed, true);
+});
+
+test('failed dataset activation preserves current filters and reports error', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const messages = [];
+  const dialog = { close() { this.closed = true; } };
+  const context = vm.createContext({
+    $: selector => selector === '#dataset-dialog' ? dialog : { innerHTML: '' },
+    esc: String, icon: () => '', fmtNum: String,
+    api: { activateDataset: async () => ({ ok: false, error: 'Database unavailable' }) },
+    showMessage: async options => messages.push(options),
+  });
+  const code = source.slice(source.indexOf('  function applyDatasetChange('), source.indexOf('  function renderProgress()'));
+  vm.runInContext(`const DEF = {}; let F = {terms:['keep']}; let activeDataset = {id:'one'}; let datasetContextId = 'one';
+    let datasetHistoryBoundary = false, datasetEditor = null; let idx = 0, listScroll = 0, adSeq = 0, adMatches = []; ${code}`, context);
+  vm.runInContext("chooserCatalog = {active:{id:'one'}}", context);
+  await vm.runInContext("chooseDataset('two')", context);
+  assert.equal(vm.runInContext('activeDataset.id', context), 'one');
+  assert.deepEqual(JSON.parse(vm.runInContext('JSON.stringify(F)', context)), { terms: ['keep'] });
+  assert.equal(messages[0].title, 'Could not switch dataset');
+  assert.match(messages[0].message, /Database unavailable/);
+});
+
+test('deleting active dataset requires permanent-delete confirmation and refreshes replacement', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const messages = [], deleted = [];
+  const dialog = { close() {}, showModal() {} };
+  const elements = { '#dataset-dialog': dialog, '#ad': { innerHTML: '' }, '#crumbs': { innerHTML: '' } };
+  const replacement = { id: 'default', name: 'default', description: '', stats: { total: 0, sourceCount: 0, min: null, max: null } };
+  const context = vm.createContext({
+    $: selector => elements[selector], esc: String, icon: () => '', fmtNum: String,
+    api: { deleteDataset: async id => { deleted.push(id); return { ok: true, active: replacement }; } },
+    showMessage: async options => { messages.push(options); return true; },
+    syncInputs() {}, renderActive() {}, saveF() {}, show() {}, reload() {}, setCount() {},
+    history: { pushState() {} },
+  });
+  const code = source.slice(source.indexOf('  function applyDatasetChange('), source.indexOf('  function renderProgress()'));
+  vm.runInContext(`const DEF = {terms:[],sel:[],loc:[]}; let F = {terms:['old'],sel:[],loc:[]}; let activeDataset = {id:'one'};
+    let datasetContextId = 'one', datasetHistoryBoundary = false, datasetEditor = null;
+    let idx = 0, listScroll = 0, adSeq = 0, adMatches = []; ${code}`, context);
+  vm.runInContext("chooserCatalog = {active:{id:'one'}, datasets:[{id:'one',name:'Only dataset'}]}", context);
+  await vm.runInContext("deleteDatasetFromChooser('one')", context);
+  assert.equal(messages[0].title, 'Delete dataset permanently?');
+  assert.equal(messages[0].confirmLabel, 'Delete dataset');
+  assert.match(messages[0].message, /Original source files will not be deleted/);
+  assert.match(messages[0].message, /empty dataset named “default” will be created/);
+  assert.deepEqual(deleted, ['one']);
+  assert.equal(vm.runInContext('activeDataset.id', context), 'default');
 });
 
 test('dataset editor Discard restores stored metadata without writing', async () => {
@@ -508,6 +628,29 @@ test('Settings joins history navigation without losing list scroll', async () =>
   vm.runInContext("show('list')", context);
   assert.equal(listScroll.scrollTop, 240);
   assert.equal(views.get('settings').has('hidden'), true);
+});
+
+test('dataset history boundary rejects entries from the previous dataset', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  let popstate, forwards = 0, shown = 0;
+  const context = vm.createContext({
+    window: { addEventListener: (name, listener) => { if (name === 'popstate') popstate = listener; } },
+    history: { replaceState() {}, forward() { forwards++; } },
+    document: { querySelectorAll: () => [] },
+    $: () => ({ scrollTop: 0, classList: { toggle() {} } }),
+    leaveDatasetEditor: async () => true,
+    loadAd() {}, renderData() {},
+    show() { shown++; },
+  });
+  const start = source.indexOf('  let idx =');
+  const end = source.indexOf("  history.replaceState({ view: 'list', i: 0 }, '');", start) + 54;
+  vm.runInContext(source.slice(start, end), context);
+  vm.runInContext("datasetContextId = 'new'; datasetHistoryBoundary = true", context);
+  await popstate({ state: { view: 'ad', id: 'old-ad', i: 2, datasetId: 'old' } });
+  assert.equal(forwards, 1);
+  assert.equal(shown, 0);
+  await popstate({ state: { view: 'data', i: 0, datasetId: 'new' } });
+  assert.equal(shown, 0);
 });
 
 test('canceling dirty browser navigation restores the current history entry once', async () => {

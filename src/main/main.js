@@ -10,10 +10,18 @@ let win;
 let importing = false;
 let datasets;
 let datasetChanging = false;
+let datasetStatsBusy = false;
 let closeRequestPending = false;
 let closeApproved = false;
 
 const DATA_EXT = /\.(jsonl|ndjson|json)$/i;
+
+function refreshActiveDatasetStats() {
+  const datasetId = datasets.active().id;
+  lists.request('info').then((info) => {
+    if (datasets.active().id === datasetId) datasets.updateStats(datasetId, info);
+  }).catch((error) => console.error('Failed to refresh dataset statistics:', error));
+}
 
 function createWindow(show = true) {
   closeRequestPending = false;
@@ -53,6 +61,7 @@ function createWindow(show = true) {
 
 function startImport(files) {
   if (datasetChanging) return { ok: false, error: 'Dataset transition in progress' };
+  if (datasetStatsBusy) return { ok: false, error: 'Dataset statistics are being refreshed' };
   if (importing) return { ok: false, error: 'Import already running' };
   if (buildBusy) return { ok: false, error: 'Statistics are being built (one-time); try again when it has finished.' };
   const valid = files.filter((f) => typeof f === 'string' && DATA_EXT.test(f));
@@ -66,17 +75,22 @@ function startImport(files) {
   let finished = false;
   w.on('message', (m) => {
     if (m.type === 'done' || m.type === 'error') { importing = false; finished = true; }
-    if (m.type === 'done') ensureSummary();
+    if (m.type === 'done' || m.type === 'error') {
+      if (m.type === 'done') ensureSummary();
+      refreshActiveDatasetStats();
+    }
     send(m);
   });
   w.on('error', (e) => {
     importing = false;
     finished = true;
+    refreshActiveDatasetStats();
     send({ type: 'error', message: String(e.message || e) });
   });
   w.on('exit', () => {
     if (finished) return;
     importing = false;
+    refreshActiveDatasetStats();
     send({ type: 'error', message: 'Import worker stopped unexpectedly' });
   });
   return { ok: true, count: valid.length };
@@ -274,6 +288,7 @@ async function switchDataset(id, force = false) {
     if (!Number.isSafeInteger(info.total)) throw new Error('Dataset database could not be opened');
     datasets.markInitialized(id);
     datasets.activate(id);
+    datasets.updateStats(id, info);
   } catch (error) {
     try { await restartLanes(datasets.databasePath(previous.id)); }
     catch (rollbackError) { throw new Error(`${error.message}; rollback failed: ${rollbackError.message}`); }
@@ -290,6 +305,66 @@ async function restartLanes(databasePath) {
   const starts = await Promise.allSettled(allLanes.slice(1).map((workerLane) => workerLane.restart(databasePath)));
   const failed = starts.find((result) => result.status === 'rejected');
   if (failed) throw failed.reason;
+}
+
+function readDatasetStats(id) {
+  const worker = new Worker(path.join(__dirname, 'read-worker.js'), { workerData: { dbPath: datasets.databasePath(id) } });
+  return new Promise((resolve, reject) => {
+    let result;
+    let settled = false;
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+      worker.terminate();
+    };
+    worker.on('message', (message) => {
+      if (message.type === 'ready') worker.postMessage({ id: 1, type: 'datasetStats' });
+      else if (message.id === 1) {
+        if (message.error) fail(new Error(message.error));
+        else { result = message.data; worker.postMessage({ type: 'close' }); }
+      } else if (message.type === 'closed') {
+        settled = true;
+        resolve(result);
+      } else if (message.type === 'close-error') fail(new Error(message.error));
+    });
+    worker.on('error', fail);
+    worker.on('exit', (code) => {
+      if (!settled) fail(new Error(`Dataset statistics worker stopped (${code})`));
+    });
+  });
+}
+
+async function datasetSummaries() {
+  if (datasetChanging) throw new Error('Dataset transition in progress');
+  if (importing || datasetStatsBusy) return {
+    datasets: datasets.list().map((dataset) => ({ ...dataset, statsError: !dataset.stats })),
+    active: datasets.active(),
+  };
+  datasetStatsBusy = true;
+  const unavailable = new Set();
+  try {
+    for (const dataset of datasets.list()) {
+      if (dataset.stats) continue;
+      if (!datasets.isInitialized(dataset.id)) {
+        datasets.updateStats(dataset.id, { total: 0, sources: [] });
+        continue;
+      }
+      try {
+        const stats = await readDatasetStats(dataset.id);
+        datasets.updateStats(dataset.id, stats);
+      } catch (error) {
+        unavailable.add(dataset.id);
+        console.error(`Failed to read statistics for dataset ${dataset.name}:`, error);
+      }
+    }
+    return {
+      datasets: datasets.list().map((dataset) => ({ ...dataset, statsError: unavailable.has(dataset.id) })),
+      active: datasets.active(),
+    };
+  } finally {
+    datasetStatsBusy = false;
+  }
 }
 
 function stageDatabase(databasePath) {
@@ -327,6 +402,7 @@ function removeDatabase(databasePath) {
 
 async function datasetOperation(fn) {
   if (datasetChanging) return { ok: false, error: 'Dataset transition already running' };
+  if (datasetStatsBusy) return { ok: false, error: 'Dataset statistics are being refreshed' };
   if (importing) return { ok: false, error: 'Import running' };
   if (buildBusy) return { ok: false, error: 'Statistics are being built; try again when it has finished.' };
   datasetChanging = true;
@@ -383,6 +459,7 @@ async function deleteDataset(id) {
       const info = await lists.request('info');
       if (!Number.isSafeInteger(info.total)) throw new Error('Replacement default database could not be opened');
       datasets.markInitialized('default');
+      datasets.updateStats('default', info);
       ensureSummary();
     } else {
       staged = stageDatabase(databasePath);
@@ -424,6 +501,7 @@ app.whenReady().then(async () => {
     progress(15, 'Reading the database summary…');
     const info = await lists.request('info');
     datasets.markInitialized(datasets.active().id);
+    datasets.updateStats(datasets.active().id, info);
     lap(`summary read (${info.total} ads)`);
     progress(50, 'Loading the first results…');
     await lists.request('search', { f: {}, offset: 0, limit: 1 });
@@ -484,6 +562,7 @@ function registerHandlers() {
   ipcMain.handle('summary:get', () => { assertStableDataset(); return summaryState; });
   ipcMain.handle('ads:get', (_e, id) => { assertStableDataset(); return lists.request('get', { id }); });
   ipcMain.handle('datasets:list', () => { assertStableDataset(); return { datasets: datasets.list(), active: datasets.active() }; });
+  ipcMain.handle('datasets:summary', () => datasetSummaries());
   ipcMain.handle('datasets:create', (_e, name, description) => datasetOperation(() => createDataset(name, description)));
   ipcMain.handle('datasets:update', (_e, id, name, description) => datasetOperation(() => ({ dataset: datasets.update(id, name, description) })));
   ipcMain.handle('datasets:activate', (_e, id) => datasetOperation(async () => ({ dataset: await switchDataset(id) })));
@@ -501,17 +580,12 @@ function registerHandlers() {
     if (datasetChanging) return { ok: false, error: 'Dataset transition in progress' };
     return Array.isArray(files) ? startImport(files) : { ok: false };
   });
-  ipcMain.handle('source:remove', async (_e, name) => {
-    if (datasetChanging) return { ok: false, error: 'Dataset transition in progress' };
-    if (importing) return { ok: false, error: 'Import running' };
-    if (buildBusy) return { ok: false, error: 'Statistics are being built (one-time); try again when it has finished.' };
-    try {
+  ipcMain.handle('source:remove', (_e, name) => datasetOperation(async () => {
       await build.request('remove', { name: String(name) });
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, error: String(e.message || e) };
-    }
-  });
+      const info = await lists.request('info');
+      datasets.updateStats(datasets.active().id, info);
+      return {};
+  }));
   ipcMain.handle('open:external', (_e, url) => {
     if (typeof url === 'string' && /^https?:\/\//i.test(url)) shell.openExternal(url);
   });

@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('api', {
   importFiles: (paths) => ipcRenderer.invoke('import:start', paths),
   removeSource: (name) => ipcRenderer.invoke('source:remove', name),
   datasets: () => ipcRenderer.invoke('datasets:list'),
+  datasetSummaries: () => ipcRenderer.invoke('datasets:summary'),
   createDataset: (name, description) => ipcRenderer.invoke('datasets:create', name, description),
   updateDataset: (id, name, description) => ipcRenderer.invoke('datasets:update', id, name, description),
   activateDataset: (id) => ipcRenderer.invoke('datasets:activate', id),

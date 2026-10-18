@@ -62,7 +62,7 @@ function open(dataDir) {
 
   const save = () => writeCatalog(catalogFile, data);
   const copy = () => JSON.parse(JSON.stringify(data));
-  const publicDataset = ({ id, name, description }) => ({ id, name, description });
+  const publicDataset = ({ id, name, description, stats }) => ({ id, name, description, stats: stats || null });
   const find = (id) => {
     const dataset = data.datasets.find((entry) => entry.id === id);
     if (!dataset) throw new Error('Dataset not found');
@@ -95,16 +95,26 @@ function open(dataDir) {
       dataset.initialized = true;
       save();
     },
+    updateStats(id, info) {
+      const dataset = find(id);
+      dataset.stats = {
+        total: Number.isSafeInteger(info.total) ? info.total : 0,
+        sourceCount: Number.isSafeInteger(info.sourceCount) ? info.sourceCount : Array.isArray(info.sources) ? info.sources.length : 0,
+        min: typeof info.min === 'string' ? info.min : null,
+        max: typeof info.max === 'string' ? info.max : null,
+      };
+      save();
+    },
     ensureResetDefault() {
       if (!data.datasets.some((entry) => entry.id === 'default')) {
-        data.datasets.push({ id: 'default', name: 'default', description: '', initialized: false });
+        data.datasets.push({ id: 'default', name: 'default', description: '', initialized: false, stats: { total: 0, sourceCount: 0, min: null, max: null } });
         save();
       }
     },
     create(name, description = '') {
       const clean = validateName(name);
       if (typeof description !== 'string') throw new Error('Dataset description must be text');
-      const dataset = { id: `ds-${randomUUID()}`, name: clean, description, initialized: false };
+      const dataset = { id: `ds-${randomUUID()}`, name: clean, description, initialized: false, stats: { total: 0, sourceCount: 0, min: null, max: null } };
       data.datasets.push(dataset);
       save();
       return publicDataset(dataset);
@@ -130,7 +140,7 @@ function open(dataDir) {
         if (data.activeId === id) data.activeId = remaining[0].id;
         data.datasets = remaining;
       } else {
-        data.datasets = [{ id: 'default', name: 'default', description: '', initialized: false }];
+        data.datasets = [{ id: 'default', name: 'default', description: '', initialized: false, stats: { total: 0, sourceCount: 0, min: null, max: null } }];
         data.activeId = 'default';
       }
       save();

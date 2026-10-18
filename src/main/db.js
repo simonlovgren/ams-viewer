@@ -476,6 +476,10 @@ function info(db) {
   return { total: totalAds(db), min: t.mn, max: t.mx, sources };
 }
 
+function datasetStats(db) {
+  return { ...db.prepare('SELECT COALESCE(SUM(ads), 0) total, COUNT(*) sourceCount FROM sources').get() };
+}
+
 function removeSource(db, name) {
   const built = isBuilt(db);
   db.exec('BEGIN');
@@ -496,6 +500,6 @@ function removeSource(db, name) {
 }
 
 module.exports = {
-  open, toRow, INSERT_SQL, search, count, facets, timeline, getAd, info, removeSource,
+  open, toRow, INSERT_SQL, search, count, facets, timeline, getAd, info, datasetStats, removeSource,
   isBuilt, ensureSummary, newAcc, accAdd, accFlush,
 };

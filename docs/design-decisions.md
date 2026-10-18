@@ -208,7 +208,7 @@ Format: decision, requirements it satisfies, rationale, consequences. Every deci
 - **Decision**: rename Data sources to "Datasets" while retaining its overall design and source-management functionality for the active dataset. Use the dataset name as the page heading with adjacent Edit and Swap dataset controls. Edit exposes Save and Discard for the name and optional multiline description; clicking the heading additionally selects the name text. Creation starts in edit mode with the name field focused and its text selected.
 - **Decision**: Swap dataset opens a compact selectable list showing each dataset's name, first description line when present, imported-file count and ad count. The final option is "+ add new dataset" and starts the creation editor.
 - **Why**: smaller independent collections reduce the scope of browsing and filtering without discarding a larger collection, while familiar source-management controls remain available.
-- **Consequence**: D39 implements the storage and worker-lifecycle foundation. T16/T17 still cover metadata editor, chooser, confirmation and renderer state behavior.
+- **Consequence**: D39 implements storage and worker lifecycle; D40–D42 complete metadata editing, chooser, confirmation and renderer state behavior.
 
 ## D39. Per-dataset databases and safe lifecycle
 - **Requirements**: DAT-003, DAT-017, DAT-018, DAT-021, DAT-022
@@ -217,14 +217,14 @@ Format: decision, requirements it satisfies, rationale, consequences. Every deci
 - **Decision**: trim names, reject blank names and reject duplicates case-insensitively. Allow deleting `default` when another dataset remains; deleting the active dataset selects the oldest remaining dataset. Deleting the final dataset creates and activates a fresh empty `default`.
 - **Decision**: reject dataset changes/deletion while import or summary build runs. Drain all five read-worker lanes, close their SQLite connections cleanly, and restart them on the selected DB before persisting activation. Stage DB/WAL/SHM files before catalog deletion, with rollback and startup recovery on failure. Original import files are never deleted.
 - **Why**: independent SQLite files isolate ad IDs, source names, indexes and summary tables while opaque IDs prevent editable metadata from influencing filesystem paths. Moving the existing DB preserves large imports without copying tens of gigabytes.
-- **Consequence**: worker APIs support listing, creation, metadata update, activation and deletion; dataset-management UI is added by T16/T17. On first launch after upgrade, existing DB is moved from `ads.db`; user backup is recommended before upgrade. A staged file left by a committed deletion can be cleaned on next startup. Dataset switching/deletion confirmations and dataset-dependent renderer refresh remain T17.
+- **Consequence**: worker APIs support listing, creation, metadata update, activation and deletion; dataset-management UI is completed by T16/T17. On first launch after upgrade, existing DB is moved from `ads.db`; user backup is recommended before upgrade. A staged file left by a committed deletion can be cleaned on next startup. D42 records confirmation and dataset-dependent renderer refresh.
 
 ## D40. Dataset metadata editor and guarded exits
 - **Requirements**: DAT-019, DAT-020, DAT-021, DAT-022, NAV-004, NAV-005, NAV-006, NAV-007, NAV-008, UI-001
 - **Decision**: show the active dataset name as the Datasets page heading and its optional multiline description below it. Edit and heading-click open the same name/description editor; heading-click selects the name. New dataset creation starts with an empty selected name and is persisted only on Save.
 - **Decision**: dirty metadata prompts Save / Discard / Cancel on view navigation, browser-history navigation, dataset switching and app close. Dataset switching UI must use the same guard. Discarding creation never adds an unnamed catalog entry.
 - **Why**: dataset metadata must be editable without allowing accidental loss or partially-created datasets. Showing description outside edit mode gives context while retaining existing source-management layout.
-- **Consequence**: app close uses a narrow main/preload/renderer IPC handshake so the renderer can finish the choice before Electron closes the window. T16 adds Swap dataset control; T17 connects it to the chooser and must preserve the dirty-editor guard. No schema or dependency change.
+- **Consequence**: app close uses a narrow main/preload/renderer IPC handshake so the renderer can finish the choice before Electron closes the window. T17/D42 connects Swap to the chooser and preserves the dirty-editor guard. No schema or dependency change.
 
 ## D41. Edit dataset metadata in its displayed typography
 - **Requirements**: DAT-020, DAT-021, DAT-022, UI-001
@@ -232,3 +232,11 @@ Format: decision, requirements it satisfies, rationale, consequences. Every deci
 - **Decision**: heading-click selects the full name only when entering edit mode; subsequent clicks retain normal caret placement. Enter in the name moves focus to the description; Enter in the description inserts a line break. Save reads plain text, normalizes name line breaks to spaces and retains description line breaks. Existing validation and dirty-exit guards remain unchanged.
 - **Why**: editing should show the same styled text as the saved view, without a duplicate title or a small native textbox. Plain-text editing avoids storing pasted HTML.
 - **Consequence**: no dependency, schema or IPC changes. T17 creation reuses the same inline editor.
+
+## D42. Dataset chooser, deletion and switching state
+- **Requirements**: DAT-017, DAT-018, DAT-020, DAT-021, DAT-023, DAT-024
+- **Decision**: use a compact native dialog with one keyboard-selectable row per dataset, first-line description preview, imported-file/ad counts, an individual delete action, and "+ add new dataset" last. Deletion requires explicit permanent-delete confirmation; original source files remain untouched.
+- **Decision**: persist each dataset's last-known count summary in `datasets.json`. Refresh active stats at startup, activation, import completion and source removal. Backfill missing legacy snapshots through a temporary `read-worker` that reads only `sources` metadata; show loading/error states and never query SQLite on the main thread.
+- **Decision**: successful switch or active-dataset deletion clears session filters, invalidates list/ad/facet requests, opens Datasets, and starts a fresh Search query. History entries carry dataset identity; traversal into a prior dataset is rejected. Failed activation leaves current view and filters intact. Dirty metadata uses T16's Save / Discard / Cancel guard before chooser opens.
+- **Why**: dataset-specific state must not leak between isolated databases, and chooser counts must be cheap even when datasets are large.
+- **Consequence**: no DB schema or dependency change. Catalog stats are backward-compatible optional metadata; old entries are filled once in workers. Dataset operations are briefly rejected while unknown summaries are being backfilled.

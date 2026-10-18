@@ -230,6 +230,8 @@
   let idx = 0;
   let curView = 'list';
   let listScroll = 0;
+  let datasetContextId = null;
+  let datasetHistoryBoundary = false;
 
   function show(view, id) {
     if (curView === 'list') listScroll = $('#list-scroll').scrollTop;
@@ -243,7 +245,7 @@
   async function nav(view, id) {
     if (view === curView && view !== 'ad') return;
     if (!(await leaveDatasetEditor())) return;
-    history.pushState({ view, id, i: ++idx }, '');
+    history.pushState({ view, id, i: ++idx, datasetId: datasetContextId }, '');
     show(view, id);
   }
   function back() { if (idx > 0) history.back(); else nav('list'); }
@@ -260,6 +262,12 @@
       return;
     }
     const s = e.state || { view: 'list', i: 0 };
+    if (datasetHistoryBoundary && s.datasetId !== datasetContextId) {
+      ignoreRestoredPopState = true;
+      history.forward();
+      historyGuardPending = false;
+      return;
+    }
     idx = s.i || 0;
     show(s.view, s.id);
     historyGuardPending = false;
@@ -1088,6 +1096,7 @@
   async function saveDatasetEditor() {
     const name = $('#dataset-name').innerText.replace(/[\r\n]+/g, ' ').trim();
     const description = $('#dataset-meta').innerText;
+    const creating = datasetEditor.isNew;
     if (!name) {
       await showMessage({ title: 'Dataset name required', message: 'Enter a name before saving.' });
       $('#dataset-name').focus();
@@ -1100,9 +1109,12 @@
       if (!result?.ok) throw new Error(result?.error || 'Could not save dataset.');
       activeDataset = result.dataset || activeDataset;
       datasetEditor = null;
-      await renderData();
-      reload();
-      loadStats();
+      if (creating) applyDatasetChange(activeDataset);
+      else {
+        await renderData();
+        reload();
+        loadStats();
+      }
       return true;
     } catch (error) {
       await showMessage({ title: 'Could not save dataset', message: error.message || 'Could not save dataset.' });
@@ -1131,6 +1143,7 @@
     const [info, catalog] = await Promise.all([api.info(), api.datasets()]);
     if (sequence !== dataRenderSeq) return;
     activeDataset = catalog.active;
+    if (!datasetHistoryBoundary) datasetContextId = activeDataset.id;
     setCount('#side-total', info.total, ' ads');
     if (datasetEditor && curView === 'data') return;
     const rows = info.sources.map((s) => `<tr><td>${icon('database').replace('<svg', '<svg style="vertical-align:-3px;margin-right:6px;color:var(--teal)"')}${esc(s.name)}</td>
@@ -1140,7 +1153,7 @@
       <div class="dataset-heading-row"><div class="dataset-heading-copy"><h1><button id="dataset-name" class="dataset-name" type="button" aria-label="Edit dataset name">${esc(activeDataset.name)}</button></h1>
         <div id="dataset-meta" class="dataset-meta">${activeDataset.description ? esc(activeDataset.description) : ''}</div></div>
         <div class="dataset-actions"><button id="dataset-edit" class="icon-btn" type="button" aria-label="Edit dataset" title="Edit dataset"><span data-i="settings"></span></button>
-          <button id="dataset-swap" class="icon-btn" type="button" aria-label="Swap dataset" title="Swap dataset" disabled><span data-i="layers"></span></button></div></div>
+          <button id="dataset-swap" class="icon-btn" type="button" aria-label="Swap dataset" title="Swap dataset"><span data-i="layers"></span></button></div></div>
       <div style="color:var(--muted)">Import JSONL / JSON ad files. Several files can be selected at once; ads already present are skipped.</div>
       <div class="stats">
         <div class="stat"><b>${countHtml(info.total)}</b><small>ads stored</small></div>
@@ -1154,6 +1167,104 @@
       ${info.sources.length ? `<table><thead><tr><th>File</th><th class="r">Ads</th><th>Imported</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : ''}`;
     hydrateIcons($('#data'));
     renderProgress();
+  }
+
+  function applyDatasetChange(dataset) {
+    activeDataset = dataset;
+    datasetContextId = dataset.id;
+    F = { ...DEF, terms: [], sel: [], loc: [] };
+    saveF();
+    syncInputs();
+    renderActive();
+    listScroll = 0;
+    adSeq++;
+    adMatches = [];
+    $('#ad').innerHTML = '';
+    $('#crumbs').innerHTML = '';
+    idx = 0;
+    datasetHistoryBoundary = true;
+    history.pushState({ view: 'data', i: 0, datasetId: datasetContextId }, '');
+    show('data');
+    setCount('#side-total', dataset.stats?.total ?? 0, ' ads');
+    reload();
+  }
+
+  let chooserCatalog = null;
+  let datasetChooserSeq = 0;
+  function renderDatasetChoices(loading = false) {
+    const rows = chooserCatalog.datasets.map((dataset) => {
+      const description = dataset.description.split(/\r?\n/, 1)[0];
+      const stats = dataset.stats;
+      const summary = stats
+        ? `${fmtNum(stats.sourceCount)} files · ${fmtNum(stats.total)} ads${stats.min && stats.max ? ` · ${esc(stats.min.slice(0, 4))}–${esc(stats.max.slice(0, 4))}` : ''}`
+        : dataset.statsError ? 'Statistics unavailable' : 'Loading statistics…';
+      const disabled = loading ? ' disabled' : '';
+      return `<div class="dataset-choice-row"><button class="dataset-choice" type="button" data-dataset-select="${esc(dataset.id)}"${disabled}${dataset.id === chooserCatalog.active.id ? ' aria-current="true"' : ''}>
+        <strong>${esc(dataset.name)}</strong><span class="dataset-choice-description">${esc(description)}</span><small>${summary}</small></button>
+        <button class="icon-btn dataset-delete" type="button" data-dataset-delete="${esc(dataset.id)}" aria-label="Delete dataset ${esc(dataset.name)}" title="Delete dataset"${disabled}>${icon('trash')}</button></div>`;
+    }).join('');
+    const disabled = loading ? ' disabled' : '';
+    $('#dataset-options').innerHTML = `${rows}<button class="dataset-add" type="button" data-dataset-add${disabled}><span>+ add new dataset</span></button>`;
+  }
+
+  async function openDatasetChooser() {
+    if (!(await leaveDatasetEditor())) return;
+    try {
+      const sequence = ++datasetChooserSeq;
+      chooserCatalog = await api.datasets();
+      renderDatasetChoices(true);
+      $('#dataset-dialog').showModal();
+      $('#dataset-dialog-close').focus();
+      api.datasetSummaries().then((catalog) => {
+        if (sequence !== datasetChooserSeq || !$('#dataset-dialog').open) return;
+        chooserCatalog = catalog;
+        renderDatasetChoices();
+        $('[data-dataset-select]', $('#dataset-options'))?.focus();
+      }).catch((error) => {
+        if (sequence !== datasetChooserSeq || !$('#dataset-dialog').open) return;
+        chooserCatalog.datasets.forEach((dataset) => { if (!dataset.stats) dataset.statsError = true; });
+        renderDatasetChoices();
+        console.error('Could not load dataset statistics:', error);
+      });
+    } catch (error) {
+      await showMessage({ title: 'Could not load datasets', message: error.message || 'Could not load datasets.' });
+    }
+  }
+
+  async function chooseDataset(id) {
+    if (id === chooserCatalog?.active.id) { $('#dataset-dialog').close(); return; }
+    try {
+      const result = await api.activateDataset(id);
+      if (!result?.ok) throw new Error(result?.error || 'Could not activate dataset.');
+      $('#dataset-dialog').close();
+      applyDatasetChange(result.dataset);
+    } catch (error) {
+      $('#dataset-dialog').close();
+      await showMessage({ title: 'Could not switch dataset', message: error.message || 'Could not switch dataset.' });
+    }
+  }
+
+  async function deleteDatasetFromChooser(id) {
+    const dataset = chooserCatalog?.datasets.find((entry) => entry.id === id);
+    if (!dataset) return;
+    const isActive = chooserCatalog.active.id === id;
+    const isLast = chooserCatalog.datasets.length === 1;
+    $('#dataset-dialog').close();
+    const confirmed = await showMessage({
+      title: 'Delete dataset permanently?',
+      message: `This permanently deletes “${dataset.name}” and all ads stored in it. Original source files will not be deleted.${isLast ? ' Because this is the last dataset, an empty dataset named “default” will be created.' : isActive ? ' The oldest remaining dataset will become active.' : ''}`,
+      confirmLabel: 'Delete dataset',
+    });
+    if (!confirmed) { openDatasetChooser(); return; }
+    try {
+      const result = await api.deleteDataset(id);
+      if (!result?.ok) throw new Error(result?.error || 'Could not delete dataset.');
+      if (isActive) applyDatasetChange(result.active);
+      else openDatasetChooser();
+    } catch (error) {
+      await showMessage({ title: 'Could not delete dataset', message: error.message || 'Could not delete dataset.' });
+      openDatasetChooser();
+    }
   }
 
   function renderProgress() {
@@ -1189,6 +1300,24 @@
   });
 
   const dataEl = $('#data');
+  $('#dataset-dialog').addEventListener('cancel', (event) => {
+    event.preventDefault();
+    $('#dataset-dialog').close();
+  });
+  $('#dataset-dialog').addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { event.preventDefault(); $('#dataset-dialog').close(); }
+  });
+  $('#dataset-dialog-close').addEventListener('click', () => $('#dataset-dialog').close());
+  $('#dataset-options').addEventListener('click', (event) => {
+    const remove = event.target.closest('[data-dataset-delete]');
+    if (remove) return deleteDatasetFromChooser(remove.dataset.datasetDelete);
+    const select = event.target.closest('[data-dataset-select]');
+    if (select) return chooseDataset(select.dataset.datasetSelect);
+    if (event.target.closest('[data-dataset-add]')) {
+      $('#dataset-dialog').close();
+      beginDatasetCreation();
+    }
+  });
   dataEl.addEventListener('input', (event) => {
     if (!datasetEditor) return;
     if (event.target.id === 'dataset-name') datasetEditor.name = event.target.innerText;
@@ -1200,6 +1329,7 @@
     $('#dataset-meta').focus();
   });
   dataEl.addEventListener('click', async (e) => {
+    if (e.target.closest('#dataset-swap')) return openDatasetChooser();
     if (e.target.closest('#dataset-edit')) return beginDatasetEdit();
     if (e.target.closest('#dataset-name') && !datasetEditor) return beginDatasetEdit(true);
     if (e.target.closest('[data-dataset-save]')) return saveDatasetEditor();

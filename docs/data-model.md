@@ -24,7 +24,9 @@ All other fields are kept in `raw` (after pruning nulls, empty strings and empty
 
 ## Dataset catalog and database paths
 
-`<userData>/datasets.json` stores catalog version, active dataset ID, and each dataset's stable generated ID, editable name, multiline description, and initialized flag. Names are metadata only and never used as filesystem paths. `default` uses `datasets/default.db`; other datasets use `datasets/<generated-id>.db`. Each database has the same schema below, its own WAL/SHM files, source rows, ads and summary tables.
+`<userData>/datasets.json` stores catalog version, active dataset ID, and each dataset's stable generated ID, editable name, multiline description, initialized flag, and optional cached summary (`total`, `sourceCount`, `min`, `max`). Names are metadata only and never used as filesystem paths. `default` uses `datasets/default.db`; other datasets use `datasets/<generated-id>.db`. Each database has the same schema below, its own WAL/SHM files, source rows, ads and summary tables.
+
+Summary snapshots refresh from the active database at startup, after activation, import completion and source removal. Missing snapshots from older catalogs are backfilled by a temporary read worker using only `sources` metadata; no ad-table scan or main-process DB access is needed. Statistics are marked unavailable per entry if a legacy database cannot be read.
 
 On first startup after upgrading, legacy `<userData>/ads.db` and its SQLite sidecars are renamed into `datasets/default.db`; no data copy or re-import occurs. A migration marker allows startup to resume partial moves. Conflicting files stop migration rather than overwrite either DB. Catalog writes use atomic replacement. If deletion file staging is interrupted before catalog removal, startup restores staged files for datasets still registered in the catalog.
 
