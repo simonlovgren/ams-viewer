@@ -68,6 +68,10 @@ sum_employer(v, n)         -- exact employer text and total count; included in s
 
 `ix_employer` is created once by `ensureSummary()` in the build worker, including on databases whose summary version is already 2. It is not built when opening read connections. Startup/activation reports indexing progress; no re-import or summary rebuild is needed. SQLite maintains the index on subsequent imports/removals.
 
+### Promoted array-tag repair (D48)
+
+`ensureSummary()` also checks `meta.array_tags_version`. When absent, it scans for missing promoted taxonomy IDs/labels, employment or hours backed by array-valued fields in `raw`, normalizes with `toRow()` and fills only NULL columns in 500-row transactions. Raw JSON and existing values stay unchanged. Changed batches atomically invalidate `summary_version`; summaries rebuild before the build task completes. The marker becomes `'1'` only after the scan, so interrupted repairs retry safely. This runs once per dataset on startup/activation, not on every connection open; no re-import is required.
+
 ## Filter object (renderer ↔ main)
 
 ```js

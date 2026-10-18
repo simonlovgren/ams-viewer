@@ -6,6 +6,81 @@ const { tmpdir } = require('node:os');
 const path = require('node:path');
 const dbm = require('./db');
 
+test('summary startup repairs stale array-valued tags and rebuilds affected counts once', () => {
+  const db = dbm.open(':memory:');
+  try {
+    const ad = {
+      id: 'stale-array-tags', publication_date: '2026-06-23', employer: { name: 'Getdet AB' },
+      occupation_field: [{ concept_id: 'field', label: 'Sales' }],
+      occupation_group: [{ concept_id: 'group', label: 'Retail' }],
+      occupation: [{ concept_id: 'occupation', label: 'Salesperson' }],
+      employment_type: [{ label: 'Permanent' }], working_hours_type: { label: 'Full time' },
+    };
+    db.prepare(dbm.INSERT_SQL).run(...dbm.toRow(ad, '2026-Q2.jsonl').values);
+    dbm.ensureSummary(db);
+    db.exec(`UPDATE ads SET field_id = NULL, field = NULL, group_id = NULL, grp = NULL,
+      occ_id = NULL, occ = NULL, emp_type = NULL;
+      DELETE FROM meta WHERE key = 'array_tags_version';`);
+    const progress = [];
+    dbm.ensureSummary(db, event => progress.push(event));
+    const filter = { employers: ['Getdet AB'], from: '2026-01-01', to: '2026-12-31' };
+    const row = dbm.search(db, filter, 0, 60).rows[0];
+    assert.equal(row.field, 'Sales');
+    assert.equal(row.grp, 'Retail');
+    assert.equal(row.occ, 'Salesperson');
+    assert.equal(row.emp_type, 'Permanent');
+    assert.equal(dbm.count(db, { ...filter, sel: [{ k: 'occ', id: 'occupation' }] }), 1);
+    assert.deepEqual(dbm.facets(db, {}).emp, [{ v: 'Permanent', n: 1 }]);
+    assert.equal(dbm.facets(db, {}).occ[0].oi, 'occupation');
+    assert.ok(progress.length);
+    assert.equal(db.prepare("SELECT value FROM meta WHERE key = 'array_tags_version'").get().value, '1');
+    dbm.ensureSummary(db, () => assert.fail('Repair must not repeat'));
+    assert.deepEqual(dbm.getAd(db, ad.id), ad);
+  } finally {
+    db.close();
+  }
+});
+
+test('array tag repair preserves existing values and resumes after a failed batch', () => {
+  const db = dbm.open(':memory:');
+  try {
+    for (let index = 0; index < 501; index++) {
+      const row = dbm.toRow({
+        id: String(index), publication_date: '2026-06-23',
+        occupation_field: [{ concept_id: 'field', label: 'Source field' }],
+        occupation: [{ concept_id: 'occupation', label: 'Salesperson' }],
+        working_hours_type: [{ label: 'Full time' }], employment_type: [],
+      }, 'test');
+      db.prepare(dbm.INSERT_SQL).run(...row.values);
+    }
+    dbm.ensureSummary(db);
+    db.exec(`UPDATE ads SET field = 'Existing field', occ = NULL, hours = NULL;
+      DELETE FROM meta WHERE key = 'array_tags_version';`);
+    const prepare = db.prepare.bind(db);
+    let updates = 0;
+    db.prepare = sql => {
+      const statement = prepare(sql);
+      return sql.startsWith('UPDATE ads SET field_id') ? {
+        run: (...params) => {
+          if (++updates === 501) throw new Error('Interrupted repair');
+          return statement.run(...params);
+        },
+      } : statement;
+    };
+    assert.throws(() => dbm.ensureSummary(db), /Interrupted repair/);
+    db.prepare = prepare;
+    assert.equal(dbm.isBuilt(db), false);
+    assert.equal(db.prepare("SELECT value FROM meta WHERE key = 'array_tags_version'").get(), undefined);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM ads WHERE occ IS NULL').get().n, 1);
+    dbm.ensureSummary(db);
+    assert.equal(db.prepare("SELECT COUNT(*) n FROM ads WHERE field = 'Existing field' AND occ = 'Salesperson' AND hours = 'Full time' AND emp_type IS NULL").get().n, 501);
+    assert.deepEqual(dbm.facets(db, {}).hours, [{ v: 'Full time', n: 501 }]);
+    assert.equal(dbm.facets(db, {}).occ[0].n, 501);
+  } finally {
+    db.close();
+  }
+});
+
 test('employer selections use an index for counts, timeline and facet reads', () => {
   const db = dbm.open(':memory:');
   try {

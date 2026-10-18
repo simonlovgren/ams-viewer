@@ -2,6 +2,11 @@
 
 Count logic has headless regression tests; visual layout still needs manual review.
 
+## Stale listing tags (D48)
+`node --test --test-name-pattern='array.*tags|array tag repair' src/main/db.test.js` covers one-time repair of stale array-valued taxonomy/employment/hours, listing/filter/summary agreement, existing-value and raw-JSON preservation, empty arrays and rollback/retry across the 500-row batch boundary. Live DB inspection must use `new DatabaseSync(path, {readOnly: true})`; `ensureSummary()` is a write migration and must be tested on disposable copies/fixtures unless a real migration is intended. Full-scale migration and native post-repair listing remain unverified.
+
+2026-10-18: all 62 tests pass (`node --test src/main/db.test.js src/main/dataset-catalog.test.js src/renderer/app.test.js`); DB implementation/test syntax and editor checks pass. Copied all 642 `Getdet AB` ads dated 2026 from the real DB into memory, preserving stale columns and raw JSON: 624 lacked field/occupation/employment before repair, zero afterward (46 ms on this small warm fixture, not a full-scale estimate). Every promoted tag matched the preserved existing value or current raw normalization; raw JSON, list size and summary totals stayed intact. Live database was opened read-only and not modified.
+
 ## Top-employer statistics (T9 / D43)
 2026-10-18 D47/UI-022: all suites pass 60 tests. Notice tests slice `/* ---------- notifications` to `const esc =` with a fake `document.createElement`; tests slicing `loadStats` must stub `reportStatsError`. Browser fixture: inject `window.api` with `tasks: async () => [...]` and `onTask: cb => (window.__task = cb)`, then call `window.__task({...})`. Safe native smoke start without touching the real DB: `T=$(mktemp -d); XDG_CONFIG_HOME=$T timeout 12s npx electron . --no-sandbox; rm -rf "$T"`.
 

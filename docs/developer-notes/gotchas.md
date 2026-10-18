@@ -4,6 +4,7 @@
 - **Never use `readline` for JSONL.** It also splits on U+2028/U+2029, which occur inside ad texts; 61 of ~130k records broke. The importer uses a custom `\n`-only splitter (`linesOf` in `import-worker.js`).
 - Sample file `2026-Q3.jsonl`: 129,721 non-empty lines, all with unique ids. `description.text_formatted` is always null, so only `description.text` is used. Some ads have no `hours` (working hours) value; some have a null region.
 - Re-importing a file skips existing ids, so a code change in `toRow()` does not update stored rows. Remove the source in the Datasets view (or delete the DB) and re-import.
+- D48 is the targeted exception: `ensureSummary()` repairs NULL promoted array-valued tags from stored raw JSON once (`meta.array_tags_version = '1'`), then rebuilds summaries if changed. Reported employer `Gedet AB` is `Getdet AB` in the screenshot/data; June 2026 rows in `2026-Q2.jsonl` reproduce stale columns. Never use `dbm.open()` for read-only live-data inspection.
 - Import of the sample takes ~33 s; the DB ends up ~1.1 GB.
 
 ## Database and queries

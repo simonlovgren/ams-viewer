@@ -29,6 +29,7 @@
 ## Scope constraints
 - Read-only ad browsing: no ad editing, bookmarking or export. Dataset metadata is editable; switching clears session filters and prior-dataset history, while failed switches preserve current state (D42). Top-employer statistics are implemented (SRC-020); the geographic view remains planned (SRC-019/T5) and has no placeholder widget.
 - No automatic update of existing ads from newer files.
+- D48 repairs missing promoted array-valued tags from each ad's already-stored JSON once per dataset; it does not fetch or merge newer records. The raw-JSON scan and any resulting summary rebuild may take minutes and need WAL disk space. Full-scale migration duration and native post-repair listing remain unverified.
 - Data is local only; the single network use is employer logo images and links opened externally.
 - UI language is English only; dates are formatted `en-GB`.
 - Not verified visually in the original build session; layout issues should be expected in small windows (minimum 960×600 is enforced).

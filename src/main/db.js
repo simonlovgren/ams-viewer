@@ -312,6 +312,41 @@ function scanRows(db, sql, ...params) {
 // One pass over all ads; slow on millions of rows (minutes), so it runs once in the background.
 // Indexes for the employment and hours filters are created afterwards.
 function ensureSummary(db, onProgress = () => {}) {
+  if (!db.prepare("SELECT 1 FROM meta WHERE key = 'array_tags_version' AND value = '1'").get()) {
+    onProgress({ pct: 1, text: 'Repairing imported tags (one-time)…' });
+    const columns = ['field_id', 'field', 'group_id', 'grp', 'occ_id', 'occ', 'emp_type', 'hours'];
+    const dimensions = [
+      ['occupation_field', ['field_id', 'field']], ['occupation_group', ['group_id', 'grp']],
+      ['occupation', ['occ_id', 'occ']], ['employment_type', ['emp_type']], ['working_hours_type', ['hours']],
+    ];
+    const predicate = dimensions.map(([key, names]) =>
+      `((${names.map(name => `${name} IS NULL`).join(' OR ')}) AND json_type(raw, '$.${key}') = 'array')`
+    ).join(' OR ');
+    const batch = db.prepare(`SELECT rowid, raw, ${columns.join(', ')} FROM ads WHERE rowid > ? AND (${predicate}) ORDER BY rowid LIMIT 500`);
+    const update = db.prepare(`UPDATE ads SET ${columns.map(name => `${name} = COALESCE(${name}, ?)`).join(', ')} WHERE rowid = ?`);
+    let last = 0;
+    for (;;) {
+      const rows = batch.all(last);
+      if (!rows.length) break;
+      db.exec('BEGIN');
+      try {
+        for (const row of rows) {
+          const values = toRow(JSON.parse(row.raw)).values.slice(8, 16);
+          if (columns.some((name, index) => row[name] === null && values[index] !== null)) {
+            db.prepare("DELETE FROM meta WHERE key = 'summary_version'").run();
+            update.run(...values, row.rowid);
+          }
+        }
+        db.exec('COMMIT');
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
+      last = rows[rows.length - 1].rowid;
+      onProgress({ pct: 1, text: 'Repairing imported tags (one-time)…' });
+    }
+    db.prepare("INSERT OR REPLACE INTO meta(key, value) VALUES ('array_tags_version', '1')").run();
+  }
   if (!db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'index' AND name = 'ix_employer'").get()) {
     onProgress({ pct: 1, text: 'Indexing employers (one-time)…' });
     db.exec('CREATE INDEX IF NOT EXISTS ix_employer ON ads(employer COLLATE BINARY, pub_date);');
