@@ -1,6 +1,6 @@
 # Tasks (what is in the pipe)
 
-Planned work that is specified but not started. Each task links to its requirements; when work starts, set the requirement to `In progress`, record decisions in [design-decisions.md](design-decisions.md) and remove or tick the task here. Last updated 2026-10-16.
+Planned work that is specified but not started. Each task links to its requirements; when work starts, set the requirement to `In progress`, record decisions in [design-decisions.md](design-decisions.md) and remove or tick the task here. Last updated 2026-10-18.
 
 | # | Task | Requirements | Size |
 |---|---|---|---|
@@ -18,6 +18,9 @@ Planned work that is specified but not started. Each task links to its requireme
 | T12 | Enrich older ads from newer taxonomy and geographic data | DAT-015, DAT-016 | L |
 | T13 | Done: Find and navigate text matches in the ad view | AD-011 | S |
 | T14 | Done: Contextual keyboard-shortcut help modal | NAV-011, NAV-010, UI-001 | S |
+| T15 | Named dataset storage, lifecycle and existing-database migration | DAT-017, DAT-018, DAT-021, DAT-022 | L |
+| T16 | Datasets page and dataset metadata editor | DAT-019, DAT-020, DAT-021, DAT-022 | M |
+| T17 | Dataset chooser, summary statistics and switching | DAT-017, DAT-023, DAT-024 | M |
 
 Priority order: T7, T2, T13, T14, T1 and T8 are complete (D26, D27, D28, D31, D34, D35). Next are T9 and T5 (both live in the statistics bar). T3 goes with T4 (same view); T10 is independent and can slot in anywhere. T6 follows the [full-scale performance plan](full-scale-performance-plan.md) when filtered use at full scale feels slow, and before T9 and T5 if their queries make it worse.
 
@@ -121,6 +124,33 @@ Priority order: T7, T2, T13, T14, T1 and T8 are complete (D26, D27, D28, D31, D3
 - `?` opens a native dialog outside editable controls. Global shortcuts and only the active view's shortcuts are listed, including contextual `/`, keyword-entry/result keys and ad-find navigation/clear keys.
 - Escape and the close button dismiss the dialog and restore focus. The modal contains focus and blocks keyboard/mouse navigation behind it; shortcut content is static and aligned with existing handlers.
 - Verification: 14 renderer tests passed. Browser fixture passed `?` in all four views, literal `?` in the keyword field, repeated activation, Escape and close-button dismissal, focus containment/restoration, and blocked background navigation. At 960x600 the dialog fit without scrolling in both font modes. Real Electron interaction was not manually tested.
+
+## T15. Named dataset storage and lifecycle (DAT-017, DAT-018, DAT-021, DAT-022)
+- Status: planned only; no app implementation yet. Priority relative to existing tasks is not assigned. Foundation for T16/T17.
+- Give each dataset its own SQLite database and persistent name and optional multiline description. Scope imports, duplicate detection, source removal, search, filters, ad lookup and summaries to the active dataset.
+- Provide the initial dataset named exactly "default". Support dataset deletion; after the last dataset is deleted, recreate and activate an empty "default" dataset. Never persist unnamed or whitespace-only names.
+- Plan a non-destructive transition from the existing `ads.db` into the initial default dataset, preserving all imported data without requiring re-import. Decide catalog/metadata storage, stable internal dataset IDs, database paths and active-dataset persistence before implementation; never use editable names as trusted file paths.
+- Settle duplicate-name rules, deletion entry point and confirmation, selection after deleting the active dataset, and handling deletion/switching while imports or queries run. Do not delete original source files.
+- Verification: existing database preserved; datasets remain isolated even with identical ad IDs or source filenames; names/descriptions survive restart; blank-name saves fail; deleting the final dataset leaves an active empty "default"; creation cancellation leaves no unnamed dataset; deletion failures preserve a usable active dataset.
+- Docs: record storage, migration and worker-lifecycle decisions with the related DAT IDs; update data model, system description, constraints, current storage-path documentation and developer notes. Keep heavy database work off the main thread.
+
+## T16. Datasets page and metadata editor (DAT-019–DAT-022)
+- Status: planned only; depends on T15. Preserve the current source-management layout, import progress, source list, totals and source-removal behavior. Coordinate T3/T4 against this renamed view.
+- Rename the navigation entry and Data sources view to "Datasets". Use the active dataset name as the page heading, with adjacent Edit and Swap dataset icon buttons and accessible names/tooltips.
+- Edit enters metadata editing with Save and Discard controls. Clicking the heading enters the same editor and additionally selects the full name text. Include a multiline description box; persist both values only on Save and restore stored values on Discard.
+- New-dataset creation starts in this editor with the name field focused and its text selected. Reject empty/whitespace-only names and allow empty descriptions. Discarding creation must not leave an unnamed dataset.
+- Before implementation, settle unsaved-change handling when navigating, switching or closing the app, and where the optional description appears outside editing.
+- Verification: heading click versus Edit button, new-dataset initial focus/selection, keyboard operation, valid/invalid names, multiline description round-trip, Save/Discard for existing and new datasets, and import/source-management regressions. Check minimum-window and wider layouts for overlap.
+- Docs: planned UX is recorded in D38. Update current-view names in requirements notes and user/architecture docs when the rename is implemented, not before.
+
+## T17. Dataset chooser and switching (DAT-017, DAT-023, DAT-024)
+- Status: planned only; depends on T15 and integrates with T16.
+- Swap dataset opens a compact list consistent with the existing UI. Each selectable entry shows the dataset name, only the first description line when present, imported-file count and ad count; optional extra statistics can reuse the year range.
+- Keep "+ add new dataset" as the final option. It starts T16's creation editor, with the name field focused and its text selected. Choosing an existing dataset activates its database and refreshes the dataset page and all dataset-dependent views.
+- Coordinate main-process connections, read/import workers, in-memory caches, summary tables and sequence counters so late results from the previous dataset cannot populate the new one. Decide filter/history/ad-detail handling across datasets and how failed switches recover before implementation.
+- Fetch chooser summaries without scanning ad tables or opening every large database on the main thread; decide how counts stay current after imports and removals, and define pending/error states.
+- Verification: chooser ordering and final add option, missing/multiline description previews, accurate per-dataset statistics including empty datasets, mouse/keyboard selection and dismissal, successful and failed switches, and stale-response isolation. Measure switching and chooser latency with small and full-scale databases.
+- Docs: record switching/state/performance decisions with the related DAT IDs; update data flow, constraints and testing recipes as needed.
 
 ## Other open items (not requirements yet)
 - Re-import `2016.jsonl` (shows 0 ads) and import the remaining files.

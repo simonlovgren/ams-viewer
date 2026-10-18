@@ -1,6 +1,6 @@
 # Project state and preferences
 
-Last updated: 2026-10-17.
+Last updated: 2026-10-18.
 
 ## User preferences
 - 2026-10-16: all filter and statistics widgets resize vertically by grabbing their bottom divider, not only hierarchical trees (D34, D35). T1/T8 are complete; statistics data remains T5/T9. Filter/statistics columns collapse independently like the menu; both also resize in width, with statistics using its left divider (D36). Saved preferences survive automatic narrow-layout hiding and viewport clamping.
@@ -16,6 +16,7 @@ Last updated: 2026-10-17.
 Import to SQLite with progress (multi-file, drag and drop); keyword search with multiple free-text entries; multi-select occupation and location trees with always-visible options and counts; date range, year, employment, hours filters; job-ad style ad view with breadcrumb and in-ad find/highlight/navigation (AD-011); history navigation (Backspace, mouse buttons); electron-builder packaging.
 
 ## Not verified / known gaps
+- 2026-10-18: named datasets are specified only, not implemented (DAT-017 through DAT-024, D38; [T15-T17](../tasks.md#t15-named-dataset-storage-and-lifecycle-dat-017-dat-018-dat-021-dat-022)). The app still uses one `ads.db` and the Data sources view. Storage migration and switching/state policies must be settled before implementation; task details list the open questions and checks.
 - Browser fixtures now cover Settings/typography (D26), filter widgets, minimum-width tree/search layout, date inputs, sidebar drag resizing and yearly chart layout (D27), in-ad find/navigation (D28), and contextual shortcut help (D31), with screenshots reviewed. Real Electron interactions, gray zero-count styling, search chips/AND-OR and non-year chart label layouts still need visual review.
 - Mouse back/forward buttons, drag and drop import and the packaged AppImage/Windows/macOS builds are untested.
 - NFR-005/NFR-010: D37 fixes broad chronological list plans and reuses/batches facet counts. Full-scale list/facet measurements and remaining first-use/cancellation limits are in [testing-recipes.md](testing-recipes.md#full-scale-filtering-and-facet-reuse-d37); rapid native filter interaction remains untested. Counts/timelines and deep OFFSET paging still need optimization.
