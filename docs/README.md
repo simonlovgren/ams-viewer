@@ -21,4 +21,4 @@ npm start
 ```
 
 Then open **Data sources** and import one or more `.jsonl` / `.ndjson` / `.json` files.
-The database is stored at `~/.config/AMS Viewer/ads.db` (Electron `userData`).
+Dataset catalog and databases are stored under `~/.config/AMS Viewer/` (Electron `userData`): `datasets.json` and `datasets/default.db`. Existing `ads.db` is migrated on first startup; back up the data folder before upgrading.

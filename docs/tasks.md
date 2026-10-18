@@ -1,6 +1,6 @@
-# Tasks (what is in the pipe)
+# Tasks (planned and active)
 
-Planned work that is specified but not started. Each task links to its requirements; when work starts, set the requirement to `In progress`, record decisions in [design-decisions.md](design-decisions.md) and remove or tick the task here. Last updated 2026-10-18.
+Planned work that is specified but not started, plus active tasks. Each task links to its requirements; when work starts, set the requirement to `In progress` and record decisions in [design-decisions.md](design-decisions.md). Last updated 2026-10-18.
 
 | # | Task | Requirements | Size |
 |---|---|---|---|
@@ -22,7 +22,7 @@ Planned work that is specified but not started. Each task links to its requireme
 | T16 | Datasets page and dataset metadata editor | DAT-019, DAT-020, DAT-021, DAT-022 | M |
 | T17 | Dataset chooser, summary statistics and switching | DAT-017, DAT-023, DAT-024 | M |
 
-Priority order: T7, T2, T13, T14, T1 and T8 are complete (D26, D27, D28, D31, D34, D35). Next are T9 and T5 (both live in the statistics bar). T3 goes with T4 (same view); T10 is independent and can slot in anywhere. T6 follows the [full-scale performance plan](full-scale-performance-plan.md) when filtered use at full scale feels slow, and before T9 and T5 if their queries make it worse.
+Current focus: T15, per user request. T7, T2, T13, T14, T1 and T8 are complete (D26, D27, D28, D31, D34, D35). T9 and T5 use the statistics bar. T3 goes with T4; T10 is independent. T6 follows the [full-scale performance plan](full-scale-performance-plan.md) when filtered use at full scale feels slow, and before T9 and T5 if their queries make it worse.
 
 ## T1. Done: vertically resizable filter widgets (UI-010)
 - Completed 2026-10-16; D34. Scope broadened to all six filter widgets at the user's request. Drag each bottom divider to resize the widget above; keyboard Up/Down and Home/End also work.
@@ -126,13 +126,13 @@ Priority order: T7, T2, T13, T14, T1 and T8 are complete (D26, D27, D28, D31, D3
 - Verification: 14 renderer tests passed. Browser fixture passed `?` in all four views, literal `?` in the keyword field, repeated activation, Escape and close-button dismissal, focus containment/restoration, and blocked background navigation. At 960x600 the dialog fit without scrolling in both font modes. Real Electron interaction was not manually tested.
 
 ## T15. Named dataset storage and lifecycle (DAT-017, DAT-018, DAT-021, DAT-022)
-- Status: planned only; no app implementation yet. Priority relative to existing tasks is not assigned. Foundation for T16/T17.
-- Give each dataset its own SQLite database and persistent name and optional multiline description. Scope imports, duplicate detection, source removal, search, filters, ad lookup and summaries to the active dataset.
-- Provide the initial dataset named exactly "default". Support dataset deletion; after the last dataset is deleted, recreate and activate an empty "default" dataset. Never persist unnamed or whitespace-only names.
-- Plan a non-destructive transition from the existing `ads.db` into the initial default dataset, preserving all imported data without requiring re-import. Decide catalog/metadata storage, stable internal dataset IDs, database paths and active-dataset persistence before implementation; never use editable names as trusted file paths.
-- Settle duplicate-name rules, deletion entry point and confirmation, selection after deleting the active dataset, and handling deletion/switching while imports or queries run. Do not delete original source files.
-- Verification: existing database preserved; datasets remain isolated even with identical ad IDs or source filenames; names/descriptions survive restart; blank-name saves fail; deleting the final dataset leaves an active empty "default"; creation cancellation leaves no unnamed dataset; deletion failures preserve a usable active dataset.
-- Docs: record storage, migration and worker-lifecycle decisions with the related DAT IDs; update data model, system description, constraints, current storage-path documentation and developer notes. Keep heavy database work off the main thread.
+- Status: In progress 2026-10-18; D39 implements catalog, per-dataset DB paths, legacy migration and lifecycle IPC. T16/T17 UI and renderer refresh remain separate.
+- Each dataset has a generated stable ID, name and optional multiline description in `<userData>/datasets.json`; DB paths use IDs, never names. Initial name is exactly "default". Names trim whitespace, reject blank values and duplicate case-insensitive names.
+- Existing `ads.db` and WAL/SHM sidecars move into `datasets/default.db` without copying or re-importing. Migration resumes partial moves and refuses conflicts. The user confirmed an existing backup before the real migration.
+- Imports, source removal, search, filters, ad lookup and summaries use active dataset DB. Activation drains and restarts all five read lanes. Dataset changes/deletion are rejected during import or summary build.
+- Deleting active dataset selects oldest remaining. `default` may be deleted if another dataset remains; deleting the last dataset creates an empty active `default`. DB/WAL/SHM deletion is staged, with rollback and startup recovery. Original source files are untouched.
+- Verified: migration and crash-recovery tests; same ad IDs/source names remain isolated across DBs; real startup preserved 11,252,350 ads after moving the 70.4 GB DB. IPC create/switch/delete failure paths and renderer refresh still need integrated verification with T16/T17.
+- Docs: D39; data model, system description, constraints, README and developer notes updated. Heavy database work remains in workers.
 
 ## T16. Datasets page and metadata editor (DAT-019–DAT-022)
 - Status: planned only; depends on T15. Preserve the current source-management layout, import progress, source list, totals and source-removal behavior. Coordinate T3/T4 against this renamed view.

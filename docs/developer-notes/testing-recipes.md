@@ -2,6 +2,11 @@
 
 Count logic has headless regression tests; visual layout still needs manual review.
 
+## Named datasets (D39)
+`node --test src/main/dataset-catalog.test.js src/main/db.test.js src/renderer/app.test.js` covers migration recovery/conflicts, catalog metadata/name validation, final-default behavior and isolation of identical ad IDs across DBs. `node --check src/main/main.js && node --check src/main/preload.js && node --check src/main/read-worker.js` checks dataset IPC and worker routing.
+
+The first app startup after upgrade moves `~/.config/AMS Viewer/ads.db` and any `-wal`/`-shm` files into `~/.config/AMS Viewer/datasets/default.db`. Back up the data folder first. T15 was smoke-tested on the 11,252,350-ad DB; create/switch/delete IPC failure paths and T16/T17 UI are not yet manually exercised.
+
 ## Full-scale filtering and facet reuse (D37)
 2026-10-17: `node --test src/main/db.test.js src/renderer/app.test.js` passed 31 tests. Query tests cover tied/null date ordering, offsets, sparse/absent matches, date ranges, own-dimension exclusion, missing keys, same-connection and cross-connection cache invalidation, eviction and failed-query recovery. Cross-connection tests use a disposable WAL database and exercise incremental summary updates and source removal.
 
@@ -71,7 +76,7 @@ No output means no startup or renderer console errors.
 ```bash
 node --no-warnings -e "
 const d=require('./src/main/db');
-const db=d.open(process.env.HOME+'/.config/AMS Viewer/ads.db');
+const db=d.open(process.env.HOME+'/.config/AMS Viewer/datasets/default.db');
 const c=f=>d.search(db,f,0,1,true).total;
 console.log(c({}), c({terms:['sjuksköterska','hemtjänst']}));
 console.log(Object.keys(d.facets(db,{})));"
@@ -82,7 +87,7 @@ Filter shapes are listed in `docs/data-model.md`. Reference numbers for `2026-Q3
 ```js
 // /tmp/runimp.js
 const {Worker}=require('worker_threads');
-const w=new Worker('src/main/import-worker.js',{workerData:{dbPath:process.env.HOME+'/.config/AMS Viewer/ads.db',files:['2026-Q3.jsonl']}});
+const w=new Worker('src/main/import-worker.js',{workerData:{dbPath:process.env.HOME+'/.config/AMS Viewer/datasets/default.db',files:['2026-Q3.jsonl']}});
 w.on('message',m=>m.type!=='progress'&&console.log(JSON.stringify(m)));
 ```
 Run from the project root with `node --no-warnings /tmp/runimp.js`. Use a different `dbPath` (e.g. `/tmp/test.db`) to avoid touching the real database.
@@ -100,7 +105,7 @@ Build array files from the stored ads (no source file needed) and import them in
 ```js
 // mk.js: node --no-warnings mk.js 100000 ~/.cache/ams-test/big.json   (single-line array, ~500 MB)
 const d=require('/path/to/src/main/db'),fs=require('fs');
-const db=d.open(process.env.HOME+'/.config/AMS Viewer/ads.db');
+const db=d.open(process.env.HOME+'/.config/AMS Viewer/datasets/default.db');
 const [limit,out]=[+process.argv[2],process.argv[3]];const fd=fs.openSync(out,'w');fs.writeSync(fd,'[');let n=0;
 for(const r of db.prepare('SELECT raw FROM ads LIMIT ?').iterate(limit)) fs.writeSync(fd,(n++?',':'')+r.raw);
 fs.writeSync(fd,']');

@@ -22,7 +22,13 @@ Relevant fields used by the app:
 
 All other fields are kept in `raw` (after pruning nulls, empty strings and empty arrays/objects).
 
-## Database schema (`ads.db`, WAL mode)
+## Dataset catalog and database paths
+
+`<userData>/datasets.json` stores catalog version, active dataset ID, and each dataset's stable generated ID, editable name, multiline description, and initialized flag. Names are metadata only and never used as filesystem paths. `default` uses `datasets/default.db`; other datasets use `datasets/<generated-id>.db`. Each database has the same schema below, its own WAL/SHM files, source rows, ads and summary tables.
+
+On first startup after upgrading, legacy `<userData>/ads.db` and its SQLite sidecars are renamed into `datasets/default.db`; no data copy or re-import occurs. A migration marker allows startup to resume partial moves. Conflicting files stop migration rather than overwrite either DB. Catalog writes use atomic replacement. If deletion file staging is interrupted before catalog removal, startup restores staged files for datasets still registered in the catalog.
+
+## Database schema (per dataset, WAL mode)
 
 ```sql
 ads(

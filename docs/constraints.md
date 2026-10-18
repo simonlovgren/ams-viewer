@@ -12,6 +12,7 @@
 - `node:sqlite` is required (Node ≥ 22.5 / Electron ≥ 38) with FTS5 and `contentless_delete` (SQLite ≥ 3.43).
 - Database size is roughly 1.3× the source data; 20 years of data will need tens of GB of disk.
 - A single writer: only one import runs at a time. Removing a source is blocked during import and runs in the build worker.
+- Each dataset has a separate SQLite DB under `<userData>/datasets/`; catalog is `<userData>/datasets.json`. First upgrade moves `ads.db` and WAL/SHM sidecars into the `default` dataset. Back up the data folder before upgrading. Dataset switching/deletion is blocked during import or summary builds; read-worker lanes drain before path changes.
 - All database reads run in workers. Separate lanes avoid direct cross-request queueing, but concurrent queries can still compete for disk and page cache. An obsolete active query is not interrupted.
 - The ads-over-time chart adds one grouped query per update; with an active date filter the combined facets+chart update took ~0.8 s at 130k ads (warm cache).
 - Facet cost scales with matching rows. D37 batches equivalent predicates and caches up to 32 dimension/predicate groupings per connection; database writes invalidate the cache. Materialized facet keys may spill to temporary storage. On 11.25M ads, first-use broad region/field facets still took 6-7 s, while cached returns took 12-13 ms (2026-10-17).
@@ -23,7 +24,7 @@
 - Statistics width ranges from 280 px to the minimum of 720 px, 60% of viewport width and remaining menu/results space. Below 1200 px it starts hidden; manually opening either column or resizing statistics can temporarily hide the other to leave at least 420 px for results at supported window sizes. Both sidebar widths are clamped while space is limited without overwriting their saved preferences (D35, D36).
 
 ## Scope constraints
-- Read-only browsing: no editing, bookmarking or export. The statistics column is present, but geographic and employer statistics remain unavailable until T5/T9 (SRC-019/SRC-020).
+- Read-only ad browsing: no ad editing, bookmarking or export. Dataset metadata can be edited via IPC, but management UI, deletion confirmation and chooser remain pending T16/T17. The statistics column is present, but geographic and employer statistics remain unavailable until T5/T9 (SRC-019/SRC-020).
 - No automatic update of existing ads from newer files.
 - Data is local only; the single network use is employer logo images and links opened externally.
 - UI language is English only; dates are formatted `en-GB`.

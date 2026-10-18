@@ -6,6 +6,7 @@ const dbm = require('./db');
 // process (a blocked main process makes the OS flag the window as not responding). The main process runs
 // several instances, one per kind of request, so a slow request never delays the others.
 const db = dbm.open(workerData.dbPath);
+parentPort.postMessage({ type: 'ready' });
 
 const handlers = {
   search: ({ f, offset, limit }) => dbm.search(db, f || {}, offset, limit, false),
@@ -19,6 +20,16 @@ const handlers = {
 };
 
 parentPort.on('message', ({ id, type, payload }) => {
+  if (type === 'close') {
+    try {
+      db.close();
+      parentPort.postMessage({ type: 'closed' });
+      parentPort.close();
+    } catch (e) {
+      parentPort.postMessage({ type: 'close-error', error: String(e.message || e) });
+    }
+    return;
+  }
   const started = performance.now();
   try {
     const data = handlers[type](payload || {}, (p) => parentPort.postMessage({ id, progress: p }));
