@@ -24,7 +24,7 @@
 - Statistics width ranges from 280 px to the minimum of 720 px, 60% of viewport width and remaining menu/results space. Below 1200 px it starts hidden; manually opening either column or resizing statistics can temporarily hide the other to leave at least 420 px for results at supported window sizes. Both sidebar widths are clamped while space is limited without overwriting their saved preferences (D35, D36).
 
 ## Scope constraints
-- Read-only ad browsing: no ad editing, bookmarking or export. Dataset metadata can be edited via IPC, but management UI, deletion confirmation and chooser remain pending T16/T17. The statistics column is present, but geographic and employer statistics remain unavailable until T5/T9 (SRC-019/SRC-020).
+- Read-only ad browsing: no ad editing, bookmarking or export. T16 adds dataset metadata editing and guarded app-close/navigation prompts; dataset chooser and deletion confirmation remain pending T17. The statistics column is present, but geographic and employer statistics remain unavailable until T5/T9 (SRC-019/SRC-020).
 - No automatic update of existing ads from newer files.
 - Data is local only; the single network use is employer logo images and links opened externally.
 - UI language is English only; dates are formatted `en-GB`.

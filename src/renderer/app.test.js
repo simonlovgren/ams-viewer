@@ -127,7 +127,7 @@ test('shortcut dialog blocks background keyboard and mouse navigation', () => {
 
 test('message dialogs use safe defaults, plain text, dismissal and focus restoration', async () => {
   const source = readFileSync(require.resolve('./app.js'), 'utf8');
-  for (const action of ['cancel', 'accept', 'escape', 'native-cancel', 'message']) {
+  for (const action of ['cancel', 'accept', 'discard', 'escape', 'native-cancel', 'message']) {
     let focused, restored = 0;
     const listeners = {};
     const dialog = {
@@ -137,7 +137,7 @@ test('message dialogs use safe defaults, plain text, dismissal and focus restora
       close(value) { this.returnValue = value; this.open = false; listeners.close(); },
     };
     const elements = { '#message-dialog': dialog };
-    for (const name of ['cancel', 'accept', 'title', 'body']) {
+    for (const name of ['cancel', 'discard', 'accept', 'title', 'body']) {
       elements['#message-' + name] = {
         addEventListener(event, listener) { this[event] = listener; },
         classList: { toggle() {} },
@@ -149,7 +149,7 @@ test('message dialogs use safe defaults, plain text, dismissal and focus restora
       document: { activeElement: { isConnected: true, focus() { restored++; } } },
     });
     vm.runInContext(source.slice(source.indexOf('  const messageDialog ='), source.indexOf('  const editable =')), context);
-    const result = vm.runInContext(`showMessage({title:'Remove?',message:'<img src=x onerror=bad()>',confirmLabel:${action === 'message' ? 'undefined' : "'Remove'"}})`, context);
+    const result = vm.runInContext(`showMessage({title:'Remove?',message:'<img src=x onerror=bad()>',confirmLabel:${action === 'message' ? 'undefined' : "'Remove'"},discardLabel:${action === 'discard' ? "'Discard'" : 'undefined'}})`, context);
     assert.equal(dialog.open, true);
     assert.equal(focused, action === 'message' ? 'accept' : 'cancel');
     assert.equal(elements['#message-cancel'].hidden, action === 'message');
@@ -159,11 +159,154 @@ test('message dialogs use safe defaults, plain text, dismissal and focus restora
       let prevented = false;
       listeners[action === 'escape' ? 'keydown' : 'cancel']({ key: 'Escape', preventDefault() { prevented = true; } });
       assert.equal(prevented, true);
-    } else elements['#message-' + (action === 'cancel' ? 'cancel' : 'accept')].click();
-    assert.equal(await result, action === 'accept' || action === 'message');
+    } else elements['#message-' + (action === 'cancel' ? 'cancel' : action === 'discard' ? 'discard' : 'accept')].click();
+    assert.equal(await result, action === 'accept' || action === 'message' ? true : action === 'discard' ? 'discard' : false);
     assert.equal(restored, 1);
     assert.equal(dialog.open, false);
   }
+});
+
+test('dataset editor selects heading names, creates in edit mode, and saves metadata', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const fields = {
+    '.dataset-heading-copy': { innerHTML: '' },
+    '.dataset-actions': { innerHTML: '' },
+    '#dataset-name': { innerText: '', focus() { this.focused = true; } },
+    '#dataset-meta': { innerText: '' },
+  };
+  const calls = [];
+  const context = vm.createContext({
+    $: selector => fields[selector],
+    window: { getSelection: () => ({ removeAllRanges() {}, addRange() {} }) },
+    document: { createRange: () => ({ selectNodeContents(element) { element.selected = true; } }) },
+    esc: value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;'),
+    icon: () => '<svg></svg>',
+    api: {
+      updateDataset: async (...args) => { calls.push(['update', ...args]); return { ok: true, dataset: { id: args[0], name: args[1], description: args[2] } }; },
+      createDataset: async (...args) => { calls.push(['create', ...args]); return { ok: true, dataset: { id: 'new-id', name: args[0], description: args[1] } }; },
+    },
+    showMessage: async options => { calls.push(['message', options]); return true; },
+    renderData: async () => {}, reload() {}, loadStats() {},
+  });
+  const editorCode = source.slice(source.indexOf('  function renderDatasetEditor()'), source.indexOf('  async function renderData()'));
+  vm.runInContext("let activeDataset = {id:'active',name:'Current',description:'first\\nsecond'}; let datasetEditor = null; let curView = 'data';" + editorCode, context);
+
+  vm.runInContext('beginDatasetEdit(true)', context);
+  assert.equal(fields['#dataset-name'].focused, true);
+  assert.equal(fields['#dataset-name'].selected, true);
+  assert.match(fields['.dataset-heading-copy'].innerHTML, /<h1><span[^>]+contenteditable="plaintext-only"/);
+  assert.match(fields['.dataset-heading-copy'].innerHTML, /aria-multiline="true">first\nsecond<\/div>/);
+  assert.doesNotMatch(fields['.dataset-heading-copy'].innerHTML, /<input|<textarea/);
+  fields['#dataset-name'].innerText = 'Renamed';
+  fields['#dataset-meta'].innerText = 'line one\nline two';
+  assert.equal(await vm.runInContext('saveDatasetEditor()', context), true);
+  assert.deepEqual(calls[0], ['update', 'active', 'Renamed', 'line one\nline two']);
+
+  vm.runInContext('beginDatasetCreation()', context);
+  assert.equal(fields['#dataset-name'].focused, true);
+  assert.equal(fields['#dataset-name'].selected, true);
+  assert.match(fields['.dataset-heading-copy'].innerHTML, /aria-required="true"><\/span>/);
+  fields['#dataset-name'].innerText = 'New collection';
+  fields['#dataset-meta'].innerText = 'note';
+  assert.equal(await vm.runInContext('saveDatasetEditor()', context), true);
+  assert.deepEqual(calls[1], ['create', 'New collection', 'note']);
+  assert.equal(vm.runInContext('activeDataset.id', context), 'new-id');
+});
+
+test('dataset editor rejects blank names and guards dirty exits with three choices', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const fields = {
+    '.dataset-heading-copy': { innerHTML: '' },
+    '.dataset-actions': { innerHTML: '' },
+    '#dataset-name': { innerText: '   ', focus() { this.focused = true; } },
+    '#dataset-meta': { innerText: '' },
+  };
+  let choice = false;
+  let writes = 0;
+  const context = vm.createContext({
+    $: selector => fields[selector], esc: String, icon: () => '',
+    window: { getSelection: () => ({ removeAllRanges() {}, addRange() {} }) },
+    document: { createRange: () => ({ selectNodeContents(element) { element.selected = true; } }) },
+    api: { updateDataset: async () => { writes++; return { ok: true }; }, createDataset: async () => { writes++; return { ok: true }; } },
+    showMessage: async options => { context.lastMessage = options; return choice; },
+    renderData: async () => {}, reload() {}, loadStats() {},
+  });
+  const editorCode = source.slice(source.indexOf('  function renderDatasetEditor()'), source.indexOf('  async function renderData()'));
+  vm.runInContext("let activeDataset = {id:'active',name:'Current',description:''}; let datasetEditor = null; let curView = 'data';" + editorCode, context);
+
+  vm.runInContext('beginDatasetCreation()', context);
+  fields['#dataset-name'].innerText = '';
+  assert.equal(await vm.runInContext('saveDatasetEditor()', context), false);
+  assert.equal(fields['#dataset-name'].focused, true);
+  assert.equal(writes, 0);
+
+  fields['#dataset-name'].selected = undefined;
+  vm.runInContext('beginDatasetEdit()', context);
+  assert.equal(fields['#dataset-name'].selected, undefined);
+  fields['#dataset-name'].innerText = 'Changed';
+  vm.runInContext("datasetEditor.name = 'Changed'", context);
+  choice = false;
+  assert.equal(await vm.runInContext('leaveDatasetEditor()', context), false);
+  assert.equal(context.lastMessage.confirmLabel, 'Save');
+  assert.equal(context.lastMessage.discardLabel, 'Discard');
+  assert.equal(context.lastMessage.cancelLabel, 'Cancel');
+  assert.equal(writes, 0);
+  choice = 'discard';
+  assert.equal(await vm.runInContext('leaveDatasetEditor()', context), true);
+  assert.equal(vm.runInContext('datasetEditor === null', context), true);
+
+  choice = true;
+  vm.runInContext('beginDatasetEdit()', context);
+  fields['#dataset-name'].innerText = 'Saved';
+  vm.runInContext("datasetEditor.name = 'Saved'", context);
+  assert.equal(await vm.runInContext('leaveDatasetEditor()', context), true);
+  assert.equal(writes, 1);
+});
+
+test('inline dataset edits track text, preserve clicks and route Enter to description', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const handlers = {};
+  const dataElement = { addEventListener: (name, listener) => { handlers[name] = listener; } };
+  let focused = false, saves = 0, edits = 0, prevented = 0;
+  const context = vm.createContext({
+    $: selector => selector === '#data' ? dataElement : { focus() { focused = true; } },
+    datasetEditor: { name: 'Current', description: '' },
+    beginDatasetEdit() { edits++; },
+    saveDatasetEditor() { saves++; },
+  });
+  vm.runInContext(source.slice(source.indexOf('  const dataEl ='), source.indexOf("  window.addEventListener('dragover'")), context);
+  handlers.input({ target: { id: 'dataset-name', innerText: 'Changed' } });
+  handlers.input({ target: { id: 'dataset-meta', innerText: 'First\nSecond' } });
+  assert.equal(context.datasetEditor.name, 'Changed');
+  assert.equal(context.datasetEditor.description, 'First\nSecond');
+  await handlers.click({ target: { closest: selector => selector === '#dataset-name' ? {} : null } });
+  assert.equal(edits, 0);
+  handlers.keydown({ target: { id: 'dataset-name' }, key: 'Enter', isComposing: true, preventDefault() { prevented++; } });
+  assert.equal(prevented, 0);
+  handlers.keydown({ target: { id: 'dataset-name' }, key: 'Enter', preventDefault() { prevented++; } });
+  assert.equal(prevented, 1);
+  assert.equal(focused, true);
+  handlers.keydown({ target: { id: 'dataset-meta' }, key: 'Enter', preventDefault() { prevented++; } });
+  assert.equal(prevented, 1);
+  await handlers.click({ target: { closest: selector => selector === '[data-dataset-save]' ? {} : null } });
+  assert.equal(saves, 1);
+});
+
+test('dataset editor Discard restores stored metadata without writing', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const handlers = {};
+  const dataElement = { addEventListener: (name, listener) => { handlers[name] = listener; } };
+  let renders = 0;
+  const context = vm.createContext({
+    $: () => dataElement,
+    datasetEditor: { name: 'Unsaved' },
+    renderData: async () => { renders++; },
+    api: {},
+  });
+  vm.runInContext(source.slice(source.indexOf('  const dataEl ='), source.indexOf("  window.addEventListener('dragover'")), context);
+  await handlers.click({ target: { closest: selector => selector === '[data-dataset-discard]' ? {} : null } });
+  assert.equal(context.datasetEditor, null);
+  assert.equal(renders, 1);
 });
 
 test('source removal requires confirmation and shows returned or rejected errors in a modal', async () => {
@@ -338,7 +481,7 @@ test('monospace remains usable if settings storage is unavailable', () => {
   assert.equal(root.dataset.monospace, 'false');
 });
 
-test('Settings joins history navigation without losing list scroll', () => {
+test('Settings joins history navigation without losing list scroll', async () => {
   const source = readFileSync(require.resolve('./app.js'), 'utf8');
   const views = new Map(['list', 'ad', 'data', 'settings'].map(view => [view, new Set()]));
   const links = [...views.keys()].filter(view => view !== 'ad').map(view => ({
@@ -353,9 +496,10 @@ test('Settings joins history navigation without losing list scroll', () => {
     document: { querySelectorAll: () => links },
     history: { pushState: state => states.push(state) },
     loadAd: () => {}, renderData: () => {},
+    leaveDatasetEditor: async () => true,
   });
   vm.runInContext(source.slice(source.indexOf('  let idx ='), source.indexOf('  function back()')), context);
-  vm.runInContext("nav('settings')", context);
+  await vm.runInContext("nav('settings')", context);
   assert.equal(states[0].view, 'settings');
   assert.equal(views.get('settings').has('hidden'), false);
   assert.equal(views.get('list').has('hidden'), true);
@@ -364,6 +508,23 @@ test('Settings joins history navigation without losing list scroll', () => {
   vm.runInContext("show('list')", context);
   assert.equal(listScroll.scrollTop, 240);
   assert.equal(views.get('settings').has('hidden'), true);
+});
+
+test('canceling dirty browser navigation restores the current history entry once', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  let popstate, prompts = 0, forwards = 0;
+  const context = vm.createContext({
+    window: { addEventListener: (name, listener) => { if (name === 'popstate') popstate = listener; } },
+    history: { replaceState() {}, forward() { forwards++; } },
+    document: { querySelectorAll: () => [] },
+    $: () => ({ scrollTop: 0, classList: { toggle() {} } }),
+    leaveDatasetEditor: async () => { prompts++; return false; },
+  });
+  vm.runInContext(source.slice(source.indexOf('  let idx ='), source.indexOf("  history.replaceState({ view: 'list', i: 0 }, '');") + 54), context);
+  await popstate({ state: { view: 'list', i: 0 } });
+  await popstate({ state: { view: 'data', i: 1 } });
+  assert.equal(forwards, 1);
+  assert.equal(prompts, 1);
 });
 
 function widgetContext(saved, storageFails = false, heights) {

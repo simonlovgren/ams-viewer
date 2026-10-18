@@ -5,7 +5,7 @@ Desktop app for browsing historical Swedish job ads (Arbetsförmedlingen / JobTe
 ## Using the app
 
 1. Start the app (see below).
-2. Open **Data sources** in the side menu and click **Choose files…** (or drag and drop). Select one or more `.jsonl`, `.ndjson` or `.json` files. A quarter-sized file (~130k ads, ~770 MB) imports in roughly half a minute.
+2. Open **Datasets** in the side menu and click **Choose files…** (or drag and drop). Select one or more `.jsonl`, `.ndjson` or `.json` files. A quarter-sized file (~130k ads, ~770 MB) imports in roughly half a minute.
 3. Go to **Search ads**. Filter with the left panel, search by keyword at the top, click an ad to open it.
 
 | Action | How |
@@ -13,7 +13,7 @@ Desktop app for browsing historical Swedish job ads (Arbetsförmedlingen / JobTe
 | Back / forward | Backspace, mouse back/forward buttons, Alt+← / Alt+→, or the back button in the ad view |
 | Focus keyword search | `/` |
 | Jump to a filter from an ad | Click a tag or breadcrumb item |
-| Remove imported data | Data sources → Remove |
+| Remove imported data | Datasets → Remove |
 
 Filters are remembered when you open an ad and when you restart the app. Data is stored locally in `~/.config/AMS Viewer/ads.db` (macOS: `~/Library/Application Support/AMS Viewer/`, Windows: `%APPDATA%\AMS Viewer\`); the source files are not needed after import.
 
@@ -73,7 +73,7 @@ Release checklist:
 
 1. Update `version` in `package.json`.
 2. Confirm related requirements and docs are current (see [AGENTS.md](AGENTS.md)).
-3. Run `npm run pack` and launch the result; open Data sources, import a small file, search, open an ad.
+3. Run `npm run pack` and launch the result; open Datasets, import a small file, search, open an ad.
 4. Run `npm run dist` on each target platform and distribute the files from `dist/`.
 
 Current state and limits: only the unpacked Linux build has been tried (it starts); AppImage, Windows and macOS targets are untested, and there is no code signing, custom icon or auto-update (see [docs/constraints.md](docs/constraints.md), requirement NFR-009).

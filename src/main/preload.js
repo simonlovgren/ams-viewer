@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
   appReady: () => ipcRenderer.send('app:ready'),
+  onCloseRequest: (cb) => ipcRenderer.on('app:close-request', () => cb()),
+  closeDecision: (allow) => ipcRenderer.send('app:close-decision', allow),
   info: () => ipcRenderer.invoke('db:info'),
   search: (filters, offset, limit) => ipcRenderer.invoke('ads:search', filters, offset, limit),
   count: (filters) => ipcRenderer.invoke('ads:count', filters),

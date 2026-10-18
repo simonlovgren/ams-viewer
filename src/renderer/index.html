@@ -12,7 +12,7 @@
     <div class="brand"><span class="logo" data-i="briefcase"></span><div><b>AMS Viewer</b><small>Historical job ads</small></div></div>
     <nav>
       <a class="nav" data-view="list" tabindex="0" title="Search ads"><span data-i="search"></span><span class="t">Search ads</span></a>
-      <a class="nav" data-view="data" tabindex="0" title="Data sources"><span data-i="database"></span><span class="t">Data sources</span></a>
+      <a class="nav" data-view="data" tabindex="0" title="Datasets"><span data-i="database"></span><span class="t">Datasets</span></a>
       <a class="nav" data-view="settings" tabindex="0" role="button" title="Settings"><span data-i="settings"></span><span class="t">Settings</span></a>
     </nav>
     <div class="side-foot" title="Ads stored"><span data-i="layers"></span><span id="side-total">0 ads</span></div>
@@ -149,6 +149,7 @@
     <div class="message-body" id="message-body"></div>
     <div class="message-actions">
       <button id="message-cancel" class="btn sec" type="button">Cancel</button>
+      <button id="message-discard" class="btn sec" type="button" hidden>Discard</button>
       <button id="message-accept" class="btn sec" type="button">OK</button>
     </div>
   </dialog>
@@ -186,7 +187,7 @@
         <div class="shortcut-row"><kbd>Escape</kbd><span>In ad find, clear the query</span></div>
       </section>
       <section class="shortcut-group shortcut-view" data-shortcut-view="data" aria-labelledby="shortcut-data-title" hidden>
-        <h3 id="shortcut-data-title">Data sources</h3>
+        <h3 id="shortcut-data-title">Datasets</h3>
         <div class="shortcut-row"><kbd>/</kbd><span>Go to Search and focus keyword search</span></div>
       </section>
       <section class="shortcut-group shortcut-view" data-shortcut-view="settings" aria-labelledby="shortcut-settings-title" hidden>

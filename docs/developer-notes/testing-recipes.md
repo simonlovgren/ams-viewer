@@ -7,6 +7,9 @@ Count logic has headless regression tests; visual layout still needs manual revi
 
 The first app startup after upgrade moves `~/.config/AMS Viewer/ads.db` and any `-wal`/`-shm` files into `~/.config/AMS Viewer/datasets/default.db`. Back up the data folder first. T15 was smoke-tested on the 11,252,350-ad DB; create/switch/delete IPC failure paths and T16/T17 UI are not yet manually exercised.
 
+## Dataset metadata editor (T16 / D40)
+`node --test src/renderer/app.test.js` passed 30 tests, covering heading-click selection, new-editor focus/selection, name validation, multiline metadata saves, explicit Discard and dirty-exit Save/Discard/Cancel behavior. D41 additionally covers inline plain-text markup, input tracking, caret-preserving edit-mode clicks and Enter routing (including IME composition). Browser fixture confirmed identical display/edit fonts and colors, full heading selection, real keyboard multiline input/save and Discard restoration. Long names and unbroken descriptions fit at 960×600 and 1400×900 without overlap or horizontal overflow; inline-editor screenshot reviewed. `node --check src/renderer/app.js` and editor diagnostics passed after D41. `node --check src/main/main.js && node --check src/main/preload.js` checks renderer/main close-handshake syntax. Native app-close choices remain untested; Swap dataset stays disabled until T17 chooser.
+
 ## Full-scale filtering and facet reuse (D37)
 2026-10-17: `node --test src/main/db.test.js src/renderer/app.test.js` passed 31 tests. Query tests cover tied/null date ordering, offsets, sparse/absent matches, date ranges, own-dimension exclusion, missing keys, same-connection and cross-connection cache invalidation, eviction and failed-query recovery. Cross-connection tests use a disposable WAL database and exercise incremental summary updates and source removal.
 
@@ -43,7 +46,7 @@ Final D30 styling refinement: collapse-all controls use 11px text, a 1px border 
 D29 shortcut checks (2026-10-16): all 11 renderer tests passed, including `/` routing from all four views and non-interception in inputs, textareas, selects and contenteditable elements. Browser keyboard fixture passed ad-find focus with unchanged history, typing/highlighting, literal slash in the find input, and Settings-to-list search fallback. Fixture ads use `window.api.get`, not `getAd`. Real Electron shortcut interaction was not manually tested.
 
 ## Contextual shortcut help (D31)
-`node --test src/renderer/app.test.js && node --check src/renderer/app.js` passed all 14 renderer tests (2026-10-16). Browser fixture at 960x600 verified `?` routing and contextual content in Search, Ad, Data sources and Settings; editable-field typing; repeated activation; Escape and close-button dismissal; focus containment/restoration; and blocked background navigation. The dialog fit without scrolling in monospace and proportional modes. Real Electron interaction was not manually tested.
+`node --test src/renderer/app.test.js && node --check src/renderer/app.js` passed all 14 renderer tests (2026-10-16). Browser fixture at 960x600 verified `?` routing and contextual content in Search, Ad, Datasets and Settings; editable-field typing; repeated activation; Escape and close-button dismissal; focus containment/restoration; and blocked background navigation. The dialog fit without scrolling in monospace and proportional modes. Real Electron interaction was not manually tested.
 
 ## Collapsible widgets and minimum-width filters (D27)
 `node --test src/renderer/app.test.js` now includes independent collapse persistence, invalid/unavailable storage, active-selection badges, filter retention and badge clearing (nine renderer tests total, passed 2026-10-16).

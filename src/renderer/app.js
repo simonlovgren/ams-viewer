@@ -240,21 +240,35 @@
     if (view === 'ad') loadAd(id);
     if (view === 'data') renderData();
   }
-  function nav(view, id) {
+  async function nav(view, id) {
     if (view === curView && view !== 'ad') return;
+    if (!(await leaveDatasetEditor())) return;
     history.pushState({ view, id, i: ++idx }, '');
     show(view, id);
   }
   function back() { if (idx > 0) history.back(); else nav('list'); }
-  window.addEventListener('popstate', (e) => {
+  let historyGuardPending = false;
+  let ignoreRestoredPopState = false;
+  window.addEventListener('popstate', async (e) => {
+    if (ignoreRestoredPopState) { ignoreRestoredPopState = false; return; }
+    if (historyGuardPending) return;
+    historyGuardPending = true;
+    if (!(await leaveDatasetEditor())) {
+      ignoreRestoredPopState = true;
+      history.forward();
+      historyGuardPending = false;
+      return;
+    }
     const s = e.state || { view: 'list', i: 0 };
     idx = s.i || 0;
     show(s.view, s.id);
+    historyGuardPending = false;
   });
   history.replaceState({ view: 'list', i: 0 }, '');
 
   const messageDialog = $('#message-dialog');
   $('#message-cancel').addEventListener('click', () => messageDialog.close('cancel'));
+  $('#message-discard').addEventListener('click', () => messageDialog.close('discard'));
   $('#message-accept').addEventListener('click', () => messageDialog.close('accept'));
   messageDialog.addEventListener('cancel', (event) => {
     event.preventDefault();
@@ -263,24 +277,28 @@
   messageDialog.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') { event.preventDefault(); messageDialog.close('cancel'); }
   });
-  function showMessage({ title, message, confirmLabel }) {
+  function showMessage({ title, message, confirmLabel, discardLabel, cancelLabel = 'Cancel', danger = !!confirmLabel }) {
     if (messageDialog.open) return Promise.resolve(false);
     const returnFocus = document.activeElement;
     const cancel = $('#message-cancel');
+    const discard = $('#message-discard');
     const accept = $('#message-accept');
     $('#message-title').textContent = title;
     $('#message-body').textContent = message;
     cancel.hidden = !confirmLabel;
+    cancel.textContent = cancelLabel;
+    discard.hidden = !discardLabel;
+    discard.textContent = discardLabel || 'Discard';
     accept.textContent = confirmLabel || 'OK';
-    accept.classList.toggle('danger', !!confirmLabel);
+    accept.classList.toggle('danger', danger);
     messageDialog.returnValue = '';
     return new Promise((resolve) => {
       messageDialog.addEventListener('close', () => {
         if (returnFocus?.isConnected && typeof returnFocus.focus === 'function') returnFocus.focus({ preventScroll: true });
-        resolve(messageDialog.returnValue === 'accept');
+        resolve(messageDialog.returnValue === 'accept' ? true : messageDialog.returnValue === 'discard' ? 'discard' : false);
       }, { once: true });
       messageDialog.showModal();
-      (confirmLabel ? cancel : accept).focus();
+      (discardLabel || confirmLabel ? cancel : accept).focus();
     });
   }
 
@@ -329,6 +347,10 @@
     n.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
   });
   $('#back').addEventListener('click', back);
+  api.onCloseRequest(async () => {
+    const allow = await leaveDatasetEditor();
+    api.closeDecision(allow);
+  });
 
   /* ---------- list ---------- */
   const PAGE = 60;
@@ -1025,15 +1047,101 @@
 
   /* ---------- data view ---------- */
   let importState = null;
+  let activeDataset = null;
+  let datasetEditor = null;
+  let dataRenderSeq = 0;
+
+  function renderDatasetEditor() {
+    if (!datasetEditor) return;
+    const editor = datasetEditor;
+    $('.dataset-heading-copy').innerHTML = `<h1><span id="dataset-name" class="dataset-name" contenteditable="plaintext-only" role="textbox" aria-label="Dataset name" aria-required="true">${esc(editor.name)}</span></h1>
+      <div id="dataset-meta" class="dataset-meta" contenteditable="plaintext-only" role="textbox" aria-label="Description" aria-multiline="true">${esc(editor.description)}</div>`;
+    $('.dataset-actions').innerHTML = `<button class="btn sec" type="button" data-dataset-discard>${icon('x')}Discard</button>
+      <button class="btn sec" type="button" data-dataset-save>${icon('check')}Save</button>`;
+    const name = $('#dataset-name');
+    name.focus();
+    if (editor.selectName) {
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(name);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+    editor.selectName = false;
+  }
+
+  function beginDatasetEdit(selectName = false) {
+    if (!activeDataset) return;
+    datasetEditor = { id: activeDataset.id, name: activeDataset.name, description: activeDataset.description, originalName: activeDataset.name, originalDescription: activeDataset.description, isNew: false, selectName };
+    renderDatasetEditor();
+  }
+
+  function beginDatasetCreation() {
+    datasetEditor = { id: null, name: '', description: '', originalName: '', originalDescription: '', isNew: true, selectName: true };
+    renderDatasetEditor();
+  }
+
+  function datasetEditorDirty() {
+    return !!datasetEditor && (datasetEditor.isNew || datasetEditor.name !== datasetEditor.originalName || datasetEditor.description !== datasetEditor.originalDescription);
+  }
+
+  async function saveDatasetEditor() {
+    const name = $('#dataset-name').innerText.replace(/[\r\n]+/g, ' ').trim();
+    const description = $('#dataset-meta').innerText;
+    if (!name) {
+      await showMessage({ title: 'Dataset name required', message: 'Enter a name before saving.' });
+      $('#dataset-name').focus();
+      return false;
+    }
+    try {
+      const result = datasetEditor.isNew
+        ? await api.createDataset(name, description)
+        : await api.updateDataset(datasetEditor.id, name, description);
+      if (!result?.ok) throw new Error(result?.error || 'Could not save dataset.');
+      activeDataset = result.dataset || activeDataset;
+      datasetEditor = null;
+      await renderData();
+      reload();
+      loadStats();
+      return true;
+    } catch (error) {
+      await showMessage({ title: 'Could not save dataset', message: error.message || 'Could not save dataset.' });
+      return false;
+    }
+  }
+
+  async function leaveDatasetEditor() {
+    if (!datasetEditor) return true;
+    if (!datasetEditorDirty()) { datasetEditor = null; return true; }
+    const choice = await showMessage({
+      title: 'Unsaved dataset changes',
+      message: 'Save your changes before leaving?',
+      confirmLabel: 'Save',
+      discardLabel: 'Discard',
+      cancelLabel: 'Cancel',
+      danger: false,
+    });
+    if (choice === 'discard') { datasetEditor = null; return true; }
+    if (choice !== true) return false;
+    return saveDatasetEditor();
+  }
 
   async function renderData() {
-    const info = await api.info();
+    const sequence = ++dataRenderSeq;
+    const [info, catalog] = await Promise.all([api.info(), api.datasets()]);
+    if (sequence !== dataRenderSeq) return;
+    activeDataset = catalog.active;
     setCount('#side-total', info.total, ' ads');
+    if (datasetEditor && curView === 'data') return;
     const rows = info.sources.map((s) => `<tr><td>${icon('database').replace('<svg', '<svg style="vertical-align:-3px;margin-right:6px;color:var(--teal)"')}${esc(s.name)}</td>
       <td class="r">${countHtml(s.ads)}</td><td>${esc((s.imported_at || '').slice(0, 10))}</td>
       <td class="r"><button class="btn sec danger" data-rm="${esc(s.name)}">${icon('trash')}Remove</button></td></tr>`).join('');
     $('#data').innerHTML = `
-      <h1>Data sources</h1><div style="color:var(--muted)">Import JSONL / JSON ad files. Several files can be selected at once; ads already present are skipped.</div>
+      <div class="dataset-heading-row"><div class="dataset-heading-copy"><h1><button id="dataset-name" class="dataset-name" type="button" aria-label="Edit dataset name">${esc(activeDataset.name)}</button></h1>
+        <div id="dataset-meta" class="dataset-meta">${activeDataset.description ? esc(activeDataset.description) : ''}</div></div>
+        <div class="dataset-actions"><button id="dataset-edit" class="icon-btn" type="button" aria-label="Edit dataset" title="Edit dataset"><span data-i="settings"></span></button>
+          <button id="dataset-swap" class="icon-btn" type="button" aria-label="Swap dataset" title="Swap dataset" disabled><span data-i="layers"></span></button></div></div>
+      <div style="color:var(--muted)">Import JSONL / JSON ad files. Several files can be selected at once; ads already present are skipped.</div>
       <div class="stats">
         <div class="stat"><b>${countHtml(info.total)}</b><small>ads stored</small></div>
         <div class="stat"><b>${countHtml(info.sources.length)}</b><small>source files</small></div>
@@ -1044,6 +1152,7 @@
         <button class="btn sec" id="pick" style="margin-top:12px">${icon('upload')}Choose files…</button></div>
       <div id="progress"></div>
       ${info.sources.length ? `<table><thead><tr><th>File</th><th class="r">Ads</th><th>Imported</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : ''}`;
+    hydrateIcons($('#data'));
     renderProgress();
   }
 
@@ -1080,7 +1189,24 @@
   });
 
   const dataEl = $('#data');
+  dataEl.addEventListener('input', (event) => {
+    if (!datasetEditor) return;
+    if (event.target.id === 'dataset-name') datasetEditor.name = event.target.innerText;
+    if (event.target.id === 'dataset-meta') datasetEditor.description = event.target.innerText;
+  });
+  dataEl.addEventListener('keydown', (event) => {
+    if (!datasetEditor || event.target.id !== 'dataset-name' || event.key !== 'Enter' || event.isComposing) return;
+    event.preventDefault();
+    $('#dataset-meta').focus();
+  });
   dataEl.addEventListener('click', async (e) => {
+    if (e.target.closest('#dataset-edit')) return beginDatasetEdit();
+    if (e.target.closest('#dataset-name') && !datasetEditor) return beginDatasetEdit(true);
+    if (e.target.closest('[data-dataset-save]')) return saveDatasetEditor();
+    if (e.target.closest('[data-dataset-discard]')) {
+      datasetEditor = null;
+      return renderData();
+    }
     if (e.target.closest('#pick')) return startImport(api.importDialog());
     const rm = e.target.closest('[data-rm]');
     if (rm && await showMessage({

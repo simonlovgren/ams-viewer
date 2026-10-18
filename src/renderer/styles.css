@@ -232,6 +232,17 @@ mark.ad-match.current { outline: 2px solid var(--pink); background: var(--pink);
 .view#view-data { flex-direction: column; }
 #data { max-width: 900px; margin: 0 auto; }
 #data h1 { margin: 0 0 4px; }
+.dataset-heading-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.dataset-heading-copy { min-width: 0; flex: 1; }
+.dataset-name { max-width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; overflow-wrap: anywhere; cursor: text; }
+.dataset-name:not([contenteditable]):hover { color: var(--teal); }
+.dataset-name:focus-visible { outline: 2px solid var(--teal); outline-offset: 3px; }
+.dataset-meta { color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.dataset-actions { display: flex; flex: none; flex-wrap: wrap; justify-content: flex-end; gap: 8px; max-width: 45%; }
+.dataset-name[contenteditable] { display: block; min-height: 1lh; }
+.dataset-meta[contenteditable] { min-height: 3lh; cursor: text; }
+[contenteditable="plaintext-only"] { outline: 1px dashed var(--line); outline-offset: 3px; border-radius: 2px; }
+[contenteditable="plaintext-only"]:focus { outline: 2px solid var(--teal); }
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 18px 0; }
 .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
 .stat b { font-size: 24px; display: block; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }

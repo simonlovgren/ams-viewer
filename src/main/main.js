@@ -10,10 +10,14 @@ let win;
 let importing = false;
 let datasets;
 let datasetChanging = false;
+let closeRequestPending = false;
+let closeApproved = false;
 
 const DATA_EXT = /\.(jsonl|ndjson|json)$/i;
 
 function createWindow(show = true) {
+  closeRequestPending = false;
+  closeApproved = false;
   win = new BrowserWindow({
     show,
     width: 1400,
@@ -31,6 +35,14 @@ function createWindow(show = true) {
     },
   });
   win.setMenuBarVisibility(false);
+  win.on('close', (event) => {
+    if (closeApproved) return;
+    event.preventDefault();
+    if (!closeRequestPending) {
+      closeRequestPending = true;
+      win.webContents.send('app:close-request');
+    }
+  });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
@@ -453,6 +465,14 @@ function registerHandlers() {
     }
   };
   const assertStableDataset = () => { if (datasetChanging) throw new Error('Dataset transition in progress'); };
+  ipcMain.on('app:close-decision', (event, allow) => {
+    if (event.sender !== win?.webContents || typeof allow !== 'boolean' || !closeRequestPending) return;
+    closeRequestPending = false;
+    if (allow) {
+      closeApproved = true;
+      win.close();
+    }
+  });
   ipcMain.handle('db:info', timed('info', () => { assertStableDataset(); return lists.request('info'); }));
   ipcMain.handle('ads:search', timed('search', (_e, f, offset, limit) => {
     assertStableDataset();

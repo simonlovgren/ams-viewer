@@ -22,7 +22,7 @@ Planned work that is specified but not started, plus active tasks. Each task lin
 | T16 | Datasets page and dataset metadata editor | DAT-019, DAT-020, DAT-021, DAT-022 | M |
 | T17 | Dataset chooser, summary statistics and switching | DAT-017, DAT-023, DAT-024 | M |
 
-Current focus: T15, per user request. T7, T2, T13, T14, T1 and T8 are complete (D26, D27, D28, D31, D34, D35). T9 and T5 use the statistics bar. T3 goes with T4; T10 is independent. T6 follows the [full-scale performance plan](full-scale-performance-plan.md) when filtered use at full scale feels slow, and before T9 and T5 if their queries make it worse.
+Current focus: T16, following T15/D39. T7, T2, T13, T14, T1 and T8 are complete (D26, D27, D28, D31, D34, D35). T9 and T5 use the statistics bar. T3 goes with T4; T10 is independent. T6 follows the [full-scale performance plan](full-scale-performance-plan.md) when filtered use at full scale feels slow, and before T9 and T5 if their queries make it worse.
 
 ## T1. Done: vertically resizable filter widgets (UI-010)
 - Completed 2026-10-16; D34. Scope broadened to all six filter widgets at the user's request. Drag each bottom divider to resize the widget above; keyboard Up/Down and Home/End also work.
@@ -90,7 +90,7 @@ Current focus: T15, per user request. T7, T2, T13, T14, T1 and T8 are complete (
 - Flow: the renderer asks main (`api` call) for the logo; main returns a local file on a cache hit, otherwise downloads it, stores it, and returns it. Serving the file needs a safe route: a `data:` URL for small images (CSP already allows `data:`), or a registered custom protocol for the cache folder (would need a CSP change and a decision).
 - Download in the main process with limits: `https` only, redirect cap, timeout, maximum size (for example 1 MB), accept only image content types, and verify the response is a real image. This replaces the browser's `no-referrer` load, so send no cookies or referrer.
 - Failures: remember failed URLs (negative cache entry with an expiry, for example a day) so dead links are not retried on every view; fall back to the initial-letter box as today.
-- Many ads share one employer logo URL, so the cache is small compared to the database; still decide whether to bound its size (suggest: no limit at first, show size on the Data sources page, offer "clear cache").
+- Many ads share one employer logo URL, so the cache is small compared to the database; still decide whether to bound its size (suggest: no limit at first, show size on the Datasets page, offer "clear cache").
 - Privacy and offline: first view of each logo contacts the host once; afterwards it works offline. Mention this in the README/constraints.
 - Decisions to record: where files live and how they are served, security limits, negative caching. Update `system-description.md` (new data flow) and `constraints.md`.
 
@@ -125,8 +125,8 @@ Current focus: T15, per user request. T7, T2, T13, T14, T1 and T8 are complete (
 - Escape and the close button dismiss the dialog and restore focus. The modal contains focus and blocks keyboard/mouse navigation behind it; shortcut content is static and aligned with existing handlers.
 - Verification: 14 renderer tests passed. Browser fixture passed `?` in all four views, literal `?` in the keyword field, repeated activation, Escape and close-button dismissal, focus containment/restoration, and blocked background navigation. At 960x600 the dialog fit without scrolling in both font modes. Real Electron interaction was not manually tested.
 
-## T15. Named dataset storage and lifecycle (DAT-017, DAT-018, DAT-021, DAT-022)
-- Status: In progress 2026-10-18; D39 implements catalog, per-dataset DB paths, legacy migration and lifecycle IPC. T16/T17 UI and renderer refresh remain separate.
+## T15. Done: named dataset storage and lifecycle (DAT-017, DAT-018, DAT-021, DAT-022)
+- Completed 2026-10-18; D39 implements catalog, per-dataset DB paths, legacy migration and lifecycle IPC. T16 adds metadata UI; T17 adds chooser, deletion UI and dataset-dependent refresh.
 - Each dataset has a generated stable ID, name and optional multiline description in `<userData>/datasets.json`; DB paths use IDs, never names. Initial name is exactly "default". Names trim whitespace, reject blank values and duplicate case-insensitive names.
 - Existing `ads.db` and WAL/SHM sidecars move into `datasets/default.db` without copying or re-importing. Migration resumes partial moves and refuses conflicts. The user confirmed an existing backup before the real migration.
 - Imports, source removal, search, filters, ad lookup and summaries use active dataset DB. Activation drains and restarts all five read lanes. Dataset changes/deletion are rejected during import or summary build.
@@ -135,13 +135,13 @@ Current focus: T15, per user request. T7, T2, T13, T14, T1 and T8 are complete (
 - Docs: D39; data model, system description, constraints, README and developer notes updated. Heavy database work remains in workers.
 
 ## T16. Datasets page and metadata editor (DAT-019–DAT-022)
-- Status: planned only; depends on T15. Preserve the current source-management layout, import progress, source list, totals and source-removal behavior. Coordinate T3/T4 against this renamed view.
-- Rename the navigation entry and Data sources view to "Datasets". Use the active dataset name as the page heading, with adjacent Edit and Swap dataset icon buttons and accessible names/tooltips.
-- Edit enters metadata editing with Save and Discard controls. Clicking the heading enters the same editor and additionally selects the full name text. Include a multiline description box; persist both values only on Save and restore stored values on Discard.
+- Status: In progress 2026-10-18; D40 records the user-approved workflow. Page rename, active-name heading, description display, metadata editor and guarded navigation/close are implemented. Preserve current source-management layout, import progress, source list, totals and source-removal behavior. Coordinate T3/T4 against renamed view.
+- Rename the navigation entry and former Data sources view to "Datasets". Use the active dataset name as the page heading, with adjacent Edit and Swap dataset icon buttons and accessible names/tooltips.
+- Edit enters inline metadata editing with Save and Discard controls beside the heading (D41). Clicking the heading enters the same editor and additionally selects the full name text. Edit the heading and multiline description directly in their display typography; persist both values only on Save and restore stored values on Discard.
 - New-dataset creation starts in this editor with the name field focused and its text selected. Reject empty/whitespace-only names and allow empty descriptions. Discarding creation must not leave an unnamed dataset.
-- Before implementation, settle unsaved-change handling when navigating, switching or closing the app, and where the optional description appears outside editing.
-- Verification: heading click versus Edit button, new-dataset initial focus/selection, keyboard operation, valid/invalid names, multiline description round-trip, Save/Discard for existing and new datasets, and import/source-management regressions. Check minimum-window and wider layouts for overlap.
-- Docs: planned UX is recorded in D38. Update current-view names in requirements notes and user/architecture docs when the rename is implemented, not before.
+- Dirty edits prompt Save / Discard / Cancel on view navigation, browser-history movement and app close; T17 dataset switching must use same guard. Description displays below heading with line breaks preserved. Swap control remains inactive until T17 chooser is implemented.
+- Verification: 30 renderer tests and syntax checks pass. Browser fixture verified heading-click selection, matching display/edit typography, inline metadata edit/save, multiline keyboard input, Discard restoration and long-text layouts without overlap or overflow at 960×600 and 1400×900 (D41). Real Electron startup reached active 11.25M-ad window in 603 ms before D41. Native close prompt, dataset creation through chooser, import/source-removal interaction and Swap chooser await T17/manual verification.
+- Docs: D40 records resolved UX. Update requirement names, user docs and architecture references with the rename.
 
 ## T17. Dataset chooser and switching (DAT-017, DAT-023, DAT-024)
 - Status: planned only; depends on T15 and integrates with T16.
