@@ -1261,7 +1261,9 @@
       <div class="drop" id="drop">${icon('upload').replace('<svg', '<svg style="width:32px;height:32px;color:var(--purple)"')}
         <div style="margin-top:8px">Drop .jsonl / .ndjson / .json files here</div>
         <button class="btn sec" id="pick" style="margin-top:12px">${icon('upload')}Choose files…</button></div>
-      <button class="btn sec" id="dataset-reprocess" type="button"${reprocessBusy ? ' disabled' : ''}>${icon('database')}Reprocess dataset</button>
+      <div class="actions">
+        <button class="btn sec" id="dataset-reprocess" type="button"${reprocessBusy ? ' disabled' : ''}>${icon('database')}Reprocess dataset</button>
+      </div>
       <div id="progress"></div>
       ${info.sources.length ? `<table><thead><tr><th>File</th><th class="r">Ads</th><th>Imported</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : ''}`;
     hydrateIcons($('#data'));
