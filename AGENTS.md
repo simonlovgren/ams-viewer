@@ -51,7 +51,7 @@ npm start       # run the app (add --no-sandbox if the Electron sandbox helper i
 
 The user makes all commits. Never run `git commit`, `git push`, `git add`/staging on your own, or anything that rewrites history.
 
-When a large enough coherent change is complete (a finished requirement or feature, a bug fix with its docs and notes, a refactor), stop and suggest creating a commit:
+When a large enough coherent change is complete (a finished requirement or feature, a bug fix with its docs and notes, a refactor), or a task requested by the user, stop and suggest creating a commit:
 
 - Say that this is a good commit point and what the commit would contain; if unrelated changes have piled up, suggest how to split them.
 - Propose the message: Conventional Commits subject (50 characters or less), a short body when the why is not obvious, and the requirement and decision IDs involved (for example `SRC-009`, `D6`).
