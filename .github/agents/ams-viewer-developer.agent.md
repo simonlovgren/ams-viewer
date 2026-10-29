@@ -36,7 +36,8 @@ You are the developer agent for **AMS Viewer** (`ams-viewer`), an Electron app f
 - Performance: long-running DB work stays off the main thread. Interactive queries stay in the low-millisecond range at ~130k ads and must scale to all years (NFR-005). Discard stale async responses with the existing sequence counters.
 - Schema changes need a migration or a documented re-import. Adding a filter dimension: follow "Adding a new filter dimension" in `docs/data-model.md`.
 - Import reads lines split on `\n` only (U+2028/2029 occur inside ad texts); do not switch to `readline`.
-- UI is English, ad content is Swedish. Tag colors are fixed by meaning: location teal, field blue, group purple, occupation pink, other grey (LST-002, UI-004). Dark teal/blue/purple/pink theme via CSS variables.
+- UI is English, ad content is Swedish. Tag colors are fixed by meaning: location teal, field blue, group purple, occupation pink, other grey (LST-002, UI-004). T19/D51 extends the current dark palette with file-based themes; follow [theming.md](../../docs/theming.md).
+- Every color/font token addition, modification or removal must update the theming reference, validation contract, both default theme files (`src/themes/ams-dark.json`, `src/themes/ams-light.json`) and regression coverage in the same change (UI-029). Default files arrive in T19 stages 2-3. Handle incompatible token changes through schema versioning; do not introduce hard-coded application colors or remote fonts.
 - Do not commit data files (`*.jsonl`) or the database.
 - Minimal, focused changes; comments only where the code cannot explain itself.
 

@@ -1,6 +1,6 @@
 # Tasks (planned and active)
 
-Planned work that is specified but not started, plus active tasks. Each task links to its requirements; when work starts, set the requirement to `In progress` and record decisions in [design-decisions.md](design-decisions.md). Last updated 2026-10-18.
+Planned work that is specified but not started, plus active tasks. Each task links to its requirements; when work starts, set the requirement to `In progress` and record decisions in [design-decisions.md](design-decisions.md). Last updated 2026-10-29.
 
 | # | Task | Requirements | Size |
 |---|---|---|---|
@@ -22,6 +22,7 @@ Planned work that is specified but not started, plus active tasks. Each task lin
 | T16 | Done: Datasets page and metadata editor | DAT-019, DAT-020, DAT-021, DAT-022 | M |
 | T17 | Done: Dataset chooser, statistics, switching and deletion | DAT-017, DAT-018, DAT-020, DAT-021, DAT-023, DAT-024 | M |
 | T18 | Manually report and exclude erroneous ads | DAT-025 | M |
+| T19 | File-based themes, light palette and theme chooser (stage 1 contract recorded) | UI-002, UI-003, UI-024, UI-025, UI-026, UI-027, UI-028, UI-029 | L |
 
 T15–T17 completed 2026-10-18 (D39–D42). T7, T2, T13, T14, T1, T8 and T9 are complete (D26–D28, D31, D34–D36, D43–D44). T9 uses the statistics bar; T5 remains planned, with no placeholder shown. T3 goes with T4; T10 is independent. T6 follows the [full-scale performance plan](full-scale-performance-plan.md); filtered T9 latency on the full database remains unmeasured.
 
@@ -158,6 +159,15 @@ T15–T17 completed 2026-10-18 (D39–D42). T7, T2, T13, T14, T1, T8 and T9 are 
 - Excluded ads must disappear from browsable ads, search results, filter options/counts, date ranges, timelines, employer statistics and dataset totals. Keep FTS, summary tables, worker caches and cached dataset statistics consistent; run expensive work off the main thread.
 - Before implementation, settle action placement, confirmation and optional reason capture; reversible exclusion versus physical deletion; reviewing/restoring excluded ads; persistence across restart, re-import and source removal. Record decisions with DAT-025 and update the data model, data flow and constraints as needed.
 - Verification: explicitly exclude a fixture ad dated 2099 and confirm all affected views and totals update; leave an unreported suspect-date ad visible; verify dataset isolation, unchanged source files, cancellation/failure handling and the chosen restart/re-import behavior.
+
+## T19. File-based themes and theme chooser
+- D51; [complete contract and token reference](theming.md). User approved staged implementation and default/monospace font stacks on 2026-10-29. Runtime is still unchanged; built-in JSON files are not yet present.
+- [x] Stage 1: revise dark-only requirements; record JSON/color/font contract, chooser behavior, storage/security rules and agent maintenance requirements. Verify documentation consistency before moving on.
+- [ ] Stage 2: tokenize current CSS, chart SVG, splash and window colors; add shared theme validation/application and ams-dark without changing appearance. Add contract coverage and verify dark parity.
+- [ ] Stage 3: add ams-light and saved selection before first paint; retain independent font-mode preference. Test matching default token sets, light contrast, controls, restart/recovery and context preservation.
+- [ ] Stage 4: add validated main-process import/export, application-wide catalog and confirmed custom deletion. Protect built-ins; test temporary storage, malformed/unsafe input, cancellation and failure atomicity.
+- [ ] Stage 5: add separate Settings Theme section and accessible chooser with self-themed/fonted panels, swatches, selected marker and independent download/trash controls. Verify keyboard, focus, both sizes/fonts/themes, persistence and disposable Electron startup.
+- Stop after each verified stage for review. Do not mark the feature Implemented before runtime coverage and manual verification gates are met. Current documentation stage does not verify colors, fonts, file operations or native startup.
 
 ## Other open items (not requirements yet)
 - Re-import `2016.jsonl` (shows 0 ads) and import the remaining files.
