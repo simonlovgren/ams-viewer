@@ -5,8 +5,8 @@ const path = require('path');
 const { Worker } = require('worker_threads');
 const { randomUUID } = require('crypto');
 const datasetCatalog = require('./dataset-catalog');
-const themeContract = require('../shared/theme');
-const currentTheme = themeContract.parse(fs.readFileSync(path.join(__dirname, '../themes/ams-dark.json'), 'utf8'));
+const themeCatalog = require('./theme-catalog');
+let currentTheme;
 
 ipcMain.on('theme:current', (event) => { event.returnValue = currentTheme; });
 
@@ -126,6 +126,8 @@ function startImport(files) {
 
 // Fixed folder: the default follows package.json (name vs productName) and once split the data across two folders.
 app.setPath('userData', path.join(app.getPath('appData'), 'AMS Viewer'));
+const themes = themeCatalog.open(app.getPath('userData'));
+currentTheme = themes.current();
 const dbPath = () => datasets.databasePath();
 
 let splash;
@@ -602,6 +604,22 @@ app.whenReady().then(async () => {
 });
 
 function registerHandlers() {
+  ipcMain.handle('themes:list', () => ({ themes: themes.list(), activeId: currentTheme.name }));
+  ipcMain.handle('themes:activate', async (event, id) => {
+    if (event.sender !== win?.webContents) throw new Error('Theme changes require the main window');
+    try {
+      currentTheme = await themes.activate(id);
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (window.isDestroyed()) continue;
+        window.setBackgroundColor(currentTheme.colors.background);
+        window.webContents.send('theme:changed', currentTheme);
+      }
+      return currentTheme;
+    } catch (error) {
+      sendTask('theme', 'error', `Could not change theme: ${errorText(error)}`);
+      throw error;
+    }
+  });
   // Slow calls (over 0.5 s) are logged; set AMS_TRACE=1 to log every call.
   const trace = !!process.env.AMS_TRACE;
   const timed = (name, fn) => async (...a) => {
@@ -636,6 +654,7 @@ function registerHandlers() {
   ipcMain.handle('datasets:summary', () => datasetSummaries());
   ipcMain.handle('tasks:list', () => {
     const list = [...tasks.values()];
+    if (themes.warning()) list.push({ key: 'theme-restore', state: 'error', text: themes.warning(), pct: null });
     if (summaryState.state === 'error') list.push({ key: 'summary', state: 'error', text: `Statistics could not be built: ${summaryState.text}`, pct: null });
     return list;
   });

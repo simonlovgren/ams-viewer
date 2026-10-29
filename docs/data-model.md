@@ -30,6 +30,10 @@ Summary snapshots refresh from the active database at startup, after activation,
 
 On first startup after upgrading, legacy `<userData>/ads.db` and its SQLite sidecars are renamed into `datasets/default.db`; no data copy or re-import occurs. A migration marker allows startup to resume partial moves. Conflicting files stop migration rather than overwrite either DB. Catalog writes use atomic replacement. If deletion file staging is interrupted before catalog removal, startup restores staged files for datasets still registered in the catalog.
 
+## Application theme selection
+
+`<userData>/themes.json` is separate from datasets and currently stores `{ "version": 1, "activeId": "ams-dark" }` or the same shape with `ams-light` (D52/T19 stage 3). The main-process theme catalog validates selection at startup and atomically replaces this file before applying a change. Missing means the dark default; invalid/unavailable/oversized selection falls back with a warning without overwriting the original file. Font mode remains in renderer application settings, not this catalog. Built-in theme data is bundled under `src/themes/` and follows the separate `schemaVersion: 1` contract in [theming.md](theming.md). Imported-theme catalog entries are deferred to stage 4; extending the format must retain stage-3 compatibility. No SQLite schema or re-import change.
+
 ## Database schema (per dataset, WAL mode)
 
 ```sql

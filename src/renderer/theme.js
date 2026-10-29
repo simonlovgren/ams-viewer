@@ -1,2 +1,6 @@
 'use strict';
-amsTheme.apply((window.api || window.splash).theme, document.documentElement);
+{
+	const bridge = window.api || window.splash;
+	amsTheme.apply(bridge.theme, document.documentElement);
+	bridge.onTheme?.((theme) => amsTheme.apply(theme, document.documentElement));
+}

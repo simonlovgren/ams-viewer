@@ -22,7 +22,7 @@ Planned work that is specified but not started, plus active tasks. Each task lin
 | T16 | Done: Datasets page and metadata editor | DAT-019, DAT-020, DAT-021, DAT-022 | M |
 | T17 | Done: Dataset chooser, statistics, switching and deletion | DAT-017, DAT-018, DAT-020, DAT-021, DAT-023, DAT-024 | M |
 | T18 | Manually report and exclude erroneous ads | DAT-025 | M |
-| T19 | File-based themes, light palette and theme chooser (stages 1-2 complete) | UI-002, UI-003, UI-024, UI-025, UI-026, UI-027, UI-028, UI-029 | L |
+| T19 | File-based themes, light palette and theme chooser (stages 1-3 complete) | UI-002, UI-003, UI-024, UI-025, UI-026, UI-027, UI-028, UI-029 | L |
 
 T15–T17 completed 2026-10-18 (D39–D42). T7, T2, T13, T14, T1, T8 and T9 are complete (D26–D28, D31, D34–D36, D43–D44). T9 uses the statistics bar; T5 remains planned, with no placeholder shown. T3 goes with T4; T10 is independent. T6 follows the [full-scale performance plan](full-scale-performance-plan.md); filtered T9 latency on the full database remains unmeasured.
 
@@ -161,13 +161,13 @@ T15–T17 completed 2026-10-18 (D39–D42). T7, T2, T13, T14, T1, T8 and T9 are 
 - Verification: explicitly exclude a fixture ad dated 2099 and confirm all affected views and totals update; leave an unreported suspect-date ad visible; verify dataset isolation, unchanged source files, cancellation/failure handling and the chosen restart/re-import behavior.
 
 ## T19. File-based themes and theme chooser
-- D51; [complete contract and token reference](theming.md). User approved staged implementation and default/monospace font stacks on 2026-10-29. Runtime now loads ams-dark from JSON; ams-light and user-facing theme controls are not yet present.
+- D51/D52; [complete contract and token reference](theming.md). Runtime loads either built-in from JSON and restores application-wide selection before both windows paint. User-facing controls remain stage 5; stage 3 adds no temporary toggle.
 - [x] Stage 1: revise dark-only requirements; record JSON/color/font contract, chooser behavior, storage/security rules and agent maintenance requirements. Verify documentation consistency before moving on.
 - [x] Stage 2: tokenize current CSS, chart SVG, splash and window colors; add shared theme validation/application and ams-dark without changing appearance. All 76 tests and syntax/editor checks pass. Browser parity covers four views at both sizes/fonts, including semantic/highlight/loading probes, allowing 8-bit alpha rounding; chart stops match. Search/Ad screenshots reviewed. Disposable Electron main/splash values confirmed; main shown in 629 ms. Native interaction, normal quit and visual startup-flash observation remain unverified; live data untouched.
-- [ ] Stage 3: add ams-light and saved selection before first paint; retain independent font-mode preference. Test matching default token sets, light contrast, controls, restart/recovery and context preservation.
+- [x] Stage 3: ams-light, atomic themes.json selection and live updates implemented (D52). All 83 tests, 32 browser view/size/theme/font cases and eight modal cases pass; light Search/Ad screenshots reviewed. Three disposable native launches verify light startup, context-preserving live dark switch, dark restart, font retention and visible corrupt-catalog recovery, all with normal quit. Native windows appeared in 476-606 ms; live data untouched. Visual startup-flash observation and full-dataset interaction remain unverified.
 - [ ] Stage 4: add validated main-process import/export, application-wide catalog and confirmed custom deletion. Protect built-ins; test temporary storage, malformed/unsafe input, cancellation and failure atomicity.
 - [ ] Stage 5: add separate Settings Theme section and accessible chooser with self-themed/fonted panels, swatches, selected marker and independent download/trash controls. Verify keyboard, focus, both sizes/fonts/themes, persistence and disposable Electron startup.
-- Stop after each verified stage for review. Do not mark the feature Implemented before runtime coverage and manual verification gates are met. Multi-theme selection/persistence and file operations are not yet implemented or verified.
+- Stop after each verified stage for review. Do not mark the whole feature Implemented before all runtime/manual gates are met. Built-in selection/persistence is verified through the backend; custom file operations and Settings chooser remain pending.
 
 ## Other open items (not requirements yet)
 - Re-import `2016.jsonl` (shows 0 ads) and import the remaining files.
