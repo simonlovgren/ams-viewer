@@ -2,7 +2,7 @@
 
 ## Status and scope
 
-Normative version-1 contract for T19, D51 and UI-002/003/UI-024 through UI-029. Stage 1 specifies the feature only: theme loading, default JSON files and the chooser are not implemented yet. The current dark appearance remains unchanged.
+Normative version-1 contract for T19, D51 and UI-002/003/UI-024 through UI-029. Stages 1-2 are complete: ams-dark JSON, shared validation/application and full runtime color/font tokenization are implemented. The current dark appearance remains unchanged, apart from alpha values rounded to the nearest 8-bit value. ams-light, saved selection, import/export/deletion and the chooser remain pending.
 
 Themes control application colors and font families, including chart SVG, dialogs, notifications, loading overlays, splash and Electron window backgrounds. They do not change spacing, sizes, layout, font size, animation or source-ad content. Native operating-system window decorations and file dialogs remain system-controlled.
 
@@ -152,7 +152,7 @@ Each value is a comma-separated font-family list, at most 512 characters. Accept
 
 ## Compatibility and maintenance
 
-Version 1 rejects partial themes and unknown keys rather than silently mixing incompatible palettes. Any incompatible token/name/type change requires a schemaVersion increment and an explicit migration or documented rejection/recovery path for existing custom themes. Default files, executable validation and reference must stay synchronized; do not silently drop imported values.
+Version 1 rejects partial themes and unknown keys rather than silently mixing incompatible palettes. Any incompatible token/name/type change requires a schemaVersion increment and an explicit migration or documented rejection/recovery path for existing custom themes. Default files, executable validation and reference must stay synchronized; do not silently drop imported values. Stage 2 implements the validator/application in `src/shared/theme.js` and tests exact reference/default/consumer coverage in `src/shared/theme.test.js`; ams-light joins this contract in stage 3.
 
 Every added, modified or removed color/font token must update this reference, validation contract, both built-in theme files and regression tests in the same change. AGENTS.md and the developer agent enforce this rule. Built-in palettes require visual contrast/readability checks; arbitrary custom palette contrast cannot be guaranteed by syntax validation.
 
@@ -165,3 +165,5 @@ Every added, modified or removed color/font token must update this reference, va
 5. Chooser: test selection, independent actions, keyboard/focus restoration and theme/font previews. Review screenshots at 960x600 and 1400x900, both built-ins and both font modes; smoke-test Electron with disposable userData.
 
 Stop between stages for review. If an existing test fails, follow AGENTS.md approval rule before modifying that test.
+
+Stage 2 verification (2026-10-29): all 76 tests and changed-JS syntax/editor checks pass. Browser old/new CSS comparison passes all 16 view/size/font cases for computed colors, typography and geometry, allowing alpha quantization up to 0.004; SVG gradient stops match the original palette. Four additional shortcut-modal size/font cases verify fit and surface/backdrop/shadow/focus parity. Desktop Search and minimum-size Ad screenshots reviewed. Disposable Electron startup and native main/splash inspection confirm ams-dark, expected backgrounds and all 67 color/font properties. Native startup reached the main window in 629 ms. Native user interaction, normal quit and visual observation of startup flashing remain unverified; diagnostic sessions were forcibly terminated. Live datasets were untouched.

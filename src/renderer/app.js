@@ -771,8 +771,8 @@
     box.innerHTML = `<div class="chart-sub">${countHtml(total)} ads · per ${t.unit} · ${esc(t.from)} → ${esc(t.to)}</div>
       <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
         <defs>
-          <linearGradient id="cg-line" gradientUnits="userSpaceOnUse" x1="${L}" x2="${W - R}" y1="0" y2="0"><stop offset="0" stop-color="#2dd4bf"/><stop offset=".35" stop-color="#60a5fa"/><stop offset=".7" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472b6"/></linearGradient>
-          <linearGradient id="cg-area" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#a78bfa" stop-opacity=".35"/><stop offset="1" stop-color="#a78bfa" stop-opacity="0"/></linearGradient>
+          <linearGradient id="cg-line" gradientUnits="userSpaceOnUse" x1="${L}" x2="${W - R}" y1="0" y2="0"><stop offset="0" stop-color="var(--theme-gradient-start)"/><stop offset=".35" stop-color="var(--theme-gradient-second)"/><stop offset=".7" stop-color="var(--theme-gradient-third)"/><stop offset="1" stop-color="var(--theme-gradient-end)"/></linearGradient>
+          <linearGradient id="cg-area" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--theme-chart-area)" stop-opacity=".35"/><stop offset="1" stop-color="var(--theme-chart-area)" stop-opacity="0"/></linearGradient>
         </defs>
         <line class="ch-grid" x1="${L}" x2="${W - R}" y1="${ys(max)}" y2="${ys(max)}"/>
         <line class="ch-grid" x1="${L}" x2="${W - R}" y1="${ys(max / 2)}" y2="${ys(max / 2)}"/>

@@ -2,6 +2,13 @@
 
 Count logic has headless regression tests; visual layout still needs manual review.
 
+## Theme contract and dark parity (T19 / D51)
+`node --test src/shared/theme.test.js src/main/dataset-catalog.test.js src/main/db.test.js src/renderer/app.test.js` passes 76 tests (2026-10-29). Theme tests enforce exact reference/JSON/consumer token sets, reject unsafe/incomplete values, duplicate keys and oversized JSON, verify font-mode preservation, both blocking head bootstraps and window background wiring. No existing tests were changed.
+
+Browser fixtures must now provide `window.api.theme` (or `window.splash.theme`) from `src/themes/ams-dark.json` before head scripts execute. No fallback palette is embedded in CSS. Browser old/new CSS comparison passed 16 view/size/font cases, comparing computed colors, typography and geometry with 0.004 tolerance for hex-alpha quantization. SVG stops matched; desktop Search/minimum-size Ad screenshots reviewed.
+
+Native disposable startup showed main in 629 ms; DevTools inspected ams-dark background and all 67 color/font properties in both windows. DevTools target navigation can arrive before `document.body` exists: await DOMContentLoaded before inspecting. A GPU-disabled diagnostic stalled before main display on this Wayland setup; use normal GPU configuration. Diagnostic runs were force-terminated, so normal quit/startup flashing/native interaction remain unverified. Native harnesses should spawn a detached process group and clean up the whole group; killing only the Electron parent can leave inherited pipes open. `closeDecision(true)` without a pending close request does not close the app. Live datasets were untouched.
+
 ## Full-height sidebars with notifications (UI-022 / D47)
 2026-10-29: browser fixture passed 48 geometry cases: Search, Ad, Datasets and Settings at 1400x900 and 960x600, both fonts, with empty/stacked/cleared notices. Assert visible sidebar/main/view bottoms equal `innerHeight` and their tops equal the notification area's bottom. Empty notices must yield a zero-height first grid row; content stays in row 2. This catches the original 1400x900 regression (669 px content plus 231 px unused space).
 

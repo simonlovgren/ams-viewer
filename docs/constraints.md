@@ -34,6 +34,7 @@
 - D48 repairs missing promoted array-valued tags from each ad's already-stored JSON once per dataset; it does not fetch or merge newer records. The raw-JSON scan and any resulting summary rebuild may take minutes and need WAL disk space. Full-scale migration duration and native post-repair listing remain unverified.
 - Data is local only; the single network use is employer logo images and links opened externally.
 - UI language is English only; dates are formatted `en-GB`.
+- T19 stage 2 currently supports only bundled ams-dark at runtime. Light theme, saved selection, custom import/export/deletion and chooser are pending. Theme contract accepts complete version-1 JSON with 65 literal hex colors and two local font stacks; no remote fonts or arbitrary CSS. Hex alpha slightly quantizes former decimal opacities. Native system decorations/file dialogs are outside the palette. Native main/splash values were inspected, but startup flashing, normal quit and interactive native theme behavior remain unverified; see [theming](theming.md).
 - Not verified visually in the original build session; layout issues should be expected in small windows (minimum 960×600 is enforced).
 
 ## Full dataset (2006–2026), measured 2026-10-15

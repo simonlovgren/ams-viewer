@@ -2,27 +2,27 @@
 html, body { height: 100%; margin: 0; }
 body {
   display: flex; align-items: center; justify-content: center; overflow: hidden;
-  background: radial-gradient(600px 300px at 80% -20%, #1a1440 0%, transparent 60%), #0a0d18;
-  color: #e6eaf7; font: 14px/1.5 "Inter", "Segoe UI", system-ui, sans-serif;
+  background: radial-gradient(600px 300px at 80% -20%, var(--theme-background-tint) 0%, transparent 60%), var(--theme-background);
+  color: var(--theme-text-primary); font: 14px/1.5 var(--theme-font-default);
 }
 .card { width: 100%; padding: 28px 36px; text-align: center; }
 .logo {
   width: 52px; height: 52px; padding: 12px; border-radius: 14px; margin-bottom: 10px;
-  background: linear-gradient(120deg, #2dd4bf, #60a5fa 35%, #a78bfa 70%, #f472b6);
-  stroke: #0a0d18; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  background: linear-gradient(120deg, var(--theme-gradient-start), var(--theme-gradient-second) 35%, var(--theme-gradient-third) 70%, var(--theme-gradient-end));
+  stroke: var(--theme-text-on-accent); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
 }
 h1 { margin: 0 0 4px; font-size: 20px; }
-#stage { margin: 0 0 14px; color: #8b95b8; min-height: 22px; }
-.bar { height: 8px; border-radius: 8px; background: #131a2e; border: 1px solid #232d4a; overflow: hidden; position: relative; }
+#stage { margin: 0 0 14px; color: var(--theme-text-muted); min-height: 22px; }
+.bar { height: 8px; border-radius: 8px; background: var(--theme-surface); border: 1px solid var(--theme-border); overflow: hidden; position: relative; }
 .bar i {
   display: block; height: 100%; width: 0; border-radius: 8px; transition: width .5s ease;
-  background: linear-gradient(90deg, #2dd4bf, #60a5fa, #a78bfa, #f472b6);
+  background: linear-gradient(90deg, var(--theme-gradient-start), var(--theme-gradient-second), var(--theme-gradient-third), var(--theme-gradient-end));
 }
 .bar::after {
   content: ""; position: absolute; inset: 0; width: 40%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .18), transparent);
+  background: linear-gradient(90deg, transparent, var(--theme-progress-shimmer), transparent);
   animation: sweep 1.4s linear infinite;
 }
 @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
-.meta { display: flex; justify-content: space-between; margin-top: 6px; color: #8b95b8; font-size: 12px; font-variant-numeric: tabular-nums; }
-small { display: block; margin-top: 14px; color: #566086; font-size: 11px; }
+.meta { display: flex; justify-content: space-between; margin-top: 6px; color: var(--theme-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+small { display: block; margin-top: 14px; color: var(--theme-text-disabled); font-size: 11px; }

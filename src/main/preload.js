@@ -2,6 +2,7 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
+  theme: ipcRenderer.sendSync('theme:current'),
   appReady: () => ipcRenderer.send('app:ready'),
   onCloseRequest: (cb) => ipcRenderer.on('app:close-request', () => cb()),
   closeDecision: (allow) => ipcRenderer.send('app:close-decision', allow),

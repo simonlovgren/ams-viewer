@@ -61,6 +61,8 @@ flowchart LR
 | `src/main/read-worker.js` | All database reads, on their own connections: five instances (lanes): `lists` (rows, single ad, info), `counts`, `timelines`, `facets` and `build` (one-time summary build, source removal). A newer request supersedes a queued request of the same kind, but active SQL continues; lanes can still contend for disk/cache. Worker responses include execution time for main-process queue/work diagnostics (D37), not exposed in renderer results. |
 | `src/main/splash-preload.js`, `src/renderer/splash.*` | Splash window with progress bar shown while the database summary and first results load (UI-014). |
 | `src/renderer/app.js` | All UI logic: state, history, list, filter trees, ad rendering, data view. No framework. |
+| `src/shared/theme.js`, `src/themes/ams-dark.json` | Version-1 semantic color/font contract and shared validation/application; bundled dark theme is the current sole runtime theme (D51/T19 stage 2). |
+| `src/renderer/theme.js` | Blocking head-script bootstrap for both main and splash: applies the preload theme snapshot before styles load. No theme chooser or saved selection yet. |
 
 ## Data flow
 
@@ -69,6 +71,7 @@ flowchart LR
 3. **Dataset lifecycle**: main-process catalog selects one DB path. All read lanes reopen against that path on activation; imports and source removal use the same active path. Dataset changes/deletion are refused during imports or summary builds, and read lanes drain before DB files are staged or switched. The chooser displays cached counts; missing legacy snapshots are backfilled by temporary read workers from `sources`, never by opening databases on the main thread. Successful switches clear session filters and stale async responses, move to Datasets, and reload Search; history entries from the prior dataset are rejected. Renderer edits catalog metadata through validated IPC; app-close and switch requests wait for the renderer's dirty-edit decision.
 4. **Open ad**: row click → history `pushState` → `ads:get` returns the stored (null-pruned) JSON from the active dataset → rendered as a job ad.
 5. **Background notices** (UI-022, D47): main reports background work on `task:event` (`{key, state: running|done|error, text, pct}`) for summary/index builds, imports, dataset operations, source removal and dataset statistics reads. Main keeps running tasks (plus a summary-build error) for `tasks:list`, which the renderer reads at start. The renderer shows them in `#notices`, a grid row above sidebar and views; it also tracks pending count/timeline/facet refreshes with a renderer-local task and reports their failures there (UI-023, D50). Current-request identity tokens prevent obsolete completions from hiding newer refresh feedback.
+6. **Theme bootstrap** (D51/T19 stage 2): main validates bundled ams-dark JSON once and uses its background for both BrowserWindows. Main/splash preloads synchronously read the same in-memory snapshot through `theme:current`; shared validation/application plus a blocking renderer head script set all 65 color and two font properties before styles load. Native controls inherit colorScheme; CSS and chart SVG consume tokens. Main-window font mode still comes from existing settings; splash uses the theme's default font. No database or filesystem access occurs in the synchronous IPC handler.
 
 ## Facet semantics
 

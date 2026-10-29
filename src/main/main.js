@@ -5,6 +5,10 @@ const path = require('path');
 const { Worker } = require('worker_threads');
 const { randomUUID } = require('crypto');
 const datasetCatalog = require('./dataset-catalog');
+const themeContract = require('../shared/theme');
+const currentTheme = themeContract.parse(fs.readFileSync(path.join(__dirname, '../themes/ams-dark.json'), 'utf8'));
+
+ipcMain.on('theme:current', (event) => { event.returnValue = currentTheme; });
 
 let win;
 let importing = false;
@@ -46,7 +50,7 @@ function createWindow(show = true) {
     height: 900,
     minWidth: 960,
     minHeight: 600,
-    backgroundColor: '#0a0d18',
+    backgroundColor: currentTheme.colors.background,
     title: 'AMS Viewer',
     autoHideMenuBar: true,
     webPreferences: {
@@ -133,7 +137,7 @@ function createSplash() {
     resizable: false,
     show: false,
     center: true,
-    backgroundColor: '#0a0d18',
+    backgroundColor: currentTheme.colors.background,
     title: 'AMS Viewer',
     webPreferences: {
       preload: path.join(__dirname, 'splash-preload.js'),
