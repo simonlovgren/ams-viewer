@@ -375,6 +375,32 @@
     });
   }
 
+  let themeActionBusy = false;
+  async function runThemeAction(title, operation) {
+    if (themeActionBusy) return null;
+    themeActionBusy = true;
+    try { return await operation(); }
+    catch (error) {
+      await showMessage({ title, message: error.message || 'Theme operation failed.' });
+      return null;
+    } finally { themeActionBusy = false; }
+  }
+  const importThemeFile = () => runThemeAction('Could not import theme', () => api.importTheme());
+  const exportThemeFile = (id) => runThemeAction('Could not export theme', () => api.exportTheme(id));
+  const removeTheme = (id) => runThemeAction('Could not remove theme', async () => {
+    const catalog = await api.themes();
+    const theme = catalog.themes.find((entry) => entry.id === id);
+    if (!theme) throw new Error('Theme not found.');
+    if (theme.builtIn) throw new Error('Built-in themes cannot be removed.');
+    const confirmed = await showMessage({
+      title: 'Remove theme?',
+      message: `Remove "${theme.name}" from the theme library? The original imported file will not be deleted.${catalog.activeId === id ? ' ams-dark will become active.' : ''}`,
+      confirmLabel: 'Remove theme',
+    });
+    if (!confirmed) return { ok: false, canceled: true };
+    return api.deleteTheme(id);
+  });
+
   const editable = (t) => t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable);
   const shortcutDialog = $('#shortcut-help');
   let shortcutReturnFocus = null;

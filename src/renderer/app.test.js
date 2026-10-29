@@ -13,6 +13,60 @@ function rendererContext(document = { querySelectorAll: () => [] }, globals = {}
   return expression => vm.runInContext(expression, context);
 }
 
+test('theme removal confirms once, preserves cancellation and blocks protected built-ins', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const code = source.slice(source.indexOf('  let themeActionBusy = false;'), source.indexOf('  const editable ='));
+  for (const confirmed of [false, true]) {
+    const prompts = [];
+    const removed = [];
+    const context = vm.createContext({
+      api: {
+        themes: async () => ({ activeId: 'custom', themes: [{ id: 'custom', name: '<Theme name>', builtIn: false }, { id: 'ams-dark', builtIn: true }] }),
+        deleteTheme: async (id) => { removed.push(id); return { ok: true }; },
+      },
+      showMessage: async (options) => { prompts.push(options); return confirmed; },
+    });
+    vm.runInContext(code, context);
+    const result = await vm.runInContext("removeTheme('custom')", context);
+    assert.equal(result.ok, confirmed);
+    assert.equal(prompts[0].confirmLabel, 'Remove theme');
+    assert.match(prompts[0].message, /ams-dark will become active/);
+    assert.match(prompts[0].message, /original imported file will not be deleted/);
+    assert.equal(removed.length, confirmed ? 1 : 0);
+    await vm.runInContext("removeTheme('ams-dark')", context);
+    assert.equal(removed.length, confirmed ? 1 : 0);
+    assert.equal(prompts.at(-1).title, 'Could not remove theme');
+  }
+});
+
+test('theme file actions prevent duplicate work, pass cancellation and show recoverable failures', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const code = source.slice(source.indexOf('  let themeActionBusy = false;'), source.indexOf('  const editable ='));
+  const prompts = [];
+  let finish;
+  let imports = 0;
+  const context = vm.createContext({
+    api: {
+      importTheme: () => { imports++; return new Promise((resolve) => { finish = resolve; }); },
+      exportTheme: async () => { throw new Error('Disk full'); },
+    },
+    showMessage: async (options) => prompts.push(options),
+  });
+  vm.runInContext(code, context);
+  const pending = vm.runInContext('importThemeFile()', context);
+  assert.equal(await vm.runInContext('importThemeFile()', context), null);
+  assert.equal(imports, 1);
+  finish({ ok: false, canceled: true });
+  assert.equal((await pending).canceled, true);
+  assert.equal(prompts.length, 0);
+  assert.equal(await vm.runInContext("exportThemeFile('ams-dark')", context), null);
+  assert.equal(prompts[0].title, 'Could not export theme');
+  assert.equal(prompts[0].message, 'Disk full');
+  const second = vm.runInContext('importThemeFile()', context);
+  finish({ ok: true });
+  assert.equal((await second).ok, true);
+});
+
 test('compact counts retain exact hover values and round across units', () => {
   const evaluate = rendererContext();
   for (const [value, expected] of [[0, '0'], [999, '999'], [1000, '1k'], [12500, '12.5k'], [999999, '1M'], [11252350, '11.3M']]) {

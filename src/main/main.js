@@ -604,21 +604,66 @@ app.whenReady().then(async () => {
 });
 
 function registerHandlers() {
-  ipcMain.handle('themes:list', () => ({ themes: themes.list(), activeId: currentTheme.name }));
-  ipcMain.handle('themes:activate', async (event, id) => {
+  const applyTheme = (theme) => {
+    currentTheme = theme;
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (window.isDestroyed()) continue;
+      window.setBackgroundColor(currentTheme.colors.background);
+      window.webContents.send('theme:changed', currentTheme);
+    }
+    return currentTheme;
+  };
+  const assertThemeWindow = (event) => {
     if (event.sender !== win?.webContents) throw new Error('Theme changes require the main window');
+  };
+  const themeOperation = async (key, text, operation) => {
+    sendTask(key, 'running', text);
+    try { return await operation(); }
+    catch (error) {
+      sendTask(key, 'error', `${text.replace(/\.\.\.$/, '')} failed: ${errorText(error)}`);
+      throw error;
+    } finally { sendTask(key, 'done'); }
+  };
+  ipcMain.handle('themes:list', () => ({ themes: themes.list(), activeId: themes.activeId() }));
+  ipcMain.handle('themes:activate', async (event, id) => {
+    assertThemeWindow(event);
     try {
-      currentTheme = await themes.activate(id);
-      for (const window of BrowserWindow.getAllWindows()) {
-        if (window.isDestroyed()) continue;
-        window.setBackgroundColor(currentTheme.colors.background);
-        window.webContents.send('theme:changed', currentTheme);
-      }
-      return currentTheme;
+      return applyTheme(await themes.activate(id));
     } catch (error) {
       sendTask('theme', 'error', `Could not change theme: ${errorText(error)}`);
       throw error;
     }
+  });
+  ipcMain.handle('themes:import', async (event) => {
+    assertThemeWindow(event);
+    return themeOperation('theme-import', 'Importing theme...', async () => {
+      const selected = await dialog.showOpenDialog(win, {
+        title: 'Import theme', properties: ['openFile'], filters: [{ name: 'Theme JSON', extensions: ['json'] }],
+      });
+      if (selected.canceled) return { ok: false, canceled: true };
+      if (!Array.isArray(selected.filePaths) || selected.filePaths.length !== 1) throw new Error('Select one .json theme file');
+      return { ok: true, theme: await themes.importFile(selected.filePaths[0]) };
+    });
+  });
+  ipcMain.handle('themes:export', async (event, id) => {
+    assertThemeWindow(event);
+    return themeOperation('theme-export', 'Exporting theme...', async () => {
+      if (!themes.list().some((entry) => entry.id === id)) throw new Error('Theme not found');
+      const selected = await dialog.showSaveDialog(win, {
+        title: 'Export theme', defaultPath: `${id}.json`, filters: [{ name: 'Theme JSON', extensions: ['json'] }],
+      });
+      if (selected.canceled) return { ok: false, canceled: true };
+      await themes.exportFile(id, selected.filePath);
+      return { ok: true };
+    });
+  });
+  ipcMain.handle('themes:delete', async (event, id) => {
+    assertThemeWindow(event);
+    return themeOperation('theme-delete', 'Removing theme...', async () => {
+      const result = await themes.remove(id);
+      if (currentTheme.name !== result.theme.name) applyTheme(result.theme);
+      return { ok: true, activeId: result.activeId };
+    });
   });
   // Slow calls (over 0.5 s) are logged; set AMS_TRACE=1 to log every call.
   const trace = !!process.env.AMS_TRACE;
