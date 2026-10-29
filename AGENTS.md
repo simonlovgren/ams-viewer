@@ -24,6 +24,7 @@ AMS Viewer: Electron app for browsing historical Swedish job ads. Start with [do
    - `docs/data-model.md` for schema, index or filter-object changes (includes the "Adding a new filter dimension" steps).
    - `docs/system-description.md` for architecture or data-flow changes; `docs/technologies.md` for stack changes.
 6. **Verify** before marking `Implemented`: run the app (`npm start`) or the relevant script, check `node --check` / editor errors, and state honestly what was not tested (e.g. visual layout).
+7. **Add regression coverage** for every implemented feature so future sessions can verify that it still works. Use the existing test suite and conventions where possible. If any existing test fails, stop before changing or updating tests and ask the user for explicit confirmation. Report the failing test and relevant output, the likely reason it fails, why a test change may be appropriate, and exactly what change you propose; do not modify the test until approved.
 
 ## Conventions
 
