@@ -135,6 +135,10 @@
           <h1 id="settings-title">Settings</h1>
           <section class="settings-section" aria-labelledby="appearance-title">
             <h2 id="appearance-title">Appearance</h2>
+            <div class="setting-row theme-setting-row">
+              <span>Theme</span>
+              <button id="theme-name" class="btn sec theme-name-button" type="button" aria-haspopup="dialog" aria-controls="theme-dialog">ams-dark</button>
+            </div>
             <label class="setting-row" for="setting-monospace">
               <span>Monospace font</span>
               <input id="setting-monospace" class="setting-switch" type="checkbox" role="switch" checked />
@@ -144,6 +148,17 @@
       </div>
     </section>
   </main>
+
+  <dialog id="theme-dialog" class="app-dialog theme-dialog" aria-labelledby="theme-dialog-title">
+    <div class="shortcut-head">
+      <h2 id="theme-dialog-title">Choose theme</h2>
+      <button id="theme-close" class="icon-btn" type="button" aria-label="Close theme chooser" title="Close"><span data-i="x"></span></button>
+    </div>
+    <div id="theme-options" class="theme-options"></div>
+    <div class="theme-footer">
+      <button id="theme-import" class="btn sec" type="button"><span data-i="upload"></span>Import theme</button>
+    </div>
+  </dialog>
 
   <dialog id="message-dialog" class="app-dialog" aria-labelledby="message-title" aria-describedby="message-body">
     <div class="shortcut-head"><h2 id="message-title"></h2></div>

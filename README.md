@@ -22,6 +22,9 @@ Desktop app for browsing historical Swedish job ads (Arbetsförmedlingen / JobTe
 | Clear current filters | **Clear all** in the filter panel |
 | Remove an imported source | Datasets → source row → **Remove**; original file stays untouched |
 | Rebuild indexes and summaries | Datasets → **Reprocess dataset**; confirm the long-running operation |
+| Change theme | Settings → Appearance → current theme name; select a preview panel |
+
+Themes include **ams-dark** and **ams-light**. The chooser can import a JSON theme, download a copy, or remove a custom theme after confirmation; built-ins are protected. Each theme defines colors and default/monospace local font stacks. The separate Monospace font switch chooses the stack, and both preferences persist independently of datasets. Theme authoring and all supported options: [theming reference](docs/theming.md).
 
 Filters are remembered while browsing a dataset and reset when switching datasets. Data is stored locally in Electron's `userData` folder: `~/.config/AMS Viewer/` on Linux, `~/Library/Application Support/AMS Viewer/` on macOS, or `%APPDATA%\AMS Viewer\` on Windows. The catalog is `datasets.json`; each dataset has its own database under `datasets/`. Source files are not needed after import. Back up this folder before upgrading from versions that used `ads.db`.
 
@@ -42,6 +45,8 @@ node --check src/renderer/app.js
 ```
 src/main/       Electron main process: main.js, preload.js, db.js, import-worker.js, read-worker.js, splash-preload.js
 src/renderer/   UI: index.html, styles.css, app.js (plain JS, no build step)
+src/shared/     Shared theme validation/application and regression tests
+src/themes/     Built-in ams-dark and ams-light JSON themes
 requirements/   Requirements with IDs (what the app shall do)
 docs/           System description, technologies, design decisions, constraints, data model
 AGENTS.md       Rules for working in the project (also used by the Copilot agent)

@@ -8,7 +8,7 @@
 | Concurrency | **`worker_threads`** | Import and facet counting run off the main thread; SQLite WAL mode allows concurrent readers and one writer. |
 | UI | **Plain HTML/CSS/JavaScript**, no framework, no bundler | Small app, no build step, easy to run and modify. |
 | Icons | Inline SVG (Lucide-style paths) embedded in `app.js` | No external dependency or font loading; works offline. |
-| Styling | Versioned JSON colors/fonts, shared plain-JS validation, CSS custom properties | D51-D53: built-in/imported palettes and local font stacks, bounded JSON file library and pre-paint persisted selection. Gradients remain CSS; chooser UI follows in stage 5. |
+| Styling | Versioned JSON colors/fonts, shared plain-JS validation, CSS custom properties | D51-D54: built-in/imported palettes and local font stacks, bounded JSON library, pre-paint persisted selection and self-themed native-dialog chooser. No new framework/dependency; gradients remain CSS. |
 | Routing | Browser History API (`pushState`/`popstate`) | Gives back/forward semantics for free; mouse back buttons and Backspace map onto it. |
 | State persistence | `sessionStorage` (filters), `localStorage` (layout/font mode), main-owned `themes.json` (active theme) | Theme selection is application-wide and available before windows paint; renderer preferences remain independent (D52). |
 | Security | `contextIsolation`, `sandbox`, no `nodeIntegration`, CSP, `contextBridge` | Standard Electron hardening; ad content is untrusted data. |

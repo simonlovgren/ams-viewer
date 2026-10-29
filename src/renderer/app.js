@@ -17,6 +17,7 @@
     'arrow-left': '<path d="m12 19-7-7 7-7M19 12H5"/>',
     x: '<path d="M18 6 6 18M6 6l12 12"/>',
     upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5M12 3v12"/>',
+    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/>',
     trash: '<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
     layers: '<path d="m12 2 10 5-10 5L2 7l10-5Z"/><path d="m2 17 10 5 10-5M2 12l10 5 10-5"/>',
     users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/>',
@@ -405,7 +406,7 @@
   const shortcutDialog = $('#shortcut-help');
   let shortcutReturnFocus = null;
   function openShortcutHelp() {
-    if (shortcutDialog.open || $('#message-dialog')?.open) return;
+    if (shortcutDialog.open || $('#message-dialog')?.open || $('#theme-dialog')?.open) return;
     shortcutReturnFocus = document.activeElement;
     document.querySelectorAll('[data-shortcut-view]').forEach((section) => {
       section.hidden = section.dataset.shortcutView !== curView;
@@ -423,7 +424,7 @@
   });
   $('#shortcut-close').addEventListener('click', () => shortcutDialog.close());
   document.addEventListener('keydown', (e) => {
-    if (shortcutDialog.open || $('#message-dialog')?.open) return;
+    if (shortcutDialog.open || $('#message-dialog')?.open || $('#theme-dialog')?.open) return;
     if (e.key === '?' && !editable(e.target)) { e.preventDefault(); openShortcutHelp(); }
     if (e.key === 'Backspace' && !editable(e.target)) { e.preventDefault(); back(); }
     else if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); back(); }
@@ -435,7 +436,7 @@
     }
   });
   document.addEventListener('mouseup', (e) => {
-    if (shortcutDialog.open || $('#message-dialog')?.open) return;
+    if (shortcutDialog.open || $('#message-dialog')?.open || $('#theme-dialog')?.open) return;
     if (e.button === 3) { e.preventDefault(); back(); }
     else if (e.button === 4) { e.preventDefault(); history.forward(); }
   });
@@ -450,6 +451,116 @@
     const allow = await leaveDatasetEditor();
     api.closeDecision(allow);
   });
+
+  /* ---------- theme chooser ---------- */
+  const themeDialog = $('#theme-dialog');
+  let themeChooserCatalog = null;
+  let themeChooserBusy = false;
+  let themeReturnFocus = null;
+  let themeChooserSequence = 0;
+
+  function focusThemeAction(action, id) {
+    const target = [...$('#theme-options').querySelectorAll('[data-theme-action]')]
+      .find((button) => button.dataset.themeAction === action && button.dataset.themeId === id && !button.disabled);
+    (target || $('#theme-options').querySelector('[data-theme-action="select"][aria-pressed="true"]:not(:disabled)') || $('#theme-import')).focus({ preventScroll: true });
+  }
+
+  function renderThemeChoices() {
+    if (!themeChooserCatalog) return;
+    const disabled = themeChooserBusy ? ' disabled' : '';
+    $('#theme-options').innerHTML = themeChooserCatalog.themes.map((entry) => {
+      const selected = entry.id === themeChooserCatalog.activeId;
+      const unavailable = !entry.theme || !!entry.error;
+      const deleteTitle = entry.builtIn ? 'Built-in themes cannot be removed' : `Remove theme ${entry.name}`;
+      return `<div class="theme-preview${selected ? ' selected' : ''}${unavailable ? ' unavailable' : ''}" data-theme-preview="${esc(entry.id)}">
+        <button class="theme-select" type="button" data-theme-action="select" data-theme-id="${esc(entry.id)}" aria-label="Use theme ${esc(entry.name)}" aria-pressed="${selected}" title="${esc(unavailable ? entry.error || 'Theme unavailable' : entry.name)}"${disabled || (unavailable ? ' disabled' : '')}>
+          <span class="theme-swatch" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+          <span class="theme-copy"><strong>${esc(entry.name)}</strong><small>${unavailable ? 'Unavailable' : entry.builtIn ? 'Built-in' : 'Imported'}</small></span>
+          <span class="theme-check" aria-hidden="true">${icon('check')}</span>
+        </button>
+        <div class="theme-actions">
+          <button class="icon-btn" type="button" data-theme-action="export" data-theme-id="${esc(entry.id)}" aria-label="Download theme ${esc(entry.name)}" title="Download theme"${disabled || (unavailable ? ' disabled' : '')}>${icon('download')}</button>
+          <button class="icon-btn theme-delete" type="button" data-theme-action="delete" data-theme-id="${esc(entry.id)}" aria-label="${esc(deleteTitle)}" title="${esc(deleteTitle)}"${disabled || (entry.builtIn ? ' disabled' : '')}>${icon('trash')}</button>
+        </div>
+      </div>`;
+    }).join('');
+    $('#theme-options').querySelectorAll('[data-theme-preview]').forEach((panel) => {
+      const entry = themeChooserCatalog.themes.find((item) => item.id === panel.dataset.themePreview);
+      if (entry.theme && !entry.error) amsTheme.apply(entry.theme, panel);
+    });
+    $('#theme-import').disabled = themeChooserBusy;
+    $('#theme-options').setAttribute('aria-busy', String(themeChooserBusy));
+  }
+
+  async function openThemeChooser() {
+    if (themeDialog.open || themeChooserBusy || $('#message-dialog').open) return;
+    const sequence = ++themeChooserSequence;
+    themeReturnFocus = $('#theme-name');
+    themeChooserBusy = true;
+    $('#theme-name').disabled = true;
+    try {
+      const catalog = await api.themes();
+      if (sequence !== themeChooserSequence || curView !== 'settings') return;
+      themeChooserCatalog = catalog;
+      themeChooserBusy = false;
+      renderThemeChoices();
+      themeDialog.showModal();
+      focusThemeAction('select', catalog.activeId);
+    } catch (error) {
+      await showMessage({ title: 'Could not load themes', message: error.message || 'Could not load themes.' });
+    } finally {
+      themeChooserBusy = false;
+      $('#theme-name').disabled = false;
+    }
+  }
+
+  async function themeChooserAction(action, id) {
+    if (themeChooserBusy || !themeDialog.open) return;
+    themeChooserBusy = true;
+    renderThemeChoices();
+    try {
+      const result = action === 'select' ? await runThemeAction('Could not change theme', () => api.activateTheme(id))
+        : action === 'import' ? await importThemeFile()
+        : action === 'export' ? await exportThemeFile(id) : await removeTheme(id);
+      if (result && !result.canceled) {
+        themeChooserCatalog = await api.themes();
+        $('#theme-name').textContent = themeChooserCatalog.themes.find((entry) => entry.id === themeChooserCatalog.activeId)?.name || document.documentElement.dataset.theme;
+      }
+    } catch (error) {
+      await showMessage({ title: 'Could not load themes', message: error.message || 'Could not load themes.' });
+    } finally {
+      themeChooserBusy = false;
+      if (themeDialog.open) {
+        renderThemeChoices();
+        if (action === 'import') $('#theme-import').focus({ preventScroll: true });
+        else focusThemeAction(action, id);
+      }
+    }
+  }
+
+  $('#theme-name').textContent = document.documentElement.dataset.theme || api.theme?.name || 'ams-dark';
+  $('#theme-name').addEventListener('click', openThemeChooser);
+  $('#theme-close').addEventListener('click', () => themeDialog.close());
+  $('#theme-import').addEventListener('click', () => themeChooserAction('import'));
+  $('#theme-options').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-theme-action]');
+    if (button) {
+      if (!button.disabled) return themeChooserAction(button.dataset.themeAction, button.dataset.themeId);
+      return;
+    }
+    const panel = event.target.closest('[data-theme-preview]');
+    const entry = themeChooserCatalog?.themes.find((theme) => theme.id === panel?.dataset.themePreview);
+    if (entry?.theme && !entry.error) return themeChooserAction('select', entry.id);
+  });
+  themeDialog.addEventListener('cancel', (event) => { event.preventDefault(); themeDialog.close(); });
+  themeDialog.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { event.preventDefault(); themeDialog.close(); }
+  });
+  themeDialog.addEventListener('close', () => {
+    themeChooserSequence++;
+    if (themeReturnFocus?.isConnected) themeReturnFocus.focus({ preventScroll: true });
+  });
+  api.onTheme?.((theme) => { $('#theme-name').textContent = theme.name; });
 
   /* ---------- list ---------- */
   const PAGE = 60;

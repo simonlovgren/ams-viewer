@@ -67,6 +67,158 @@ test('theme file actions prevent duplicate work, pass cancellation and show reco
   assert.equal((await second).ok, true);
 });
 
+function themeChooserContext() {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const elements = new Map();
+  const applied = [];
+  const calls = [];
+  const prompts = [];
+  const subscriptions = [];
+  const dark = { name: 'ams-dark', colorScheme: 'dark', colors: {}, fonts: {} };
+  const light = { ...dark, name: 'ams-light', colorScheme: 'light' };
+  const custom = { ...dark, name: '<Custom & theme>' };
+  const catalog = { activeId: 'ams-dark', themes: [
+    { id: 'ams-dark', name: dark.name, builtIn: true, theme: dark },
+    { id: 'ams-light', name: light.name, builtIn: true, theme: light },
+    { id: 'custom', name: custom.name, builtIn: false, theme: custom },
+    { id: 'missing', name: 'Missing theme', builtIn: false, theme: null, error: 'File unavailable' },
+  ] };
+  let focused = null;
+  const element = (selector) => {
+    if (!elements.has(selector)) elements.set(selector, {
+      disabled: false, textContent: '', open: false, isConnected: true, listeners: {},
+      addEventListener(name, callback) { this.listeners[name] = callback; },
+      setAttribute() {}, focus() { focused = selector; },
+      showModal() { this.open = true; },
+      close() { this.open = false; this.listeners.close?.(); },
+    });
+    return elements.get(selector);
+  };
+  const options = element('#theme-options');
+  let buttons = [];
+  let panels = [];
+  Object.defineProperty(options, 'innerHTML', {
+    set(html) {
+      options.html = html;
+      panels = [...html.matchAll(/data-theme-preview="([^"]+)"/g)].map((match) => ({ dataset: { themePreview: match[1] } }));
+      buttons = [...html.matchAll(/<button[^>]*data-theme-action="([^"]+)"[^>]*data-theme-id="([^"]+)"[^>]*>/g)]
+        .map((match) => ({ dataset: { themeAction: match[1], themeId: match[2] }, disabled: / disabled/.test(match[0]), selected: /aria-pressed="true"/.test(match[0]), focus() { focused = `${this.dataset.themeAction}:${this.dataset.themeId}`; } }));
+    },
+  });
+  options.querySelectorAll = (selector) => selector === '[data-theme-preview]' ? panels : buttons;
+  options.querySelector = () => buttons.find((button) => button.dataset.themeAction === 'select' && button.selected && !button.disabled);
+  const context = vm.createContext({
+    $: element, icon: (name) => `<svg data-icon="${name}"></svg>`,
+    esc: (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;'),
+    document: { activeElement: element('#theme-name'), documentElement: { dataset: { theme: 'ams-dark' } } },
+    amsTheme: { apply: (theme, panel) => applied.push([theme.name, panel.dataset.themePreview]) },
+    api: {
+      theme: dark, themes: async () => { calls.push(['list']); return structuredClone(catalog); },
+      activateTheme: async (id) => { calls.push(['select', id]); catalog.activeId = id; return catalog.themes.find((entry) => entry.id === id).theme; },
+      onTheme: (callback) => subscriptions.push(callback),
+    },
+    runThemeAction: async (_title, operation) => operation(),
+    importThemeFile: async () => { calls.push(['import']); return { ok: false, canceled: true }; },
+    exportThemeFile: async (id) => { calls.push(['export', id]); return { ok: true }; },
+    removeTheme: async (id) => { calls.push(['delete', id]); catalog.themes = catalog.themes.filter((entry) => entry.id !== id); if (catalog.activeId === id) catalog.activeId = 'ams-dark'; return { ok: true }; },
+    showMessage: async (options) => { prompts.push(options); },
+  });
+  vm.runInContext("let curView = 'settings';\n" + source.slice(source.indexOf('  /* ---------- theme chooser ---------- */'), source.indexOf('  /* ---------- list ---------- */')), context);
+  return { evaluate: (code) => vm.runInContext(code, context), context, element, applied, calls, prompts, subscriptions, catalog, focused: () => focused, buttons: () => buttons };
+}
+
+test('theme chooser renders escaped independent previews, swatches and protected/unavailable actions', async () => {
+  const fixture = themeChooserContext();
+  await fixture.evaluate('openThemeChooser()');
+  assert.equal(fixture.element('#theme-dialog').open, true);
+  assert.equal(fixture.focused(), 'select:ams-dark');
+  assert.match(fixture.element('#theme-options').html, /&lt;Custom &amp; theme&gt;/);
+  assert.match(fixture.element('#theme-options').html, /theme-swatch/);
+  assert.match(fixture.element('#theme-options').html, /Unavailable/);
+  assert.equal(fixture.applied.length, 3);
+  assert.equal(fixture.buttons().find((button) => button.dataset.themeAction === 'delete' && button.dataset.themeId === 'ams-dark').disabled, true);
+  assert.equal(fixture.buttons().find((button) => button.dataset.themeAction === 'export' && button.dataset.themeId === 'ams-dark').disabled, false);
+  assert.equal(fixture.buttons().find((button) => button.dataset.themeAction === 'select' && button.dataset.themeId === 'missing').disabled, true);
+  assert.equal(fixture.buttons().find((button) => button.dataset.themeAction === 'delete' && button.dataset.themeId === 'missing').disabled, false);
+  await fixture.evaluate("themeChooserAction('select', 'ams-light')");
+  assert.equal(fixture.element('#theme-dialog').open, true);
+  assert.equal(fixture.element('#theme-name').textContent, 'ams-light');
+  assert.equal(fixture.focused(), 'select:ams-light');
+  fixture.subscriptions[0]({ name: 'Updated name' });
+  assert.equal(fixture.element('#theme-name').textContent, 'Updated name');
+});
+
+test('theme chooser export/import/removal stay independent and restore focus through refreshes', async () => {
+  const fixture = themeChooserContext();
+  await fixture.evaluate('openThemeChooser()');
+  await fixture.evaluate("themeChooserAction('export', 'custom')");
+  assert.equal(fixture.focused(), 'export:custom');
+  assert.equal(fixture.catalog.activeId, 'ams-dark');
+  await fixture.evaluate("themeChooserAction('import')");
+  assert.equal(fixture.focused(), '#theme-import');
+  await fixture.evaluate("themeChooserAction('select', 'custom')");
+  await fixture.evaluate("themeChooserAction('delete', 'custom')");
+  assert.equal(fixture.catalog.activeId, 'ams-dark');
+  assert.equal(fixture.focused(), 'select:ams-dark');
+  assert.equal(fixture.element('#theme-name').textContent, 'ams-dark');
+  assert.deepEqual(fixture.calls.filter((call) => call[0] === 'select'), [['select', 'custom']]);
+  fixture.element('#theme-dialog').listeners.keydown({ key: 'Escape', preventDefault() {} });
+  assert.equal(fixture.element('#theme-dialog').open, false);
+  assert.equal(fixture.focused(), '#theme-name');
+});
+
+test('Theme is the first Appearance row with a name button rather than a switch', () => {
+  const html = readFileSync(require.resolve('./index.html'), 'utf8');
+  const appearance = html.slice(html.indexOf('<h2 id="appearance-title">'), html.indexOf('</section>', html.indexOf('<h2 id="appearance-title">')));
+  assert.ok(appearance.indexOf('theme-setting-row') < appearance.indexOf('for="setting-monospace"'));
+  assert.match(appearance, /<span>Theme<\/span>\s*<button id="theme-name"/);
+  assert.doesNotMatch(html, /aria-labelledby="theme-title"/);
+  const css = readFileSync(require.resolve('./styles.css'), 'utf8');
+  assert.match(css, /#settings \{[^}]*max-width: 450px/);
+  assert.match(css, /\.theme-name-button \{[^}]*min-height: 30px; padding: 3px 12px/);
+});
+
+test('theme panel clicks select while disabled and file-action clicks stay isolated', async () => {
+  const fixture = themeChooserContext();
+  await fixture.evaluate('openThemeChooser()');
+  const click = fixture.element('#theme-options').listeners.click;
+  await click({ target: { closest: (selector) => selector === '[data-theme-preview]' ? { dataset: { themePreview: 'ams-light' } } : null } });
+  assert.equal(fixture.catalog.activeId, 'ams-light');
+  await click({ target: { closest: () => ({ disabled: true, dataset: { themeAction: 'delete', themeId: 'ams-dark' } }) } });
+  await click({ target: { closest: (selector) => selector === '[data-theme-action]' ? { disabled: false, dataset: { themeAction: 'export', themeId: 'ams-dark' } } : null } });
+  await click({ target: { closest: (selector) => selector === '[data-theme-preview]' ? { dataset: { themePreview: 'missing' } } : null } });
+  assert.deepEqual(fixture.calls.filter((call) => call[0] !== 'list'), [['select', 'ams-light'], ['export', 'ams-dark']]);
+});
+
+test('theme chooser recovers failed actions and ignores late opening responses or repeated actions', async () => {
+  const fixture = themeChooserContext();
+  let finish;
+  fixture.context.api.themes = () => new Promise((resolve) => { finish = resolve; });
+  const opening = fixture.evaluate('openThemeChooser()');
+  assert.equal(fixture.element('#theme-name').disabled, true);
+  assert.equal(await fixture.evaluate('openThemeChooser()'), undefined);
+  fixture.evaluate("curView = 'list'");
+  finish(structuredClone(fixture.catalog));
+  await opening;
+  assert.equal(fixture.element('#theme-dialog').open, false);
+  assert.equal(fixture.element('#theme-name').disabled, false);
+  fixture.evaluate("curView = 'settings'");
+  fixture.context.api.themes = async () => structuredClone(fixture.catalog);
+  await fixture.evaluate('openThemeChooser()');
+  fixture.context.api.activateTheme = async () => { throw new Error('Save failed'); };
+  await fixture.evaluate("themeChooserAction('select', 'ams-light')");
+  assert.equal(fixture.prompts.at(-1).message, 'Save failed');
+  assert.equal(fixture.element('#theme-dialog').open, true);
+  assert.equal(fixture.element('#theme-import').disabled, false);
+  assert.equal(fixture.catalog.activeId, 'ams-dark');
+  fixture.context.exportThemeFile = () => new Promise((resolve) => { finish = resolve; });
+  const exporting = fixture.evaluate("themeChooserAction('export', 'ams-dark')");
+  assert.equal(await fixture.evaluate("themeChooserAction('select', 'ams-light')"), undefined);
+  finish({ ok: true });
+  await exporting;
+  assert.equal(fixture.element('#theme-import').disabled, false);
+});
+
 test('compact counts retain exact hover values and round across units', () => {
   const evaluate = rendererContext();
   for (const [value, expected] of [[0, '0'], [999, '999'], [1000, '1k'], [12500, '12.5k'], [999999, '1M'], [11252350, '11.3M']]) {
