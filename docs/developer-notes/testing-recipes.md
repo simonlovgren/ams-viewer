@@ -2,6 +2,11 @@
 
 Count logic has headless regression tests; visual layout still needs manual review.
 
+## Full-height sidebars with notifications (UI-022 / D47)
+2026-10-29: browser fixture passed 48 geometry cases: Search, Ad, Datasets and Settings at 1400x900 and 960x600, both fonts, with empty/stacked/cleared notices. Assert visible sidebar/main/view bottoms equal `innerHeight` and their tops equal the notification area's bottom. Empty notices must yield a zero-height first grid row; content stays in row 2. This catches the original 1400x900 regression (669 px content plus 231 px unused space).
+
+Browser interaction checks passed menu/filter/statistics collapse, both sidebar pointer resizers, statistics keyboard resizing and long-ad scrolling in both fonts. All 45 renderer tests, renderer syntax and CSS editor checks passed. Disposable `npm start -- --no-sandbox` startup passed; native layout and interaction were not manually verified. Live datasets untouched.
+
 ## Filtered statistics loading feedback (UI-023 / D50)
 `node --test --test-name-pattern='statistics overlays|superseded statistics|statistics failures|facet refresh|background tasks|statistics errors' src/renderer/app.test.js` covers independent widget completion, the counts-only tail, stale/absent/building replies, failures and superseded successes/failures. The new deferred fixtures use `setImmediate` to drain complete promise/finally chains, not a fixed number of microtask ticks.
 
