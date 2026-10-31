@@ -436,14 +436,18 @@
   messageDialog.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') { event.preventDefault(); messageDialog.close('cancel'); }
   });
-  function showMessage({ title, message, confirmLabel, discardLabel, cancelLabel = 'Cancel', danger = !!confirmLabel }) {
+  function showMessage({ title, message, confirmLabel, discardLabel, cancelLabel = 'Cancel', danger = !!confirmLabel, inputLabel }) {
     if (messageDialog.open) return Promise.resolve(false);
     const returnFocus = document.activeElement;
     const cancel = $('#message-cancel');
     const discard = $('#message-discard');
     const accept = $('#message-accept');
+    const input = $('#message-input');
     $('#message-title').textContent = title;
     $('#message-body').textContent = message;
+    $('#message-input-wrap').hidden = !inputLabel;
+    $('#message-input-label').textContent = inputLabel || '';
+    input.value = '';
     cancel.hidden = !confirmLabel;
     cancel.textContent = cancelLabel;
     discard.hidden = !discardLabel;
@@ -454,10 +458,11 @@
     return new Promise((resolve) => {
       messageDialog.addEventListener('close', () => {
         if (returnFocus?.isConnected && typeof returnFocus.focus === 'function') returnFocus.focus({ preventScroll: true });
-        resolve(messageDialog.returnValue === 'accept' ? true : messageDialog.returnValue === 'discard' ? 'discard' : false);
+        const accepted = messageDialog.returnValue === 'accept';
+        resolve(accepted && inputLabel ? { value: input.value } : accepted ? true : messageDialog.returnValue === 'discard' ? 'discard' : false);
       }, { once: true });
       messageDialog.showModal();
-      (discardLabel || confirmLabel ? cancel : accept).focus();
+      (inputLabel ? input : discardLabel || confirmLabel ? cancel : accept).focus();
     });
   }
 
@@ -1430,6 +1435,30 @@
   $('#ad').addEventListener('click', adNavClick);
   $('#crumbs').addEventListener('click', adNavClick);
 
+  async function excludeCurrentAd() {
+    const id = currentAdId;
+    if (!id || curView !== 'ad') return;
+    const headline = $('#ad h1')?.textContent || id;
+    const choice = await showMessage({
+      title: 'Exclude erroneous ad?',
+      message: `Exclude “${headline}” from the active dataset? It will no longer appear in search results, filters, counts or statistics, and re-importing its file will not add it again.\n\nThe original source file is not changed. You can restore the ad from the Datasets page.`,
+      confirmLabel: 'Exclude ad',
+      inputLabel: 'Reason (optional)',
+    });
+    if (!choice) return;
+    try {
+      const result = await api.excludeAd(id, choice.value);
+      if (!result?.ok) throw new Error(result?.error || 'Could not exclude ad.');
+    } catch (error) {
+      await showMessage({ title: 'Could not exclude ad', message: error.message || 'Could not exclude ad.' });
+      return;
+    }
+    api.info().then((i) => setCount('#side-total', i.total, ' ads')).catch(() => {});
+    if (currentAdId === id && curView === 'ad') back();
+    reload();
+  }
+  $('#ad-exclude').addEventListener('click', excludeCurrentAd);
+
   /* ---------- data view ---------- */
   let importState = null;
   let activeDataset = null;
@@ -1555,9 +1584,31 @@
         <button class="btn sec" id="dataset-reprocess" type="button"${reprocessBusy ? ' disabled' : ''}>${icon('database')}Reprocess dataset</button>
       </div>
       <div id="progress"></div>
-      <div id="source-list">${sourceTableHtml(info.sources)}</div>`;
+      <div id="source-list">${sourceTableHtml(info.sources)}</div>
+      <section class="excluded-section" aria-labelledby="excluded-title"><h2 id="excluded-title">Excluded ads</h2>
+        <div id="excluded-list"><div class="empty-mini">Loading excluded ads…</div></div></section>`;
     hydrateIcons($('#data'));
     renderProgress();
+    renderExcludedAds();
+  }
+
+  async function renderExcludedAds() {
+    const sequence = dataRenderSeq;
+    let rows;
+    try {
+      rows = await api.excludedAds();
+    } catch (error) {
+      if (sequence === dataRenderSeq && $('#excluded-list')) $('#excluded-list').innerHTML = '<div class="empty-mini">Excluded ads could not be loaded.</div>';
+      return;
+    }
+    if (sequence !== dataRenderSeq || !$('#excluded-list')) return;
+    $('#excluded-list').innerHTML = rows.length
+      ? `<div class="source-table-wrap" role="region" aria-label="Excluded ads" tabindex="0"><table><thead><tr><th>Ad</th><th>Published</th><th>File</th><th>Reason</th><th>Excluded</th><th></th></tr></thead><tbody>${rows.map((row) => `<tr>
+        <td>${esc(row.headline || row.ad_id)}<br><small style="color:var(--muted)">${esc(row.ad_id)}</small></td>
+        <td>${esc(row.pub_date || '–')}</td><td>${esc(row.source)}</td><td>${esc(row.reason || '–')}</td>
+        <td>${esc((row.excluded_at || '').slice(0, 10))}</td>
+        <td class="r"><button class="btn sec" type="button" data-restore="${esc(row.ad_id)}">${icon('upload')}Restore</button></td></tr>`).join('')}</tbody></table></div>`
+      : '<div class="empty-mini">No ads are excluded. Use the exclude action in an ad to report it as erroneous.</div>';
   }
 
   async function refreshDataSources() {
@@ -1780,6 +1831,22 @@
       return renderData();
     }
     if (e.target.closest('#pick')) return startImport(api.importDialog());
+    const restore = e.target.closest('[data-restore]');
+    if (restore) {
+      restore.disabled = true;
+      try {
+        const r = await api.restoreAd(restore.dataset.restore);
+        if (!r?.ok) throw new Error(r?.error || 'Could not restore ad.');
+      } catch (error) {
+        restore.disabled = false;
+        await showMessage({ title: 'Could not restore ad', message: error.message || 'Could not restore ad.' });
+        return;
+      }
+      await refreshDataSources();
+      renderExcludedAds();
+      reload();
+      return;
+    }
     const rm = e.target.closest('[data-rm]');
     if (rm && await showMessage({
       title: 'Remove data source?',
@@ -1794,6 +1861,7 @@
         return;
       }
       await refreshDataSources();
+      renderExcludedAds();
       reload();
     }
   });

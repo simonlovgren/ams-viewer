@@ -18,6 +18,9 @@ const handlers = {
   facets: ({ f }) => dbm.facets(db, f || {}),
   timeline: ({ f }) => (dbm.isBuilt(db) ? dbm.timeline(db, f || {}) : { building: true }),
   remove: ({ name }) => { dbm.removeSource(db, name); return true; },
+  exclude: ({ id, reason }) => { dbm.excludeAd(db, id, reason); return true; },
+  restore: ({ id }) => { dbm.restoreAd(db, id); return true; },
+  excluded: () => dbm.excludedAds(db),
   ensure: (_p, progress) => dbm.ensureSummary(db, progress),
   reprocess: (_p, progress) => dbm.reprocess(db, progress),
 };

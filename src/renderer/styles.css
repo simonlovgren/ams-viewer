@@ -121,8 +121,8 @@ main { grid-area: 2 / 2; min-width: 0; min-height: 0; display: flex; }
 .f-sec:has(.widget-toggle[aria-expanded="false"]) .widget-resizer { visibility: hidden; }
 .f-sec:has(.widget-toggle[aria-expanded="false"]) h4 { margin-bottom: 0; }
 .date-row { display: flex; align-items: center; gap: 6px; color: var(--muted); }
-input, select { background: var(--panel); border: 1px solid var(--line); color: var(--text); border-radius: 9px; padding: 7px 10px; font: inherit; outline: none; }
-input:focus, select:focus { border-color: var(--theme-focus-ring); box-shadow: 0 0 0 3px var(--theme-focus-halo); }
+input, select, textarea { background: var(--panel); border: 1px solid var(--line); color: var(--text); border-radius: 9px; padding: 7px 10px; font: inherit; outline: none; }
+input:focus, select:focus, textarea:focus { border-color: var(--theme-focus-ring); box-shadow: 0 0 0 3px var(--theme-focus-halo); }
 .date-row input { flex: 1; min-width: 0; padding: 6px 8px; }
 input.mini { width: 100%; margin-bottom: 6px; padding: 5px 9px; font-size: 12px; }
 .tree { max-height: 240px; overflow-y: auto; margin-right: -6px; padding-right: 6px; }
@@ -345,6 +345,13 @@ td.r, th.r { text-align: right; }
 .message-actions .btn { border-radius: 6px; }
 .message-actions .danger { color: var(--theme-error); border-color: var(--theme-error); }
 .message-actions [hidden] { display: none; }
+#view-ad.source-view #ad-exclude { display: none; }
+.message-input { display: grid; gap: 6px; padding: 0 20px 20px; color: var(--muted); }
+.message-input[hidden] { display: none; }
+.message-input textarea { width: 100%; resize: vertical; }
+.excluded-section { margin-top: 28px; }
+.excluded-section h2 { margin: 0; font-size: 16px; }
+.excluded-section td { overflow-wrap: anywhere; }
 .theme-setting-row { cursor: default; }
 .theme-setting-row > span { flex: none; }
 .theme-name-button { max-width: 70%; min-width: 0; min-height: 30px; padding: 3px 12px; border-radius: 6px; overflow-wrap: anywhere; text-align: left; }

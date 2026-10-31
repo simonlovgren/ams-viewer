@@ -1074,3 +1074,117 @@ test('employer statistics follow active filters and return top 30 by count', () 
     db.close();
   }
 });
+
+test('DAT-025: excluding an ad removes it from every derived view and restore reverses it exactly', async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'ams-exclude-'));
+  const file = path.join(directory, 'ads.db');
+  const sourceFile = path.join(directory, 'ads.jsonl');
+  const older = { id: 'older', headline: 'Legacy role', publication_date: '2010-04-01', occupation: { legacy_ams_taxonomy_id: '7788' }, workplace_address: { municipality_code: '0180' } };
+  const erroneous = {
+    id: 'future', headline: 'Futuristic welder', publication_date: '2099-01-05', employer: { name: 'Time Corp', organization_number: '555' },
+    description: { text: 'Chronoweld specialist' }, employment_type: { label: 'Permanent' }, working_hours_type: { label: 'Full time' },
+    occupation: { concept_id: 'occ-1', label: 'Engineer', legacy_ams_taxonomy_id: '7788' },
+    occupation_group: { concept_id: 'group-1', label: 'Engineering' },
+    occupation_field: { concept_id: 'field-1', label: 'Technology' },
+    workplace_address: { municipality_code: '0180', municipality: 'Stockholm', region: 'Stockholms län' },
+  };
+  const suspect = { id: 'suspect', headline: 'Unreported 2098 ad', publication_date: '2098-02-02', employer: { name: 'Other AB' } };
+  const sourceText = [older, erroneous, suspect].map(ad => JSON.stringify(ad)).join('\n') + '\n';
+  writeFileSync(sourceFile, sourceText);
+  const derived = db => ({
+    tables: Object.fromEntries(['sum_occ', 'sum_loc', 'sum_year', 'sum_emp', 'sum_hours', 'sum_day', 'sum_employer', 'employer_catalog', 'legacy_occ_map', 'legacy_loc_map']
+      .map(table => [table, db.prepare(`SELECT * FROM ${table}`).all().map(row => JSON.stringify({ ...row })).sort()])),
+    sources: db.prepare('SELECT name, ads, enriched FROM sources').all().map(row => ({ ...row })),
+    projections: db.prepare('SELECT ad_id, field_id, occ, region, muni FROM ads ORDER BY ad_id').all().map(row => ({ ...row })),
+  });
+  try {
+    await runImport(file, [sourceFile]);
+    let db = dbm.open(file);
+    let original;
+    try {
+      dbm.ensureSummary(db);
+      assert.equal(db.prepare("SELECT occ FROM ads WHERE ad_id = 'older'").get().occ, 'Engineer');
+      original = derived(db);
+      const filtered = { q: 'Chronoweld' };
+      dbm.facets(db, { emp: 'Permanent' });
+
+      assert.throws(() => dbm.excludeAd(db, 'missing'), /Ad not found/);
+      dbm.excludeAd(db, 'future', 'Dated 2099');
+      assert.equal(dbm.getAd(db, 'future'), null);
+      assert.equal(dbm.search(db, {}, 0, 10, true).total, 2);
+      assert.equal(dbm.count(db, filtered), 0);
+      assert.equal(dbm.search(db, filtered, 0, 10, false).rows.length, 0);
+      assert.deepEqual(dbm.facets(db, { emp: 'Permanent' }).employers, []);
+      const facets = dbm.facets(db, {});
+      assert.equal(facets.year.some(row => row.y === 2099), false);
+      assert.equal(facets.employers.some(row => row.v === 'Time Corp'), false);
+      assert.equal(facets.year.find(row => row.y === 2098).n, 1);
+      const info = dbm.info(db);
+      assert.equal(info.total, 2);
+      assert.equal(info.max, '2098-02-02');
+      assert.equal(dbm.timeline(db, {}).to, '2098-02-02');
+      assert.equal(dbm.datasetStats(db).total, 2);
+      assert.equal(db.prepare("SELECT occ FROM ads WHERE ad_id = 'older'").get().occ, null);
+      assert.equal(db.prepare("SELECT enriched FROM sources WHERE name = 'ads.jsonl'").get().enriched, 0);
+      const excluded = dbm.excludedAds(db);
+      assert.equal(excluded.length, 1);
+      assert.deepEqual({ ...excluded[0], excluded_at: typeof excluded[0].excluded_at }, {
+        ad_id: 'future', source: 'ads.jsonl', headline: 'Futuristic welder', pub_date: '2099-01-05', reason: 'Dated 2099', excluded_at: 'string',
+      });
+      const afterExclusion = derived(db);
+      dbm.reprocess(db);
+      assert.deepEqual(derived(db), afterExclusion);
+    } finally { db.close(); }
+
+    const reimport = await runImport(file, [sourceFile]);
+    const done = reimport.find(message => message.type === 'file-done');
+    assert.equal(done.inserted, 0);
+    assert.equal(done.skipped, 3);
+    db = dbm.open(file);
+    try {
+      assert.equal(dbm.getAd(db, 'future'), null);
+      assert.equal(dbm.datasetStats(db).total, 2);
+
+      assert.throws(() => dbm.restoreAd(db, 'missing'), /Excluded ad not found/);
+      dbm.restoreAd(db, 'future');
+      assert.deepEqual(dbm.excludedAds(db), []);
+      assert.deepEqual(derived(db), original);
+      assert.equal(dbm.count(db, { q: 'Chronoweld' }), 1);
+      assert.equal(dbm.getAd(db, 'future').headline, 'Futuristic welder');
+
+      dbm.excludeAd(db, 'future');
+      assert.equal(dbm.excludedAds(db)[0].reason, null);
+      dbm.removeSource(db, 'ads.jsonl');
+      assert.deepEqual(dbm.excludedAds(db), []);
+    } finally { db.close(); }
+
+    const other = dbm.open(path.join(directory, 'other.db'));
+    try { assert.deepEqual(dbm.excludedAds(other), []); } finally { other.close(); }
+    await runImport(file, [sourceFile]);
+    db = dbm.open(file);
+    try { assert.equal(dbm.getAd(db, 'future').headline, 'Futuristic welder'); } finally { db.close(); }
+    assert.equal(require('node:fs').readFileSync(sourceFile, 'utf8'), sourceText);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('DAT-025: a failed exclusion leaves the ad and all derived data unchanged', () => {
+  const db = dbm.open(':memory:');
+  try {
+    const row = dbm.toRow({ id: 'one', headline: 'Kept', publication_date: '2099-01-01' }, 'test');
+    const inserted = db.prepare(dbm.INSERT_SQL).run(...row.values);
+    db.prepare('INSERT INTO ads_fts(rowid, headline, employer, body) VALUES (?, ?, ?, ?)').run(inserted.lastInsertRowid, ...row.fts);
+    db.prepare("INSERT INTO sources(name, ads) VALUES ('test', 1)").run();
+    dbm.ensureSummary(db);
+    db.exec("CREATE TRIGGER fail_exclusion BEFORE INSERT ON excluded_ads BEGIN SELECT RAISE(ABORT, 'disk full'); END;");
+    assert.throws(() => dbm.excludeAd(db, 'one'), /disk full/);
+    assert.equal(dbm.getAd(db, 'one').headline, 'Kept');
+    assert.equal(dbm.count(db, { q: 'Kept' }), 1);
+    assert.deepEqual(dbm.facets(db, {}).year, [{ y: 2099, n: 1 }]);
+    assert.equal(dbm.datasetStats(db).total, 1);
+    assert.deepEqual(dbm.excludedAds(db), []);
+  } finally {
+    db.close();
+  }
+});

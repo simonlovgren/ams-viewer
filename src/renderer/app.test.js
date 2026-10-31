@@ -747,7 +747,7 @@ test('message dialogs use safe defaults, plain text, dismissal and focus restora
       showModal() { this.open = true; },
       close(value) { this.returnValue = value; this.open = false; listeners.close(); },
     };
-    const elements = { '#message-dialog': dialog };
+    const elements = { '#message-dialog': dialog, '#message-input-wrap': { hidden: true }, '#message-input-label': {}, '#message-input': { value: 'stale' } };
     for (const name of ['cancel', 'discard', 'accept', 'title', 'body']) {
       elements['#message-' + name] = {
         addEventListener(event, listener) { this[event] = listener; },
@@ -765,6 +765,7 @@ test('message dialogs use safe defaults, plain text, dismissal and focus restora
     assert.equal(focused, action === 'message' ? 'accept' : 'cancel');
     assert.equal(elements['#message-cancel'].hidden, action === 'message');
     assert.equal(elements['#message-body'].textContent, '<img src=x onerror=bad()>');
+    assert.equal(elements['#message-input-wrap'].hidden, true);
     assert.equal(await vm.runInContext("showMessage({title:'Duplicate',message:'Ignored'})", context), false);
     if (action === 'escape' || action === 'native-cancel') {
       let prevented = false;
@@ -1104,7 +1105,7 @@ test('dataset reprocess button routes through its confirmation handler', async (
 test('source removal requires confirmation and shows returned or rejected errors in a modal', async () => {
   const source = readFileSync(require.resolve('./app.js'), 'utf8');
   for (const outcome of ['cancel', 'success', 'error', 'reject']) {
-    let click, removals = 0, renders = 0, refreshes = 0, reloads = 0;
+    let click, removals = 0, renders = 0, refreshes = 0, reloads = 0, excludedRefreshes = 0;
     const messages = [];
     const context = vm.createContext({
       $: () => ({ addEventListener: (event, listener) => { click = listener; } }),
@@ -1116,6 +1117,7 @@ test('source removal requires confirmation and shows returned or rejected errors
         return outcome === 'error' ? { ok: false, error: 'Busy' } : { ok: true };
       } },
       renderData: async () => { renders++; }, refreshDataSources: async () => { refreshes++; }, reload: () => { reloads++; },
+      renderExcludedAds: () => { excludedRefreshes++; },
     });
     vm.runInContext(source.slice(source.indexOf("  const dataEl ="), source.indexOf("  window.addEventListener('dragover'")), context);
     await click({ target: { closest: selector => selector === '[data-rm]' ? { dataset: { rm: '<source>.jsonl' } } : null } });
@@ -1123,12 +1125,100 @@ test('source removal requires confirmation and shows returned or rejected errors
     assert.equal(renders, 0);
     assert.equal(refreshes, outcome === 'success' ? 1 : 0);
     assert.equal(reloads, outcome === 'success' ? 1 : 0);
+    assert.equal(excludedRefreshes, outcome === 'success' ? 1 : 0);
     assert.equal(messages[0].confirmLabel, 'Remove');
     if (outcome === 'error' || outcome === 'reject') {
       assert.equal(messages[1].title, 'Removal failed');
       assert.equal(messages[1].message, outcome === 'error' ? 'Busy' : 'Worker failed');
       assert.equal(messages[1].confirmLabel, undefined);
     } else assert.equal(messages.length, 1);
+  }
+});
+
+test('DAT-025: excluding the open ad confirms with an optional reason, then leaves the ad and refreshes', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  for (const outcome of ['cancel', 'success', 'error', 'reject']) {
+    const messages = [], calls = [];
+    const context = vm.createContext({
+      $: selector => selector === '#ad h1' ? { textContent: 'Welder <2099>' } : { addEventListener() {} },
+      showMessage: async options => { messages.push(options); return messages.length === 1 && outcome !== 'cancel' ? { value: 'Dated 2099' } : false; },
+      api: {
+        excludeAd: async (id, reason) => {
+          calls.push(['exclude', id, reason]);
+          if (outcome === 'reject') throw new Error('Worker failed');
+          return outcome === 'error' ? { ok: false, error: 'Busy' } : { ok: true };
+        },
+        info: async () => ({ total: 1 }),
+      },
+      setCount: () => calls.push(['count']), back: () => calls.push(['back']), reload: () => calls.push(['reload']),
+    });
+    vm.runInContext("let currentAdId = 'future'; let curView = 'ad';"
+      + source.slice(source.indexOf('  async function excludeCurrentAd()'), source.indexOf("  $('#ad-exclude')")), context);
+    await vm.runInContext('excludeCurrentAd()', context);
+    await Promise.resolve();
+    assert.equal(messages[0].title, 'Exclude erroneous ad?');
+    assert.equal(messages[0].confirmLabel, 'Exclude ad');
+    assert.equal(messages[0].inputLabel, 'Reason (optional)');
+    assert.match(messages[0].message, /Welder <2099>/);
+    assert.match(messages[0].message, /original source file is not changed/);
+    assert.match(messages[0].message, /restore the ad from the Datasets page/);
+    assert.deepEqual(calls.filter(call => call[0] === 'exclude'), outcome === 'cancel' ? [] : [['exclude', 'future', 'Dated 2099']]);
+    assert.deepEqual(calls.filter(call => call[0] === 'back' || call[0] === 'reload'), outcome === 'success' ? [['back'], ['reload']] : []);
+    if (outcome === 'error' || outcome === 'reject') {
+      assert.equal(messages[1].title, 'Could not exclude ad');
+      assert.equal(messages[1].message, outcome === 'error' ? 'Busy' : 'Worker failed');
+    } else assert.equal(messages.length, 1);
+  }
+});
+
+test('DAT-025: excluded-ad list escapes stored values and shows an empty state', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const list = { innerHTML: '' };
+  let rows = [{ ad_id: 'x"1', headline: '<img src=x>', pub_date: '2099-01-05', source: 'a.jsonl', reason: '<b>bad</b>', excluded_at: '2026-11-01T10:00:00Z' }];
+  const context = vm.createContext({
+    $: () => list, icon: () => '<svg></svg>', api: { excludedAds: async () => rows },
+    esc: value => String(value ?? '').replace(/[&<>"']/g, char => `&#${char.charCodeAt(0)};`),
+  });
+  vm.runInContext('let dataRenderSeq = 1;' + source.slice(source.indexOf('  async function renderExcludedAds()'), source.indexOf('  async function refreshDataSources()')), context);
+  await vm.runInContext('renderExcludedAds()', context);
+  assert.doesNotMatch(list.innerHTML, /<img|<b>/);
+  assert.match(list.innerHTML, /data-restore="x&#34;1"/);
+  assert.match(list.innerHTML, /2099-01-05/);
+  assert.match(list.innerHTML, /2026-11-01/);
+  assert.match(list.innerHTML, /Restore/);
+  rows = [];
+  await vm.runInContext('renderExcludedAds()', context);
+  assert.match(list.innerHTML, /No ads are excluded/);
+});
+
+test('DAT-025: restoring an excluded ad refreshes totals, the excluded list and results, and reports failures', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  for (const outcome of ['success', 'error', 'reject']) {
+    let click;
+    const calls = [], messages = [];
+    const button = { dataset: { restore: 'future' }, disabled: false };
+    const context = vm.createContext({
+      $: () => ({ addEventListener: (_event, listener) => { click = listener; } }),
+      showMessage: async options => { messages.push(options); },
+      api: { restoreAd: async id => {
+        calls.push(['restore', id]);
+        assert.equal(button.disabled, true);
+        if (outcome === 'reject') throw new Error('Worker failed');
+        return outcome === 'error' ? { ok: false, error: 'Busy' } : { ok: true };
+      } },
+      refreshDataSources: async () => calls.push(['sources']), renderExcludedAds: () => calls.push(['excluded']), reload: () => calls.push(['reload']),
+    });
+    vm.runInContext(source.slice(source.indexOf('  const dataEl ='), source.indexOf("  window.addEventListener('dragover'")), context);
+    await click({ target: { closest: selector => selector === '[data-restore]' ? button : null } });
+    assert.deepEqual(calls, outcome === 'success'
+      ? [['restore', 'future'], ['sources'], ['excluded'], ['reload']]
+      : [['restore', 'future']]);
+    if (outcome === 'success') assert.equal(messages.length, 0);
+    else {
+      assert.equal(button.disabled, false);
+      assert.equal(messages[0].title, 'Could not restore ad');
+      assert.equal(messages[0].message, outcome === 'error' ? 'Busy' : 'Worker failed');
+    }
   }
 });
 

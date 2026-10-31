@@ -805,6 +805,26 @@ function registerHandlers() {
       datasets.updateStats(datasets.active().id, info);
       return {};
   }));
+  const validAdId = (id) => typeof id === 'string' && id.trim() && id.length <= 200;
+  ipcMain.handle('ads:exclude', (_e, id, reason) => {
+    if (!validAdId(id)) return { ok: false, error: 'Invalid ad ID' };
+    if (reason != null && typeof reason !== 'string') return { ok: false, error: 'Invalid reason' };
+    const note = (reason || '').trim().slice(0, 500) || null;
+    return datasetOperation('Excluding ad…', async () => {
+      await build.request('exclude', { id, reason: note });
+      datasets.updateStats(datasets.active().id, await lists.request('info'));
+      return {};
+    });
+  });
+  ipcMain.handle('ads:restore', (_e, id) => {
+    if (!validAdId(id)) return { ok: false, error: 'Invalid ad ID' };
+    return datasetOperation('Restoring ad…', async () => {
+      await build.request('restore', { id });
+      datasets.updateStats(datasets.active().id, await lists.request('info'));
+      return {};
+    });
+  });
+  ipcMain.handle('ads:excluded', () => { assertStableDataset(); return lists.request('excluded'); });
   ipcMain.handle('open:external', (_e, url) => {
     if (typeof url === 'string' && /^https?:\/\//i.test(url)) shell.openExternal(url);
   });

@@ -120,6 +120,7 @@
           <button id="ad-find-prev" class="icon-btn" type="button" title="Previous match (Shift+Enter)" aria-label="Previous match" disabled><span data-i="chev-u"></span></button>
           <button id="ad-find-next" class="icon-btn" type="button" title="Next match (Enter)" aria-label="Next match" disabled><span data-i="chev-d"></span></button>
         </div>
+        <button id="ad-exclude" class="icon-btn" type="button" title="Report as erroneous and exclude" aria-label="Report ad as erroneous and exclude it"><span data-i="alert"></span></button>
       </div>
       <div id="ad-scroll"><div id="ad"></div></div>
     </section>
@@ -185,6 +186,7 @@
   <dialog id="message-dialog" class="app-dialog" aria-labelledby="message-title" aria-describedby="message-body">
     <div class="shortcut-head"><h2 id="message-title"></h2></div>
     <div class="message-body" id="message-body"></div>
+    <label class="message-input" id="message-input-wrap" hidden><span id="message-input-label"></span><textarea id="message-input" rows="3" maxlength="500"></textarea></label>
     <div class="message-actions">
       <button id="message-cancel" class="btn sec" type="button">Cancel</button>
       <button id="message-discard" class="btn sec" type="button" hidden>Discard</button>

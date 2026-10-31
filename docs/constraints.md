@@ -8,6 +8,7 @@
 - The sample's `text_formatted` was always empty, so only `description.text` is used.
 - Ad source inspection (AD-012/D60) shows stored pruned JSON, not the original file's empty/null fields, ordering or formatting. Enrichment shows only current detail-projection additions, not reference provenance or the complete enriched ad; an empty object means no additions and its panel is hidden. Array null placeholders identify positions and are not enrichment values. JSON is read-only and long values wrap rather than requiring horizontal scrolling.
 - Taxonomy labels differ across years; ads are grouped by `concept_id`, so old and new labels for the same concept merge (the `MAX(label)` is shown).
+- Erroneous ads are excluded only manually (DAT-025, D66); suspect dates are not filtered at import. Exclusion is per dataset and kept across re-import, but removing the source file drops its exclusions, so re-importing that file afterwards restores the ad. A re-imported excluded ad counts under Duplicates. While an exclusion or restore runs, queries are briefly refused like other dataset operations; its latency on the full dataset (legacy-key reconciliation) is unmeasured.
 
 ## Technical constraints
 - `node:sqlite` is required (Node ≥ 22.5 / Electron ≥ 38) with FTS5 and `contentless_delete` (SQLite ≥ 3.43).

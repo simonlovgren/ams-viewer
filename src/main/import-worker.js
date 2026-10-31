@@ -12,6 +12,7 @@ const summary = isBuilt(db);
 const acc = newAcc();
 const insAd = db.prepare(INSERT_SQL);
 const insFts = db.prepare('INSERT INTO ads_fts(rowid, headline, employer, body) VALUES (?,?,?,?)');
+const isExcluded = db.prepare('SELECT 1 FROM excluded_ads WHERE ad_id = ?');
 const selectProjection = db.prepare('SELECT rowid, raw, source, region, muni, field_id, field, group_id, grp, occ_id, occ FROM ads WHERE rowid = ?');
 const BATCH = 2000;
 
@@ -113,7 +114,8 @@ async function importFile(file, fileIndex) {
     } catch {
       st.errors++;
     }
-    if (mapped) {
+    if (mapped && isExcluded.get(mapped.values[0])) st.skipped++;
+    else if (mapped) {
       const { values, fts } = mapped;
       const references = legacyReferences(d);
       for (const reference of references.occupations) affected.occupations.add(reference.id);

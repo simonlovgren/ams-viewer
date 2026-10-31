@@ -72,7 +72,12 @@ sum_employer(org_id, v, n) -- PK (org_id,v): organization/name variant counts; m
 employer_catalog(org_id, name_key, v, n) -- PK (org_id,name_key): precomputed representative name and total
 legacy_occ_map(legacy_id, tuple, n)      -- complete modern taxonomy candidates and contribution counts
 legacy_loc_map(municipality_code, tuple, n) -- municipality/region candidates and contribution counts
+excluded_ads(ad_id PRIMARY KEY, source, headline, pub_date, reason, excluded_at, raw) -- DAT-025 tombstones; ix_excluded_source(source)
 ```
+
+### Excluded ads (DAT-025, D66)
+
+Excluding an ad moves it out of `ads`: its summary, legacy-candidate, `sources.ads` and `sources.enriched` contributions are subtracted, its `ads`/`ads_fts` rows are deleted and a tombstone with the stored `raw` and optional reason is written, all in one build-worker transaction followed by reconciliation of its legacy keys. Every list, count, facet, timeline, date range and dataset total therefore excludes it without extra predicates. Restore re-inserts from the tombstone with `toRow()` (keeping the stored `ad_id`, new rowid) and reverses the adjustments. The importer skips IDs present in `excluded_ads` and counts them as skipped; `removeSource()` deletes the source's tombstones, so a later import of that file brings the ad back. Reprocessing does not touch tombstones. The table is created on open for existing databases; no re-import is needed.
 
 ### Import-run statistics (DAT-014, D61)
 

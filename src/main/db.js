@@ -62,6 +62,16 @@ CREATE TABLE IF NOT EXISTS employer_catalog (org_id TEXT NOT NULL, name_key TEXT
 CREATE INDEX IF NOT EXISTS ix_employer_rank ON employer_catalog(n DESC, v COLLATE NOCASE, v COLLATE BINARY, org_id);
 CREATE TABLE IF NOT EXISTS legacy_occ_map (legacy_id TEXT NOT NULL, tuple TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (legacy_id, tuple));
 CREATE TABLE IF NOT EXISTS legacy_loc_map (municipality_code TEXT NOT NULL, tuple TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (municipality_code, tuple));
+CREATE TABLE IF NOT EXISTS excluded_ads (
+  ad_id TEXT PRIMARY KEY,
+  source TEXT NOT NULL,
+  headline TEXT,
+  pub_date TEXT,
+  reason TEXT,
+  excluded_at TEXT NOT NULL,
+  raw TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_excluded_source ON excluded_ads(source);
 `;
 
 function open(path) {
@@ -1068,6 +1078,7 @@ function removeSource(db, name) {
     db.prepare('DELETE FROM ads_fts WHERE rowid IN (SELECT rowid FROM ads WHERE source = ?)').run(name);
     db.prepare('DELETE FROM ads WHERE source = ?').run(name);
     db.prepare('DELETE FROM sources WHERE name = ?').run(name);
+    db.prepare('DELETE FROM excluded_ads WHERE source = ?').run(name);
     reconcileLegacyMappings(db, {
       occupations: [...affected.occupations],
       locations: [...affected.locations],
@@ -1081,8 +1092,76 @@ function removeSource(db, name) {
   }
 }
 
+const PROJECTION_SQL = 'SELECT rowid, ad_id, headline, pub_date, raw, source, region, muni, field_id, field, group_id, grp, occ_id, occ FROM ads';
+
+// DAT-025: the ad moves to excluded_ads with its stored JSON and leaves every derived table, so no query needs an extra predicate.
+function excludeAd(db, id, reason = null) {
+  db.exec('BEGIN');
+  try {
+    const row = db.prepare(`${PROJECTION_SQL} WHERE ad_id = ?`).get(String(id));
+    if (!row) throw new Error('Ad not found');
+    if (isBuilt(db)) {
+      const acc = newAcc();
+      accAdd(acc, projectionValues(row));
+      accFlush(db, acc, -1);
+    }
+    if (hasEnrichment(row)) adjustSourceEnriched(db, row.source, -1);
+    const references = legacyReferences(JSON.parse(row.raw));
+    adjustLegacyReferences(db, references, -1);
+    db.prepare('DELETE FROM ads_fts WHERE rowid = ?').run(row.rowid);
+    db.prepare('DELETE FROM ads WHERE rowid = ?').run(row.rowid);
+    db.prepare('UPDATE sources SET ads = MAX(0, ads - 1) WHERE name = ?').run(row.source);
+    db.prepare('INSERT INTO excluded_ads(ad_id, source, headline, pub_date, reason, excluded_at, raw) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(row.ad_id, row.source, row.headline, row.pub_date, reason || null, new Date().toISOString(), row.raw);
+    reconcileLegacyMappings(db, {
+      occupations: references.occupations.map(reference => reference.id),
+      locations: references.locations.map(reference => reference.code),
+    }, { onEnrichmentChange: (source, delta) => adjustSourceEnriched(db, source, delta) });
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+function restoreAd(db, id) {
+  db.exec('BEGIN');
+  try {
+    const excluded = db.prepare('SELECT ad_id, source, raw FROM excluded_ads WHERE ad_id = ?').get(String(id));
+    if (!excluded) throw new Error('Excluded ad not found');
+    const ad = JSON.parse(excluded.raw);
+    const { values, fts } = toRow(ad, excluded.source);
+    values[0] = excluded.ad_id;
+    const inserted = db.prepare(INSERT_SQL).run(...values);
+    if (!inserted.changes) throw new Error('An ad with this ID is already stored');
+    db.prepare('INSERT INTO ads_fts(rowid, headline, employer, body) VALUES (?, ?, ?, ?)').run(inserted.lastInsertRowid, ...fts);
+    if (isBuilt(db)) {
+      const acc = newAcc();
+      accAdd(acc, projectionValues(db.prepare(`${PROJECTION_SQL} WHERE rowid = ?`).get(inserted.lastInsertRowid)));
+      accFlush(db, acc);
+    }
+    const references = legacyReferences(ad);
+    adjustLegacyReferences(db, references);
+    db.prepare('UPDATE sources SET ads = ads + 1 WHERE name = ?').run(excluded.source);
+    db.prepare('DELETE FROM excluded_ads WHERE ad_id = ?').run(excluded.ad_id);
+    reconcileLegacyMappings(db, {
+      occupations: [...references.occupations.map(reference => reference.id), values[19]].filter(Boolean),
+      locations: [...references.locations.map(reference => reference.code), values[20]].filter(Boolean),
+    }, { onEnrichmentChange: (source, delta) => adjustSourceEnriched(db, source, delta) });
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+function excludedAds(db) {
+  return db.prepare('SELECT ad_id, source, headline, pub_date, reason, excluded_at FROM excluded_ads ORDER BY excluded_at DESC, ad_id')
+    .all().map(row => ({ ...row }));
+}
+
 module.exports = {
-  reprocess,
+  reprocess, excludeAd, restoreAd, excludedAds,
   open, toRow, projectionValues, INSERT_SQL, legacyReferences, adjustLegacyReferences, adjustSourceEnriched, reconcileLegacyMappings,
   search, count, facets, timeline, getAd, info, datasetStats, removeSource,
   isBuilt, ensureSummary, newAcc, accAdd, accFlush,

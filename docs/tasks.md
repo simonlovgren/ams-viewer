@@ -1,6 +1,6 @@
 # Tasks (planned and active)
 
-Planned work that is specified but not started, plus active tasks. Each task links to its requirements; when work starts, set the requirement to `In progress` and record decisions in [design-decisions.md](design-decisions.md). Last updated 2026-10-31.
+Planned work that is specified but not started, plus active tasks. Each task links to its requirements; when work starts, set the requirement to `In progress` and record decisions in [design-decisions.md](design-decisions.md). Last updated 2026-11-01.
 
 | # | Task | Requirements | Size |
 |---|---|---|---|
@@ -21,7 +21,7 @@ Planned work that is specified but not started, plus active tasks. Each task lin
 | T15 | Done: Named dataset storage, lifecycle and existing-database migration | DAT-017, DAT-018, DAT-021, DAT-022 | L |
 | T16 | Done: Datasets page and metadata editor | DAT-019, DAT-020, DAT-021, DAT-022 | M |
 | T17 | Done: Dataset chooser, statistics, switching and deletion | DAT-017, DAT-018, DAT-020, DAT-021, DAT-023, DAT-024 | M |
-| T18 | Manually report and exclude erroneous ads | DAT-025 | M |
+| T18 | Done: manually report and exclude erroneous ads | DAT-025 | M |
 | T19 | Done: file-based themes, light palette and Appearance chooser | UI-002, UI-003, UI-024, UI-025, UI-026, UI-027, UI-028, UI-029 | L |
 | T20 | Done: generated third-party license inventory and dedicated reading view | NFR-011, UI-030 | M |
 
@@ -159,13 +159,10 @@ T3 completed 2026-10-31 (D63). T12 completed 2026-10-31 (D58). T15–T17 complet
 - Cached counts refresh on startup, activation, import completion and source removal. Unknown legacy snapshots backfill in temporary read workers from source metadata, with visible pending/error states; no ad-table scan or main-thread DB access.
 - Verification: dataset/catalog, DB and renderer suites pass 51 tests; syntax checks pass. Browser fixture reviewed chooser layout at desktop and minimum window sizes; native Electron chooser interaction and performance against multiple full-scale DBs remain unverified.
 
-## T18. Manually report and exclude erroneous ads (DAT-025)
-- Status: planned only; no app implementation yet. Priority relative to existing tasks is not assigned.
-- Allow the user to explicitly report an individual ad as erroneous and exclude it from the active dataset. User-reported example: ads dated 2099, far beyond the current year. Do not silently cull ads during import based on suspect dates; retain existing malformed-record validation (DAT-008).
-- Reporting is local to the dataset, not submission to JobTech or another external service. Preserve original source files and leave other datasets unchanged.
-- Excluded ads must disappear from browsable ads, search results, filter options/counts, date ranges, timelines, employer statistics and dataset totals. Keep FTS, summary tables, worker caches and cached dataset statistics consistent; run expensive work off the main thread.
-- Before implementation, settle action placement, confirmation and optional reason capture; reversible exclusion versus physical deletion; reviewing/restoring excluded ads; persistence across restart, re-import and source removal. Record decisions with DAT-025 and update the data model, data flow and constraints as needed.
-- Verification: explicitly exclude a fixture ad dated 2099 and confirm all affected views and totals update; leave an unreported suspect-date ad visible; verify dataset isolation, unchanged source files, cancellation/failure handling and the chosen restart/re-import behavior.
+## T18. Done: manually report and exclude erroneous ads (DAT-025)
+- Completed 2026-11-01; D66. User choices: tombstone table plus removal from `ads`; action only in the ad-view toolbar; confirmation with optional reason; Datasets page section to review and restore; re-import keeps ads excluded; source removal drops that file's tombstones.
+- Excluded ads leave lists, keyword search, filter options/counts, date ranges, timeline, employer statistics, dataset totals and cached dataset statistics. Legacy enrichment consensus is reconciled. Unreported suspect-date ads stay visible; import validation (DAT-008) is unchanged.
+- Verification: DB worker tests cover a 2099 fixture across all queries, an unreported 2098 ad, summary/projection equality with a full reprocess, re-import skipping, exact restore, reason-less exclusion, source-removal cleanup, dataset isolation, unchanged source file and transactional rollback. Renderer tests cover confirm/cancel/error flows, escaping and restore refresh. All 141 tests pass. Disposable native launch drove the real IPC (exclude, invalid ID rejection, list, restore) against 1,000 devdata ads. Native button click-through, visual layout and full-scale exclusion latency remain unverified.
 
 ## T19. File-based themes and theme chooser
 - Completed 2026-10-29, D51-D54; [complete contract and token reference](theming.md). Built-in/custom themes, pre-paint persisted selection, validated file operations and Appearance chooser are implemented.
