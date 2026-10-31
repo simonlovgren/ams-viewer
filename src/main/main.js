@@ -145,10 +145,45 @@ currentTheme = themes.current();
 const dbPath = () => datasets.databasePath();
 
 let splash;
+function chooseStartupDataset() {
+  return new Promise((resolve) => {
+    let confirmed = false;
+    const cleanup = () => {
+      ipcMain.removeHandler('splash:datasets');
+      ipcMain.removeHandler('splash:open');
+      ipcMain.removeHandler('splash:cancel');
+    };
+    const assertSplash = (event) => {
+      if (event.sender !== splash?.webContents || splash.isDestroyed()) throw new Error('Startup selection requires the splash window');
+    };
+    ipcMain.handle('splash:datasets', (event) => {
+      assertSplash(event);
+      return { datasets: datasets.list(), activeId: datasets.active().id };
+    });
+    ipcMain.handle('splash:open', (event, id) => {
+      assertSplash(event);
+      if (confirmed) throw new Error('Dataset already selected');
+      if (typeof id !== 'string' || !datasets.list().some((entry) => entry.id === id)) throw new Error('Dataset not found');
+      datasets.activate(id);
+      confirmed = true;
+      cleanup();
+      resolve(true);
+      return { ok: true };
+    });
+    ipcMain.handle('splash:cancel', (event) => {
+      assertSplash(event);
+      splash.close();
+    });
+    splash.once('closed', () => {
+      cleanup();
+      if (!confirmed) resolve(false);
+    });
+  });
+}
 function createSplash() {
   splash = new BrowserWindow({
-    width: 460,
-    height: 270,
+    width: 520,
+    height: 360,
     frame: false,
     resizable: false,
     show: false,
@@ -162,8 +197,12 @@ function createSplash() {
       sandbox: true,
     },
   });
+  const selected = chooseStartupDataset();
   splash.loadFile(path.join(__dirname, '..', 'renderer', 'splash.html'));
-  return new Promise((resolve) => splash.once('ready-to-show', () => { splash.show(); resolve(); }));
+  splash.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  splash.webContents.on('will-navigate', (event) => event.preventDefault());
+  splash.once('ready-to-show', () => splash.show());
+  return selected;
 }
 const progress = (pct, text) => splash && !splash.isDestroyed() && splash.webContents.send('splash:progress', { pct, text });
 
@@ -585,7 +624,8 @@ app.whenReady().then(async () => {
   }, 250).unref();
   try {
     datasets = datasetCatalog.open(app.getPath('userData'));
-    await createSplash();
+    if (!await createSplash()) { app.quit(); return; }
+    lap(`dataset selected (${datasets.active().name})`);
     progress(5, 'Opening the database…');
     registerHandlers();
     lists.start();

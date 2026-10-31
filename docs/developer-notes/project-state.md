@@ -1,6 +1,6 @@
 # Project state and preferences
 
-Last updated: 2026-10-31.
+Last updated: 2026-11-01.
 
 ## User preferences
 - 2026-10-18: prefer explicit manual exclusion of erroneous ads over silent import-time date culling (user-reported 2099 dates). Planned as DAT-025/T18; no implementation yet.
@@ -15,6 +15,7 @@ Last updated: 2026-10-31.
 - App name is **AMS Viewer** (`ams-viewer`). The workspace folder is still `ams_oldbrowser`.
 
 ## Implemented highlights
+- 2026-11-01: DAT-028/UI-014/D65 adds explicit startup dataset selection before any DB worker or automatic enrichment. Last active entry is preselected; cached metadata only, no countdown, Open/Cancel/Escape and safe retry on catalog errors. All 136 tests pass with existing coverage retained. Disposable native alternate opening, restart preselection and Cancel pass with normal exits and unchanged unselected DB; both themed screenshots fit long metadata. Physical keyboard and full-scale loading remain unverified. Future startup smoke tests must submit the chooser.
 - 2026-10-31: T3/D63/D64 implements DAT-013/027: insertion finishes per file before enrichment; committed enrichment batches emit throttled `sources-updated` events for targeted source-list/totals refresh, including older files' enriched counts. Summaries/counts commit with projections; duplicate re-import revisits affected keys for interrupted enrichment recovery. Worker/renderer regressions pass; full-scale performance and native visual behavior remain unverified.
 - 2026-10-31: T4/D61/DAT-014 stores latest import duration/inserted/skipped/errors and a static current enriched-ad count per source. Existing import-run fields stay null until re-import; the enriched count initializes once from stored projections and follows import/removal/reprocess changes. All 126 tests and syntax/editor checks passed at completion; full-scale count initialization/import overhead and visual fit remain unverified because the shared browser server was unavailable.
 - 2026-10-31: D56/D57/NFR-011/UI-030 provides generated package/Electron license texts and all 779 Chromium notices in a separate reading view, entered through Settings's "View third party licenses" button. One page scroll area, no frame; inert template parsing copies only text. All 62 focused generator/loader/renderer tests plus syntax/editor checks pass. Real Chromium report passes both sizes/themes/fonts, last-notice reachability and Back; styled screenshot reviewed. Electron package text uses a browser fixture; native interaction and AppImage/Windows/macOS builds remain unverified. Linux unpacked packaging was verified under D56.

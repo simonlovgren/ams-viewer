@@ -69,7 +69,7 @@ All tokens are required. JSON camelCase names map mechanically to `--theme-kebab
 
 | Token | Affects |
 |---|---|
-| `accentPrimary` | Primary teal-family icons, focus outlines, active indicators and resize handles. |
+| `accentPrimary` | Primary teal-family icons, focus outlines, active indicators, resize handles and splash Open dataset button. |
 | `accentSecondary` | Blue-family links. |
 | `accentTertiary` | Purple-family control borders, hover accents and chart guides. |
 | `accentQuaternary` | Pink-family secondary accents and OR-mode indicator. |
@@ -78,7 +78,7 @@ All tokens are required. JSON camelCase names map mechanically to `--theme-kebab
 | `gradientThird` | Third gradient stop. |
 | `gradientEnd` | Final gradient stop. |
 | `textOnAccent` | Text/icons on gradient buttons, brand logo and employer placeholder. |
-| `focusRing` | Input focus border. |
+| `focusRing` | Input focus border and splash chooser/control keyboard focus outlines. |
 | `focusHalo` | Input focus shadow; alpha allowed. |
 | `searchFocusHalo` | Keyword-entry focus shadow; alpha allowed. |
 | `navigationSelectedStart` | Active navigation gradient start; alpha allowed. |

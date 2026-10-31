@@ -4,6 +4,88 @@ const { readFileSync } = require('node:fs');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
+function splashContext({ datasets, activeId, listError } = {}) {
+  const elements = new Map();
+  const element = (id) => {
+    if (!elements.has(id)) elements.set(id, {
+      disabled: ['dataset', 'open'].includes(id), hidden: id === 'loading', value: '', textContent: '', style: {}, children: [], listeners: {},
+      addEventListener: function (name, callback) { this.listeners[name] = callback; },
+      appendChild: function (child) { this.children.push(child); }, focus: function () { this.focused = true; },
+    });
+    return elements.get(id);
+  };
+  const calls = [];
+  let progress;
+  let finish;
+  const document = {
+    getElementById: element, createElement: () => ({}), listeners: {},
+    addEventListener: function (name, callback) { this.listeners[name] = callback; },
+  };
+  const context = vm.createContext({
+    document, Date, setInterval() {}, window: { splash: {
+      datasets: async () => { if (listError) throw new Error('Catalog unavailable'); return { datasets, activeId }; },
+      openDataset: (id) => { calls.push(['open', id]); return new Promise((resolve, reject) => { finish = { resolve, reject }; }); },
+      cancel: () => calls.push(['cancel']), onProgress: (callback) => { progress = callback; },
+    } },
+  });
+  vm.runInContext(readFileSync(require.resolve('./splash.js'), 'utf8'), context);
+  return { element, document, calls, progress: (event) => progress(event), finish: () => finish };
+}
+
+test('splash preselects last dataset without opening, supports one dataset, and renders inert metadata', async () => {
+  for (const single of [false, true]) {
+    const last = { id: 'last', name: '<Last & dataset>', description: '<Description>\nSecond line', stats: { sourceCount: 2, total: 1234 } };
+    const fixture = splashContext({ datasets: single ? [last] : [{ id: 'other', name: 'Other', description: '', stats: null }, last], activeId: 'last' });
+    await new Promise(setImmediate);
+    assert.equal(fixture.element('dataset').value, 'last');
+    assert.equal(fixture.element('dataset').focused, true);
+    assert.equal(fixture.element('dataset').children.at(-1).textContent, last.name);
+    assert.equal(fixture.element('dataset-meta').textContent, '<Description> / 2 files / 1,234 ads');
+    assert.deepEqual(fixture.calls, []);
+    assert.equal(fixture.element('loading').hidden, true);
+    fixture.element('cancel').listeners.click();
+    fixture.document.listeners.keydown({ key: 'Escape' });
+    assert.deepEqual(fixture.calls, [['cancel'], ['cancel']]);
+  }
+});
+
+test('splash confirms chosen dataset once, retries failures and switches to loading on progress', async () => {
+  const fixture = splashContext({ datasets: ['last', 'other'].map((id) => ({ id, name: id, description: '', stats: null })), activeId: 'last' });
+  await new Promise(setImmediate);
+  fixture.element('dataset').value = 'other';
+  fixture.element('dataset').listeners.change();
+  assert.equal(fixture.element('dataset-meta').textContent, 'Statistics unavailable');
+  const submit = () => fixture.element('chooser').listeners.submit({ preventDefault() {} });
+  const first = submit();
+  await submit();
+  fixture.document.listeners.keydown({ key: 'Escape' });
+  assert.deepEqual(fixture.calls, [['open', 'other']]);
+  assert.equal(fixture.element('cancel').disabled, true);
+  fixture.finish().reject(new Error('Disk full'));
+  await first;
+  assert.match(fixture.element('selection-error').textContent, /Disk full/);
+  assert.equal(fixture.element('chooser').hidden, false);
+  assert.equal(fixture.element('open').disabled, false);
+  const retry = submit();
+  fixture.progress({ pct: 5, text: 'Opening database' });
+  assert.equal(fixture.element('chooser').hidden, true);
+  assert.equal(fixture.element('loading').hidden, false);
+  assert.equal(fixture.element('fill').style.width, '5%');
+  fixture.finish().resolve({ ok: true });
+  await retry;
+  assert.equal(fixture.calls.length, 2);
+});
+
+test('splash catalog failures keep Open disabled and Cancel usable', async () => {
+  const fixture = splashContext({ listError: true });
+  await new Promise(setImmediate);
+  assert.match(fixture.element('selection-error').textContent, /Catalog unavailable/);
+  assert.equal(fixture.element('open').disabled, true);
+  await fixture.element('chooser').listeners.submit({ preventDefault() {} });
+  fixture.element('cancel').listeners.click();
+  assert.deepEqual(fixture.calls, [['cancel']]);
+});
+
 function rendererContext(document = { querySelectorAll: () => [] }, globals = {}) {
   const source = readFileSync(require.resolve('./app.js'), 'utf8');
   const context = vm.createContext({ Intl, document, ...globals });

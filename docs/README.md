@@ -21,6 +21,6 @@ npm install
 npm start
 ```
 
-Then open **Datasets** and import one or more `.jsonl` / `.ndjson` / `.json` files. An empty installation opens Datasets first; imported sources can be removed there without deleting the original files.
+Select a dataset in the startup window and press **Open dataset**. The last opened dataset is preselected; no database loading or automatic enrichment begins until confirmation. Then open **Datasets** and import one or more `.jsonl` / `.ndjson` / `.json` files. An empty installation offers **default** and opens Datasets after confirmation; imported sources can be removed there without deleting the original files.
 
 Dataset catalog and databases live in Electron's `userData` folder: `~/.config/AMS Viewer/` on Linux, `~/Library/Application Support/AMS Viewer/` on macOS, or `%APPDATA%\AMS Viewer\` on Windows. The catalog is `datasets.json`; each dataset has a separate database under `datasets/`. Existing `ads.db` is migrated on first startup; back up the data folder before upgrading.

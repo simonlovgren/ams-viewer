@@ -9,6 +9,69 @@ const vm = require('node:vm');
 const { open } = require('./dataset-catalog');
 const dbm = require('./db');
 
+test('startup selection validates splash sender and dataset, persists choice and cleans handlers', async () => {
+  const source = fs.readFileSync(require.resolve('./main'), 'utf8');
+  const code = source.slice(source.indexOf('function chooseStartupDataset()'), source.indexOf('function createSplash()'));
+  for (const cancel of [false, true]) {
+    const handlers = new Map();
+    const sender = {};
+    let closed;
+    let activeId = 'last';
+    let fail = false;
+    const context = vm.createContext({
+      ipcMain: { handle: (name, handler) => handlers.set(name, handler), removeHandler: (name) => handlers.delete(name) },
+      splash: { webContents: sender, isDestroyed: () => false, once: (_name, callback) => { closed = callback; }, close: () => closed() },
+      datasets: {
+        list: () => [{ id: 'last' }, { id: 'other' }], active: () => ({ id: activeId }),
+        activate: (id) => { if (fail) throw new Error('Disk full'); activeId = id; },
+      },
+    });
+    vm.runInContext(code, context);
+    const pending = vm.runInContext('chooseStartupDataset()', context);
+    const list = handlers.get('splash:datasets');
+    const openDataset = handlers.get('splash:open');
+    assert.equal(list({ sender }).activeId, 'last');
+    for (const handler of handlers.values()) assert.throws(() => handler({ sender: {} }, 'other'), /splash window/);
+    for (const id of [null, {}, 5, '', '../other', 'missing']) assert.throws(() => openDataset({ sender }, id), /Dataset not found/);
+    assert.equal(activeId, 'last');
+    fail = true;
+    assert.throws(() => openDataset({ sender }, 'other'), /Disk full/);
+    assert.equal(handlers.size, 3);
+    fail = false;
+    if (cancel) handlers.get('splash:cancel')({ sender });
+    else assert.equal(openDataset({ sender }, 'other').ok, true);
+    assert.equal(await pending, !cancel);
+    assert.equal(activeId, cancel ? 'last' : 'other');
+    assert.equal(handlers.size, 0);
+  }
+});
+
+test('startup waits for selection before opening worker lanes or preparing summaries', async () => {
+  const source = fs.readFileSync(require.resolve('./main'), 'utf8');
+  const code = source.slice(source.indexOf('app.whenReady().then('), source.indexOf('function registerHandlers()'));
+  for (const selected of [false, true]) {
+    const events = [];
+    let select;
+    let startup;
+    const laneStub = { start: () => events.push('worker'), request: async () => ({ total: 0 }) };
+    const context = vm.createContext({
+      app: { whenReady: () => ({ then: (callback) => { startup = callback(); } }), getPath: () => 'temp', quit: () => events.push('quit'), on() {} },
+      Date, console: { log() {}, error() {} }, setInterval: () => ({ unref() {} }), setTimeout() {},
+      datasetCatalog: { open: () => ({ active: () => ({ id: 'chosen', name: 'Chosen' }), markInitialized() {}, updateStats() {} }) },
+      createSplash: () => new Promise((resolve) => { select = resolve; }),
+      progress() {}, registerHandlers: () => events.push('handlers'),
+      lists: laneStub, counts: laneStub, timelines: laneStub, facetLane: laneStub, build: laneStub,
+      ensureSummary: () => events.push('summary'), ipcMain: { once() {} },
+      createWindow: () => events.push('window'), dialog: { showErrorBox: (_title, error) => assert.fail(error) },
+    });
+    vm.runInContext('let datasets;\n' + code, context);
+    assert.deepEqual(events, []);
+    select(selected);
+    await startup;
+    assert.deepEqual(events, selected ? ['handlers', 'worker', 'worker', 'worker', 'worker', 'worker', 'summary', 'window'] : ['quit']);
+  }
+});
+
 test('enrichment notices stack after their parent, update counters and clear on every exit', () => {
   const source = fs.readFileSync(require.resolve('./main'), 'utf8');
   const events = [];

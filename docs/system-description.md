@@ -6,6 +6,7 @@ Browse, filter and read historical job ads offline. Source data is published as 
 
 ## Functional overview
 
+- **Startup selection** (DAT-028, UI-014, D65): splash shows a dataset dropdown with the last opened entry selected and catalog-cached metadata. Open dataset confirms the choice before any read lane, database query or automatic enrichment/statistics preparation starts; Cancel, Escape or closing the chooser exits. Selection has no countdown, including for a single dataset. After confirmation the same splash shows loading progress until the main window has its first results.
 - **Search view**: filter panel (left), keyword box/sort/result list (center), and statistics column (right).
   - Older ads are enriched offline from unanimous taxonomy and municipality mappings in the active dataset; source-provided values and original `raw` records are preserved, and ambiguous mappings remain unresolved (DAT-015/016, D58).
   - Keyword search (headline, employer, description), with `"phrases"` and prefix matching.
@@ -64,7 +65,7 @@ flowchart LR
 | `src/main/db.js` | Schema, row mapping, filter → SQL builder, search, facets, legacy mapping consensus, summary maintenance and source removal. Shared by main and workers. |
 | `src/main/import-worker.js` | Streams a file, maps records, inserts into `ads` and `ads_fts`, maintains legacy mapping contributions and reconciles affected ads in batched transactions, reports progress. |
 | `src/main/read-worker.js` | All database reads, on their own connections: five instances (lanes): `lists` (rows, single ad, info), `counts`, `timelines`, `facets` and `build` (one-time summary build, source removal). A newer request supersedes a queued request of the same kind, but active SQL continues; lanes can still contend for disk/cache. Worker responses include execution time for main-process queue/work diagnostics (D37), not exposed in renderer results. |
-| `src/main/splash-preload.js`, `src/renderer/splash.*` | Splash window with progress bar shown while the database summary and first results load (UI-014). |
+| `src/main/splash-preload.js`, `src/renderer/splash.*` | Catalog-only startup dataset chooser with splash-authorized IPC; after explicit confirmation, progress bar while the database summary and first results load (DAT-028, UI-014, D65). |
 | `src/renderer/app.js` | All UI logic: state, history, list, filter trees, ad rendering, data view. No framework. |
 | `src/shared/theme.js`, `src/themes/ams-dark.json`, `src/themes/ams-light.json` | Version-1 semantic color/font contract, shared validation/application and both complete built-in palettes (D51/D52). |
 | `src/main/theme-catalog.js` | Loads built-ins/customs and application-wide selection before windows exist; validates bounded UTF-8 files, owns generated-ID copies, serialized import/export/selection/removal and staged-deletion recovery (D53). |

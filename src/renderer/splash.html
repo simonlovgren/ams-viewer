@@ -12,10 +12,21 @@
   <div class="card">
     <svg class="logo" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="7" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
     <h1>AMS Viewer</h1>
-    <p id="stage">Starting…</p>
-    <div class="bar"><i id="fill"></i></div>
-    <div class="meta"><span id="pct">0%</span><span id="elapsed">0 s</span></div>
-    <small>A large database can take a while to open.</small>
+    <form id="chooser">
+      <label for="dataset">Dataset</label>
+      <select id="dataset" disabled></select>
+      <p id="dataset-meta"></p>
+      <p id="selection-error" role="alert"></p>
+      <div class="actions">
+        <button id="cancel" type="button">Cancel</button>
+        <button id="open" type="submit" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>Open dataset</button>
+      </div>
+    </form>
+    <div id="loading" hidden role="status" aria-live="polite">
+      <p id="stage">Starting…</p>
+      <div class="bar"><i id="fill"></i></div>
+      <div class="meta"><span id="pct">0%</span><span id="elapsed">0 s</span></div>
+    </div>
   </div>
   <script src="splash.js"></script>
 </body>
