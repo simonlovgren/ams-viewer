@@ -46,7 +46,7 @@ T12 completed 2026-10-31 (D58). T15–T17 completed 2026-10-18 (D39–D42). T7, 
 
 ## T4. Import statistics per file (DAT-014)
 - Completed 2026-10-31; D61. Store latest-run `duration_ms`, `inserted`, `skipped` and `errors`, plus a static current `enriched` count on each source row. Existing rows keep null import-run values and display `n/a`; only an import of that source creates or replaces them.
-- `enriched` counts current source ads whose promoted taxonomy/location fields contain values absent from immutable `raw`. Initialize once from stored records and maintain transitions during import, source removal and reprocessing. It is not a per-import count and does not appear in live progress.
+- `enriched` counts current source ads whose promoted taxonomy/location fields contain values absent from immutable `raw`. Initialize once from stored records and maintain transitions during import, source removal and reprocessing. It is not a per-import count; D62/UI-031's separate live enrichment notice reports in-flight work instead of this stored statistic.
 - Datasets table distinguishes current source ad total (`Ads`), latest-run inserts (`Added`) and current enriched ads. T3's live source-list refresh remains separate and planned.
 - Regression coverage includes old-schema migration, latest-run metrics, static count initialization, import-order independence, conflict/removal/reprocess transitions and renderer display. All 126 tests, changed-file syntax checks and `git diff --check` pass. Full-scale count initialization/import overhead and visual fit remain unverified; shared browser server was unavailable.
 
@@ -110,6 +110,7 @@ T12 completed 2026-10-31 (D58). T15–T17 completed 2026-10-18 (D39–D42). T7, 
 
 ## T12. Legacy taxonomy and geographic enrichment (DAT-015, DAT-016)
 - Status: implementation complete (2026-10-31; D58). Full-scale migration time/disk use and cross-quarter reference comparison remain unverified; no live dataset was changed.
+- Progress follow-up (2026-10-31; UI-031/D62): separate stacked enrichment notice for imports, backfill and reprocessing, with throttled checks/newly enriched-ad counters and live source-count scan feedback. All 102 affected tests and syntax/editor checks pass; full-scale performance and native visual appearance remain unverified.
 - Inspect representative older and newer records first. Older datasets contain occupation `legacy_ams_taxonomy_id`; survey whether other taxonomy fields also expose usable legacy identifiers. Check which fields under `workplace_address` carry usable location information across dataset generations.
 - Cross-reference legacy occupation identifiers with the newest available dataset containing both legacy identifiers and modern taxonomy information. Use reliable matches to fill missing occupation labels and hierarchy so older ads display and filter like newer ads. Assess other taxonomy fields after confirming their mappings.
 - Similarly, cross-reference available `workplace_address` fields with the newest available geographic data to fill missing location labels and hierarchy. Do not assume names alone identify a unique place or that historical administrative boundaries match current ones.

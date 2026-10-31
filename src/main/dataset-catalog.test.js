@@ -9,6 +9,35 @@ const vm = require('node:vm');
 const { open } = require('./dataset-catalog');
 const dbm = require('./db');
 
+test('enrichment notices stack after their parent, update counters and clear on every exit', () => {
+  const source = fs.readFileSync(require.resolve('./main'), 'utf8');
+  const events = [];
+  const context = vm.createContext({
+    win: { isDestroyed: () => false, webContents: { send: (_channel, event) => events.push(event) } },
+  });
+  vm.runInContext(source.slice(source.indexOf('const tasks = new Map();'), source.indexOf('const errorText =')), context);
+  for (const key of ['summary', 'import', 'reprocess']) {
+    context.key = key;
+    vm.runInContext("sendWorkProgress(key, {phase:'enrichment', text:'Enriching data: 200 checks · 10 newly enriched ads', pct:null})", context);
+    assert.deepEqual(Array.from(vm.runInContext('[...tasks.keys()]', context)), [key, `${key}:enrichment`]);
+    assert.equal(events.at(-1).pct, null);
+    assert.match(events.at(-1).text, /10 newly enriched/);
+    vm.runInContext("sendWorkProgress(key, {phase:'enrichment', text:'Enriching data: 400 checks · 20 newly enriched ads', pct:null})", context);
+    assert.equal(vm.runInContext('tasks.size', context), 2);
+    assert.match(events.at(-1).text, /20 newly enriched/);
+    vm.runInContext("sendWorkProgress(key, {text:'Updating filters', pct:50})", context);
+    assert.equal(vm.runInContext('tasks.size', context), 1);
+    for (const state of ['done', 'error']) {
+      context.state = state;
+      vm.runInContext("sendWorkProgress(key, {phase:'enrichment', text:'Enriching data', pct:null}); sendTask(key, state, 'Outcome')", context);
+      assert.equal(vm.runInContext('tasks.size', context), 0);
+      assert.equal(events.at(-2).key, `${key}:enrichment`);
+      assert.equal(events.at(-2).state, 'done');
+      assert.equal(events.at(-1).state, state);
+    }
+  }
+});
+
 test('ad source IPC validates IDs and sender before dispatching to the read worker', async () => {
   const source = fs.readFileSync(require.resolve('./main'), 'utf8');
   const handlers = new Map();

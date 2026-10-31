@@ -247,6 +247,61 @@ test('legacy enrichment backfills existing ads and follows imports, conflicts an
   }
 });
 
+test('enrichment progress reports checks and counts taxonomy and location additions once', t => {
+  const db = dbm.open(':memory:');
+  try {
+    const legacy = { id: 'progress-legacy', occupation: { legacy_ams_taxonomy_id: 'progress-occ' }, workplace_address: { municipality_code: '0180' } };
+    const reference = { id: 'progress-reference',
+      occupation: { legacy_ams_taxonomy_id: 'progress-occ', concept_id: 'occ', label: 'Engineer' },
+      occupation_group: { concept_id: 'group', label: 'Engineering' },
+      occupation_field: { concept_id: 'field', label: 'Technology' },
+      workplace_address: { municipality_code: '0180', municipality: 'Stockholm', region: 'Stockholm' } };
+    const insert = db.prepare(dbm.INSERT_SQL);
+    insert.run(...dbm.toRow(legacy, 'legacy.jsonl').values);
+    insert.run(...dbm.toRow(reference, 'reference.jsonl').values);
+    for (let index = 0; index < 500; index++) insert.run(...dbm.toRow({ ...legacy, id: `progress-${index}` }, 'legacy.jsonl').values);
+    let clock = 0;
+    t.mock.method(Date, 'now', () => clock += 250);
+    const messages = [];
+    dbm.ensureSummary(db, message => messages.push(message));
+    const reconciliation = messages.filter(message => message.text.includes('newly enriched ads'));
+    assert.equal(reconciliation[0].processed, 0);
+    assert.equal(reconciliation[0].pct, null);
+    assert.equal(reconciliation.at(-1).processed, 1004);
+    assert.equal(reconciliation.at(-1).enriched, 501);
+    assert.ok(reconciliation.some(message => message.processed >= 200 && message.processed < 1004 && message.enriched > 0));
+    assert.ok(reconciliation.every(message => message.phase === 'enrichment'));
+    const counted = messages.find(message => message.text.startsWith('Counting enriched ads:') && message.pct === 100);
+    assert.equal(counted.processed, 502);
+    assert.equal(counted.enriched, 501);
+  } finally { db.close(); }
+});
+
+test('import enrichment emits a separate live phase and restores import progress', async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'ams-enrichment-progress-'));
+  try {
+    const file = path.join(directory, 'progress.jsonl');
+    writeFileSync(file, `${JSON.stringify({ id: 'progress', occupation: { legacy_ams_taxonomy_id: '7788' } })}\n`);
+    const messages = await runImport(path.join(directory, 'ads.db'), [file]);
+    const progress = messages.filter(message => message.phase === 'enrichment');
+    assert.ok(progress.length >= 2);
+    assert.equal(progress[0].processed, 0);
+    assert.equal(progress.at(-1).processed, 1);
+    assert.equal(progress.at(-1).enriched, 0);
+    assert.match(progress.at(-1).text, /0 newly enriched ads in this file/);
+    assert.ok(messages.slice(messages.lastIndexOf(progress.at(-1)) + 1).some(message => message.type === 'progress' && !message.phase));
+    const referenceFile = path.join(directory, 'reference.jsonl');
+    writeFileSync(referenceFile, `${JSON.stringify({ id: 'reference',
+      occupation: { legacy_ams_taxonomy_id: '7788', concept_id: 'occ', label: 'Engineer' },
+      occupation_group: { concept_id: 'group', label: 'Engineering' },
+      occupation_field: { concept_id: 'field', label: 'Technology' } })}\n`);
+    const referenceMessages = await runImport(path.join(directory, 'ads.db'), [referenceFile]);
+    const enriched = referenceMessages.filter(message => message.phase === 'enrichment').at(-1);
+    assert.equal(enriched.enriched, 1);
+    assert.match(enriched.text, /1 newly enriched ads in this file/);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('legacy enrichment applies only consensus mappings and restores source values when consensus changes', () => {
   const db = dbm.open(':memory:');
   try {

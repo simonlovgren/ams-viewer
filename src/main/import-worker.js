@@ -87,6 +87,7 @@ async function importFile(file, fileIndex) {
   const st = { type: 'progress', file: name, fileIndex, files: files.length, lines: 0, inserted: 0, skipped: 0, errors: 0, duration_ms: 0, pct: 0 };
   let last = 0;
   let pending = 0;
+  let enriched = 0;
   const affected = { occupations: new Set(), locations: new Set() };
   const inserted = [];
 
@@ -97,11 +98,18 @@ async function importFile(file, fileIndex) {
         locations: [...affected.locations],
       }, {
         skipSummaryRows: new Set(inserted),
+        onProgress: progress => {
+          st.duration_ms = Date.now() - started;
+          parentPort.postMessage({ ...st, ...progress, pct: st.pct, enriched,
+            text: `Enriching data: ${progress.processed.toLocaleString('en-US')} checks in this batch · ${enriched.toLocaleString('en-US')} newly enriched ads in this file` });
+        },
         onEnrichmentChange: (source, delta) => {
+          if (delta > 0) enriched++;
           if (source === name && !sourceExists) initialEnriched += delta;
           else adjustSourceEnriched(db, source, delta);
         },
       });
+      parentPort.postMessage({ ...st });
     }
     if (summary) {
       for (const rowid of inserted) accAdd(acc, projectionValues(selectProjection.get(rowid)));

@@ -244,6 +244,19 @@ function adjustSourceEnriched(db, source, delta) {
 
 function reconcileLegacyMappings(db, affected = {}, options = {}) {
   let changed = 0;
+  let processed = 0;
+  let enriched = 0;
+  let lastProgress = 0;
+  const report = (force = false) => {
+    if (!options.onProgress) return;
+    const now = Date.now();
+    if (force || (processed % 200 === 0 && now - lastProgress >= 250)) {
+      lastProgress = now;
+      options.onProgress({ phase: 'enrichment', pct: null, processed, enriched,
+        text: `Enriching data: ${processed.toLocaleString('en-US')} checks · ${enriched.toLocaleString('en-US')} newly enriched ads` });
+    }
+  };
+  report(true);
   const built = isBuilt(db);
   const skippedRows = options.skipSummaryRows || new Set();
   const summaryBefore = newAcc();
@@ -278,9 +291,14 @@ function reconcileLegacyMappings(db, affected = {}, options = {}) {
         rememberSummaryOriginal(row);
         updateTaxonomy.run(...next, row.rowid);
         const enrichedAfter = hasEnrichment({ ...row, field_id: next[0], field: next[1], group_id: next[2], grp: next[3], occ_id: next[4], occ: next[5] });
-        if (enrichedBefore !== enrichedAfter) options.onEnrichmentChange?.(row.source, enrichedAfter ? 1 : -1, row.rowid);
+        if (enrichedBefore !== enrichedAfter) {
+          if (enrichedAfter) enriched++;
+          options.onEnrichmentChange?.(row.source, enrichedAfter ? 1 : -1, row.rowid);
+        }
         changed++;
       }
+      processed++;
+      report();
     }
   }
   for (const code of new Set(affected.locations || [])) {
@@ -298,11 +316,17 @@ function reconcileLegacyMappings(db, affected = {}, options = {}) {
         rememberSummaryOriginal(row);
         updateLocation.run(nextRegion, nextMuni, row.rowid);
         const enrichedAfter = hasEnrichment({ ...row, region: nextRegion, muni: nextMuni });
-        if (enrichedBefore !== enrichedAfter) options.onEnrichmentChange?.(row.source, enrichedAfter ? 1 : -1, row.rowid);
+        if (enrichedBefore !== enrichedAfter) {
+          if (enrichedAfter) enriched++;
+          options.onEnrichmentChange?.(row.source, enrichedAfter ? 1 : -1, row.rowid);
+        }
         changed++;
       }
+      processed++;
+      report();
     }
   }
+  report(true);
   if (built) {
     const selectCurrent = db.prepare('SELECT rowid, raw, source, region, muni, field_id, field, group_id, grp, occ_id, occ FROM ads WHERE rowid = ?');
     for (const [rowid, before] of summaryOriginals) {
@@ -531,7 +555,7 @@ function migrateEmployerSummary(db) {
 
 function ensureLegacyEnrichment(db, onProgress) {
   if (db.prepare("SELECT 1 FROM meta WHERE key = 'legacy_enrichment_version' AND value = '1'").get()) return;
-  onProgress({ pct: 1, text: 'Enriching legacy records (one-time)…' });
+  onProgress({ phase: 'enrichment', pct: 0, text: 'Enriching data: scanning reference mappings…' });
   db.exec('BEGIN IMMEDIATE');
   try {
     db.exec("DELETE FROM meta WHERE key IN ('legacy_enrichment_version', 'summary_version'); DELETE FROM legacy_occ_map; DELETE FROM legacy_loc_map;");
@@ -546,6 +570,7 @@ function ensureLegacyEnrichment(db, onProgress) {
   const total = db.prepare('SELECT MAX(rowid) n FROM ads').get().n || 1;
   const affected = { occupations: new Set(), locations: new Set() };
   let last = 0;
+  let scanned = 0;
   for (;;) {
     const rows = batch.all(last);
     if (!rows.length) break;
@@ -568,16 +593,16 @@ function ensureLegacyEnrichment(db, onProgress) {
       throw error;
     }
     last = rows.at(-1).rowid;
-    onProgress({ pct: 1 + 75 * last / total, text: `Enriching legacy records (one-time): ${Math.round(100 * last / total)}%…` });
+    scanned += rows.length;
+    onProgress({ phase: 'enrichment', pct: 100 * last / total, text: `Enriching data: scanning reference mappings · ${scanned.toLocaleString('en-US')} ads checked…` });
   }
 
   db.exec('BEGIN IMMEDIATE');
   try {
-    onProgress({ pct: 80, text: 'Enriching legacy records: reconciling mappings…' });
     reconcileLegacyMappings(db, {
       occupations: [...affected.occupations],
       locations: [...affected.locations],
-    });
+    }, { onProgress });
     db.prepare("INSERT OR REPLACE INTO meta(key, value) VALUES ('legacy_enrichment_version', '1')").run();
     db.exec('COMMIT');
   } catch (error) {
@@ -588,7 +613,7 @@ function ensureLegacyEnrichment(db, onProgress) {
 
 function ensureSourceEnrichmentCounts(db, onProgress) {
   if (db.prepare("SELECT 1 FROM meta WHERE key = 'source_enrichment_count_version' AND value = '1'").get()) return;
-  onProgress({ pct: 1, text: 'Counting enriched ads by source (one-time)…' });
+  onProgress({ phase: 'enrichment', pct: null, text: 'Enriching data: counting enriched ads by source…' });
   const rows = db.prepare('SELECT raw, source, region, muni, field_id, field, group_id, grp, occ_id, occ FROM ads');
   const counts = new Map();
   db.exec('BEGIN IMMEDIATE');
@@ -599,10 +624,21 @@ function ensureSourceEnrichmentCounts(db, onProgress) {
     }
     db.exec('UPDATE sources SET enriched = 0');
     let processed = 0;
+    let enriched = 0;
+    let lastProgress = Date.now();
     for (const row of rows.iterate()) {
-      if (hasEnrichment(row)) counts.set(row.source, (counts.get(row.source) || 0) + 1);
-      if (++processed % 250000 === 0) onProgress({ pct: 1, text: `Counting enriched ads by source: ${processed.toLocaleString('en-US')} checked…` });
+      if (hasEnrichment(row)) {
+        counts.set(row.source, (counts.get(row.source) || 0) + 1);
+        enriched++;
+      }
+      if (++processed % 200 === 0 && Date.now() - lastProgress >= 250) {
+        lastProgress = Date.now();
+        onProgress({ phase: 'enrichment', pct: null, processed, enriched,
+          text: `Counting enriched ads: ${processed.toLocaleString('en-US')} checked · ${enriched.toLocaleString('en-US')} enriched` });
+      }
     }
+    onProgress({ phase: 'enrichment', pct: 100, processed, enriched,
+      text: `Counting enriched ads: ${processed.toLocaleString('en-US')} checked · ${enriched.toLocaleString('en-US')} enriched` });
     const update = db.prepare('UPDATE sources SET enriched = ? WHERE name = ?');
     for (const [source, count] of counts) update.run(count, source);
     db.prepare("INSERT OR REPLACE INTO meta(key, value) VALUES ('source_enrichment_count_version', '1')").run();
@@ -770,6 +806,7 @@ function reprocess(db, onProgress = () => {}) {
       locations: [...affected.locations],
     }, {
       onEnrichmentChange: (source, delta) => adjustSourceEnriched(db, source, delta),
+      onProgress: event => onProgress({ ...event, pct: 75 }),
     });
     for (const map of Object.values(acc)) map.clear();
     for (const row of scanRows(db, SCAN_SQL)) accAdd(acc, row);

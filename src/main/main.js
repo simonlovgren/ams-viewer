@@ -25,8 +25,18 @@ const DATA_EXT = /\.(jsonl|ndjson|json)$/i;
 const tasks = new Map();
 function sendTask(key, state, text = '', pct = null) {
   const task = { key, state, text, pct: Number.isFinite(pct) ? pct : null };
+  if (state !== 'running' && tasks.has(`${key}:enrichment`)) sendTask(`${key}:enrichment`, 'done');
   if (state === 'running') tasks.set(key, task); else tasks.delete(key);
   if (win && !win.isDestroyed()) win.webContents.send('task:event', task);
+}
+function sendWorkProgress(key, event) {
+  if (event.phase === 'enrichment') {
+    sendTask(key, 'running', key === 'import' ? 'Import in progress…' : 'Preparing dataset…');
+    sendTask(`${key}:enrichment`, 'running', event.text, event.pct);
+  } else {
+    if (tasks.has(`${key}:enrichment`)) sendTask(`${key}:enrichment`, 'done');
+    sendTask(key, 'running', event.text, event.pct);
+  }
 }
 const errorText = (error) => String(error?.message || error);
 
@@ -99,7 +109,10 @@ function startImport(files) {
   };
   w.on('message', (m) => {
     if (m.type === 'progress') {
-      sendTask('import', 'running', `Importing ${m.file} (file ${m.fileIndex + 1} of ${m.files})`, ((m.fileIndex + (m.pct || 0)) / m.files) * 100);
+      sendWorkProgress('import', m.phase === 'enrichment' ? { ...m, pct: null } : {
+        text: `Importing ${m.file} (file ${m.fileIndex + 1} of ${m.files})`,
+        pct: ((m.fileIndex + (m.pct || 0)) / m.files) * 100,
+      });
     }
     if (m.type === 'done' || m.type === 'error') { importing = false; finished = true; }
     if (m.type === 'done' || m.type === 'error') {
@@ -303,9 +316,10 @@ const sendSummary = (s) => {
 function ensureSummary() {
   if (buildBusy) return Promise.resolve();
   buildBusy = true;
+  sendTask('summary', 'running', 'Preparing dataset…');
   return build.request('ensure', {}, false, (p) => {
     sendSummary({ state: p.ready ? 'ready' : 'building', pct: p.pct, text: p.text });
-    sendTask('summary', 'running', p.text, p.pct);
+    sendWorkProgress('summary', p);
   })
     .then(() => {
       sendSummary({ state: 'ready' });
@@ -488,7 +502,13 @@ async function reprocessDataset(id) {
   try {
     const result = await build.request('reprocess', {}, false, (event) => {
       sendSummary({ state: 'building', text: event.text, pct: event.pct });
-      sendTask('reprocess', 'running', event.text, event.pct);
+      if (event.phase === 'enrichment') {
+        sendTask('reprocess', 'running', 'Reprocessing dataset…');
+        sendTask('reprocess:enrichment', 'running', event.text);
+      } else {
+        sendTask('reprocess:enrichment', 'done');
+        sendTask('reprocess', 'running', event.text, event.pct);
+      }
     });
     const info = await lists.request('info');
     datasets.updateStats(id, info);
@@ -500,6 +520,7 @@ async function reprocessDataset(id) {
     return { ok: false, error: errorText(error) };
   } finally {
     buildBusy = false;
+    sendTask('reprocess:enrichment', 'done');
     sendTask('reprocess', 'done');
   }
 }
