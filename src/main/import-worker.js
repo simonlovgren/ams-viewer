@@ -3,7 +3,7 @@ const { parentPort, workerData } = require('worker_threads');
 const fs = require('fs');
 const path = require('path');
 const { StringDecoder } = require('string_decoder');
-const { open, toRow, INSERT_SQL, isBuilt, newAcc, accAdd, accFlush, projectionValues, legacyReferences, adjustLegacyReferences, reconcileLegacyMappings } = require('./db');
+const { open, toRow, INSERT_SQL, isBuilt, newAcc, accAdd, accFlush, projectionValues, legacyReferences, adjustLegacyReferences, adjustSourceEnriched, reconcileLegacyMappings } = require('./db');
 
 const { dbPath, files } = workerData;
 const db = open(dbPath);
@@ -79,9 +79,12 @@ function firstChar(file) {
 }
 
 async function importFile(file, fileIndex) {
+  const started = Date.now();
   const name = path.basename(file);
   const size = fs.statSync(file).size;
-  const st = { type: 'progress', file: name, fileIndex, files: files.length, lines: 0, inserted: 0, skipped: 0, errors: 0, pct: 0 };
+  let sourceExists = !!db.prepare('SELECT 1 FROM sources WHERE name = ?').get(name);
+  let initialEnriched = 0;
+  const st = { type: 'progress', file: name, fileIndex, files: files.length, lines: 0, inserted: 0, skipped: 0, errors: 0, duration_ms: 0, pct: 0 };
   let last = 0;
   let pending = 0;
   const affected = { occupations: new Set(), locations: new Set() };
@@ -92,7 +95,13 @@ async function importFile(file, fileIndex) {
       reconcileLegacyMappings(db, {
         occupations: [...affected.occupations],
         locations: [...affected.locations],
-      }, { skipSummaryRows: new Set(inserted) });
+      }, {
+        skipSummaryRows: new Set(inserted),
+        onEnrichmentChange: (source, delta) => {
+          if (source === name && !sourceExists) initialEnriched += delta;
+          else adjustSourceEnriched(db, source, delta);
+        },
+      });
     }
     if (summary) {
       for (const rowid of inserted) accAdd(acc, projectionValues(selectProjection.get(rowid)));
@@ -107,6 +116,7 @@ async function importFile(file, fileIndex) {
     const now = Date.now();
     if (force || now - last > 250) {
       last = now;
+      st.duration_ms = Date.now() - started;
       parentPort.postMessage({ ...st });
     }
   };
@@ -160,10 +170,13 @@ async function importFile(file, fileIndex) {
     throw e;
   }
   const n = db.prepare('SELECT COUNT(*) n FROM ads WHERE source = ?').get(name).n;
+  st.duration_ms = Date.now() - started;
   db.prepare(
-    `INSERT INTO sources(name, path, ads, imported_at) VALUES (?,?,?,?)
-     ON CONFLICT(name) DO UPDATE SET ads = excluded.ads, path = excluded.path, imported_at = excluded.imported_at`
-  ).run(name, file, n, new Date().toISOString());
+    `INSERT INTO sources(name, path, ads, imported_at, duration_ms, inserted, skipped, errors, enriched) VALUES (?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(name) DO UPDATE SET ads = excluded.ads, path = excluded.path, imported_at = excluded.imported_at,
+       duration_ms = excluded.duration_ms, inserted = excluded.inserted, skipped = excluded.skipped, errors = excluded.errors`
+  ).run(name, file, n, new Date().toISOString(), st.duration_ms, st.inserted, st.skipped, st.errors, Math.max(0, initialEnriched));
+  sourceExists = true;
   st.pct = 1;
   emit(true);
   parentPort.postMessage({ ...st, type: 'file-done' });

@@ -7,7 +7,7 @@ Planned work that is specified but not started, plus active tasks. Each task lin
 | T1 | Done: vertically resizable filter widgets | UI-010 | S |
 | T2 | Done: collapsible filter widgets and chart | UI-011, UI-007, SRC-017 | S |
 | T3 | Live-updating import file list | DAT-013 | S |
-| T4 | Import statistics per file (time, duplicates, errors) | DAT-014 | M |
+| T4 | Done: latest-run import statistics and static enriched-ad counts | DAT-014 | M |
 | T5 | Geographical hotspot view | SRC-019 | L |
 | T6 | Full-scale performance of filtering, counts and statistics (lower priority since startup is fixed; [plan](full-scale-performance-plan.md)) | NFR-003, NFR-004, NFR-005 | L |
 | T7 | Done: monospace typography and top-level Settings | UI-012, UI-016, NAV-009 | S |
@@ -25,7 +25,7 @@ Planned work that is specified but not started, plus active tasks. Each task lin
 | T19 | Done: file-based themes, light palette and Appearance chooser | UI-002, UI-003, UI-024, UI-025, UI-026, UI-027, UI-028, UI-029 | L |
 | T20 | Done: generated third-party license inventory and dedicated reading view | NFR-011, UI-030 | M |
 
-T12 completed 2026-10-31 (D58). T15–T17 completed 2026-10-18 (D39–D42). T7, T2, T13, T14, T1, T8 and T9 are complete (D26–D28, D31, D34–D36, D43–D44). T9 uses the statistics bar; T5 remains planned, with no placeholder shown. T3 goes with T4; T10 is independent. T6 follows the [full-scale performance plan](full-scale-performance-plan.md); filtered T9 latency on the full database remains unmeasured. T12 full-scale migration cost and cross-quarter reference comparison remain unverified.
+T12 completed 2026-10-31 (D58). T15–T17 completed 2026-10-18 (D39–D42). T7, T2, T13, T14, T1, T8 and T9 are complete (D26–D28, D31, D34–D36, D43–D44). T9 uses the statistics bar; T5 remains planned, with no placeholder shown. T3 remains planned independently of T4; T10 is independent. T6 follows the [full-scale performance plan](full-scale-performance-plan.md); filtered T9 latency on the full database remains unmeasured. T12 full-scale migration cost and cross-quarter reference comparison remain unverified.
 
 ## T1. Done: vertically resizable filter widgets (UI-010)
 - Completed 2026-10-16; D34. Scope broadened to all six filter widgets at the user's request. Drag each bottom divider to resize the widget above; keyboard Up/Down and Home/End also work.
@@ -45,11 +45,10 @@ T12 completed 2026-10-31 (D58). T15–T17 completed 2026-10-18 (D39–D42). T7, 
 - Watch out: the code that restores `importState` after `renderData()` is a workaround; a targeted table update removes the need for it.
 
 ## T4. Import statistics per file (DAT-014)
-- Show per file: elapsed time, duplicates (skipped), errors (and added count).
-- The worker already counts `inserted`, `skipped` and `errors` and emits them in `file-done`; elapsed time must be measured in the worker.
-- Schema change: add columns to `sources` (`duration_ms`, `skipped`, `errors`, maybe `size_bytes`) with an `ALTER TABLE` migration at open time (existing rows stay null and show as "n/a"); record a decision (new D with DAT-014).
-- Re-importing a file overwrites its row; decide whether to keep a history (suggest: no, latest run only).
-- Also useful: show the same figures live for the running import.
+- Completed 2026-10-31; D61. Store latest-run `duration_ms`, `inserted`, `skipped` and `errors`, plus a static current `enriched` count on each source row. Existing rows keep null import-run values and display `n/a`; only an import of that source creates or replaces them.
+- `enriched` counts current source ads whose promoted taxonomy/location fields contain values absent from immutable `raw`. Initialize once from stored records and maintain transitions during import, source removal and reprocessing. It is not a per-import count and does not appear in live progress.
+- Datasets table distinguishes current source ad total (`Ads`), latest-run inserts (`Added`) and current enriched ads. T3's live source-list refresh remains separate and planned.
+- Regression coverage includes old-schema migration, latest-run metrics, static count initialization, import-order independence, conflict/removal/reprocess transitions and renderer display. All 126 tests, changed-file syntax checks and `git diff --check` pass. Full-scale count initialization/import overhead and visual fit remain unverified; shared browser server was unavailable.
 
 ## T5. Geographical hotspot view (SRC-019)
 - Goal: in the right statistics bar, a map-like view of where the filtered ads are, as a hotspot/heat overlay, following all active filters like the chart (which stays in the filter column).

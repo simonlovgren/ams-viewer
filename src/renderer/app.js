@@ -124,6 +124,13 @@
   const countFormat = new Intl.NumberFormat('en-GB', { notation: 'compact', maximumFractionDigits: 1 });
   const fmtCount = (n) => countFormat.format(Number(n || 0)).replace('K', 'k');
   const countHtml = (n) => `<span title="${fmtNum(n)}">${fmtCount(n)}</span>`;
+  const fmtDuration = (ms) => {
+    if (ms == null || !Number.isFinite(Number(ms))) return 'n/a';
+    const seconds = Math.round(Number(ms) / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    return `${minutes}m ${String(seconds % 60).padStart(2, '0')}s`;
+  };
   function setCount(selector, n, suffix = '') {
     const el = $(selector);
     el.textContent = fmtCount(n) + suffix;
@@ -1519,6 +1526,9 @@
     if (datasetEditor && curView === 'data') return;
     const rows = info.sources.map((s) => `<tr><td>${icon('database').replace('<svg', '<svg style="vertical-align:-3px;margin-right:6px;color:var(--teal)"')}${esc(s.name)}</td>
       <td class="r">${countHtml(s.ads)}</td><td>${esc((s.imported_at || '').slice(0, 10))}</td>
+      <td class="r">${s.inserted == null ? 'n/a' : countHtml(s.inserted)}</td>
+      <td class="r">${esc(fmtDuration(s.duration_ms))}</td><td class="r">${s.skipped == null ? 'n/a' : countHtml(s.skipped)}</td>
+      <td class="r">${s.errors == null ? 'n/a' : countHtml(s.errors)}</td><td class="r">${s.enriched == null ? 'n/a' : countHtml(s.enriched)}</td>
       <td class="r"><button class="btn sec danger" data-rm="${esc(s.name)}">${icon('trash')}Remove</button></td></tr>`).join('');
     $('#data').innerHTML = `
       <div class="dataset-heading-row"><div class="dataset-heading-copy"><h1><button id="dataset-name" class="dataset-name" type="button" aria-label="Edit dataset name">${esc(activeDataset.name)}</button></h1>
@@ -1538,7 +1548,7 @@
         <button class="btn sec" id="dataset-reprocess" type="button"${reprocessBusy ? ' disabled' : ''}>${icon('database')}Reprocess dataset</button>
       </div>
       <div id="progress"></div>
-      ${info.sources.length ? `<table><thead><tr><th>File</th><th class="r">Ads</th><th>Imported</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : ''}`;
+      ${info.sources.length ? `<div class="source-table-wrap" role="region" aria-label="Imported file statistics" tabindex="0"><table><thead><tr><th>File</th><th class="r">Ads</th><th>Imported</th><th class="r">Added</th><th class="r">Duration</th><th class="r">Duplicates</th><th class="r">Errors</th><th class="r">Enriched ads</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}`;
     hydrateIcons($('#data'));
     renderProgress();
   }
@@ -1678,7 +1688,7 @@
     const overall = ((s.fileIndex + (s.pct || 0)) / s.files) * 100;
     el.innerHTML = `<div class="progress"><b>${esc(s.file)}</b> <span style="color:var(--muted)">(file ${s.fileIndex + 1} of ${s.files})</span>
       <div class="bar"><i style="width:${overall.toFixed(1)}%"></i></div>
-      <small style="color:var(--muted)">${countHtml(s.inserted)} added · ${countHtml(s.skipped)} duplicates · ${countHtml(s.errors)} errors</small></div>`;
+      <small style="color:var(--muted)">${fmtDuration(s.duration_ms)} · ${countHtml(s.inserted)} added · ${countHtml(s.skipped)} duplicates · ${countHtml(s.errors)} errors</small></div>`;
   }
 
   async function startImport(promise) {
@@ -1687,7 +1697,7 @@
       importState = { type: 'error', message: r.error || 'Could not start import' };
       renderProgress();
     } else if (r && r.ok) {
-      importState = { type: 'progress', file: '…', fileIndex: 0, files: r.count, inserted: 0, skipped: 0, errors: 0, pct: 0 };
+      importState = { type: 'progress', file: '…', fileIndex: 0, files: r.count, inserted: 0, skipped: 0, errors: 0, duration_ms: 0, pct: 0 };
       renderProgress();
     }
   }

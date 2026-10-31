@@ -40,7 +40,12 @@ CREATE TABLE IF NOT EXISTS sources (
   name TEXT PRIMARY KEY,
   path TEXT,
   ads INTEGER DEFAULT 0,
-  imported_at TEXT
+  imported_at TEXT,
+  duration_ms INTEGER,
+  inserted INTEGER,
+  skipped INTEGER,
+  errors INTEGER,
+  enriched INTEGER
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS sum_occ (
@@ -64,6 +69,22 @@ function open(path) {
   // busy_timeout first: opening several connections at once on a WAL database that needs recovery otherwise fails with SQLITE_BUSY.
   db.exec('PRAGMA busy_timeout=30000; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;');
   db.exec(SCHEMA);
+  const sourceColumns = new Set(db.prepare('PRAGMA table_info(sources)').all().map(column => column.name));
+  const sourceStats = ['duration_ms', 'inserted', 'skipped', 'errors', 'enriched'];
+  if (!sourceStats.every(name => sourceColumns.has(name))) {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const currentSourceColumns = new Set(db.prepare('PRAGMA table_info(sources)').all().map(column => column.name));
+      for (const name of sourceStats) {
+        if (!currentSourceColumns.has(name)) db.exec(`ALTER TABLE sources ADD COLUMN ${name} INTEGER`);
+      }
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      db.close();
+      throw error;
+    }
+  }
   const columns = db.prepare('PRAGMA table_info(ads)').all().map(column => column.name);
   if (!['employer_id', 'legacy_occ_id', 'legacy_muni_code'].every(name => columns.includes(name))) {
     db.exec('BEGIN IMMEDIATE');
@@ -211,22 +232,39 @@ function adjustLegacyReferences(db, references, direction = 1) {
   }
 }
 
+const ENRICHED_FIELDS = [[6, 'region'], [7, 'muni'], [8, 'field_id'], [9, 'field'], [10, 'group_id'], [11, 'grp'], [12, 'occ_id'], [13, 'occ']];
+function hasEnrichment(row) {
+  const baseline = toRow(JSON.parse(row.raw), row.source).values;
+  return ENRICHED_FIELDS.some(([index, column]) => baseline[index] == null && row[column] != null);
+}
+
+function adjustSourceEnriched(db, source, delta) {
+  db.prepare('UPDATE sources SET enriched = MAX(0, COALESCE(enriched, 0) + ?) WHERE name = ?').run(delta, source);
+}
+
 function reconcileLegacyMappings(db, affected = {}, options = {}) {
   let changed = 0;
   const built = isBuilt(db);
   const skippedRows = options.skipSummaryRows || new Set();
   const summaryBefore = newAcc();
   const summaryAfter = newAcc();
+  const summaryOriginals = new Map();
+  const rememberSummaryOriginal = row => {
+    if (built && !skippedRows.has(row.rowid) && !summaryOriginals.has(row.rowid)) {
+      summaryOriginals.set(row.rowid, projectionValues(row));
+    }
+  };
   const occupationMaps = db.prepare('SELECT tuple FROM legacy_occ_map WHERE legacy_id = ? AND n > 0');
   const locationMaps = db.prepare('SELECT tuple FROM legacy_loc_map WHERE municipality_code = ? AND n > 0');
-  const occupationRows = db.prepare('SELECT rowid, raw, source, field_id, field, group_id, grp, occ_id, occ FROM ads WHERE legacy_occ_id = ?');
-  const locationRows = db.prepare('SELECT rowid, raw, source, region, muni FROM ads WHERE legacy_muni_code = ?');
+  const occupationRows = db.prepare('SELECT rowid, raw, source, region, muni, field_id, field, group_id, grp, occ_id, occ FROM ads WHERE legacy_occ_id = ?');
+  const locationRows = db.prepare('SELECT rowid, raw, source, region, muni, field_id, field, group_id, grp, occ_id, occ FROM ads WHERE legacy_muni_code = ?');
   const updateTaxonomy = db.prepare('UPDATE ads SET field_id = ?, field = ?, group_id = ?, grp = ?, occ_id = ?, occ = ? WHERE rowid = ?');
   const updateLocation = db.prepare('UPDATE ads SET region = ?, muni = ? WHERE rowid = ?');
   for (const id of new Set(affected.occupations || [])) {
     const mappings = occupationMaps.all(id).map(row => JSON.parse(row.tuple));
     const mapping = mappings.length === 1 ? mappings[0] : null;
     for (const row of occupationRows.iterate(id)) {
+      const enrichedBefore = hasEnrichment(row);
       const baseline = toRow(JSON.parse(row.raw), row.source).values.slice(8, 14);
       const next = [...baseline];
       if (mapping) {
@@ -237,14 +275,10 @@ function reconcileLegacyMappings(db, affected = {}, options = {}) {
       }
       const current = [row.field_id, row.field, row.group_id, row.grp, row.occ_id, row.occ];
       if (next.some((value, index) => value !== current[index])) {
-        const before = projectionValues(row);
-        const after = [...before];
-        for (let index = 0; index < next.length; index++) after[index + 8] = next[index];
+        rememberSummaryOriginal(row);
         updateTaxonomy.run(...next, row.rowid);
-        if (built && !skippedRows.has(row.rowid)) {
-          accAdd(summaryBefore, before);
-          accAdd(summaryAfter, after);
-        }
+        const enrichedAfter = hasEnrichment({ ...row, field_id: next[0], field: next[1], group_id: next[2], grp: next[3], occ_id: next[4], occ: next[5] });
+        if (enrichedBefore !== enrichedAfter) options.onEnrichmentChange?.(row.source, enrichedAfter ? 1 : -1, row.rowid);
         changed++;
       }
     }
@@ -256,24 +290,25 @@ function reconcileLegacyMappings(db, affected = {}, options = {}) {
     const municipality = municipalities.size === 1 ? [...municipalities][0] : null;
     const region = regions.size === 1 ? [...regions][0] : null;
     for (const row of locationRows.iterate(code)) {
+      const enrichedBefore = hasEnrichment(row);
       const baseline = toRow(JSON.parse(row.raw), row.source).values;
       const nextRegion = baseline[6] === null && region ? region : baseline[6];
       const nextMuni = baseline[7] === null && municipality ? municipality : baseline[7];
       if (nextRegion !== row.region || nextMuni !== row.muni) {
-        const before = projectionValues(row);
-        const after = [...before];
-        after[6] = nextRegion;
-        after[7] = nextMuni;
+        rememberSummaryOriginal(row);
         updateLocation.run(nextRegion, nextMuni, row.rowid);
-        if (built && !skippedRows.has(row.rowid)) {
-          accAdd(summaryBefore, before);
-          accAdd(summaryAfter, after);
-        }
+        const enrichedAfter = hasEnrichment({ ...row, region: nextRegion, muni: nextMuni });
+        if (enrichedBefore !== enrichedAfter) options.onEnrichmentChange?.(row.source, enrichedAfter ? 1 : -1, row.rowid);
         changed++;
       }
     }
   }
   if (built) {
+    const selectCurrent = db.prepare('SELECT rowid, raw, source, region, muni, field_id, field, group_id, grp, occ_id, occ FROM ads WHERE rowid = ?');
+    for (const [rowid, before] of summaryOriginals) {
+      accAdd(summaryBefore, before);
+      accAdd(summaryAfter, projectionValues(selectCurrent.get(rowid)));
+    }
     accFlush(db, summaryBefore, -1);
     accFlush(db, summaryAfter);
   }
@@ -551,10 +586,38 @@ function ensureLegacyEnrichment(db, onProgress) {
   }
 }
 
+function ensureSourceEnrichmentCounts(db, onProgress) {
+  if (db.prepare("SELECT 1 FROM meta WHERE key = 'source_enrichment_count_version' AND value = '1'").get()) return;
+  onProgress({ pct: 1, text: 'Counting enriched ads by source (one-time)…' });
+  const rows = db.prepare('SELECT raw, source, region, muni, field_id, field, group_id, grp, occ_id, occ FROM ads');
+  const counts = new Map();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    if (db.prepare("SELECT 1 FROM meta WHERE key = 'source_enrichment_count_version' AND value = '1'").get()) {
+      db.exec('COMMIT');
+      return;
+    }
+    db.exec('UPDATE sources SET enriched = 0');
+    let processed = 0;
+    for (const row of rows.iterate()) {
+      if (hasEnrichment(row)) counts.set(row.source, (counts.get(row.source) || 0) + 1);
+      if (++processed % 250000 === 0) onProgress({ pct: 1, text: `Counting enriched ads by source: ${processed.toLocaleString('en-US')} checked…` });
+    }
+    const update = db.prepare('UPDATE sources SET enriched = ? WHERE name = ?');
+    for (const [source, count] of counts) update.run(count, source);
+    db.prepare("INSERT OR REPLACE INTO meta(key, value) VALUES ('source_enrichment_count_version', '1')").run();
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 // One pass over all ads; slow on millions of rows (minutes), so it runs once in the background.
 // Indexes for the employment and hours filters are created afterwards.
 function ensureSummary(db, onProgress = () => {}) {
   ensureLegacyEnrichment(db, onProgress);
+  ensureSourceEnrichmentCounts(db, onProgress);
   if (!db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'index' AND name = 'ix_legacy_occ_id'").get()) {
     onProgress({ pct: 1, text: 'Indexing legacy occupation IDs…' });
     db.exec('CREATE INDEX IF NOT EXISTS ix_legacy_occ_id ON ads(legacy_occ_id);');
@@ -681,6 +744,7 @@ function reprocess(db, onProgress = () => {}) {
   try {
     migrateEmployerSummary(db);
     db.prepare("DELETE FROM meta WHERE key = 'summary_version'").run();
+    db.exec('UPDATE sources SET enriched = 0');
     db.exec('DELETE FROM legacy_occ_map; DELETE FROM legacy_loc_map;');
     db.exec("INSERT INTO ads_fts(ads_fts) VALUES ('delete-all')");
     for (;;) {
@@ -704,6 +768,8 @@ function reprocess(db, onProgress = () => {}) {
     reconcileLegacyMappings(db, {
       occupations: [...affected.occupations],
       locations: [...affected.locations],
+    }, {
+      onEnrichmentChange: (source, delta) => adjustSourceEnriched(db, source, delta),
     });
     for (const map of Object.values(acc)) map.clear();
     for (const row of scanRows(db, SCAN_SQL)) accAdd(acc, row);
@@ -928,7 +994,7 @@ function info(db) {
   const t = isBuilt(db)
     ? db.prepare('SELECT MIN(day) mn, MAX(day) mx FROM sum_day').get()
     : db.prepare('SELECT MIN(pub_date) mn, MAX(pub_date) mx FROM ads').get();
-  const sources = db.prepare('SELECT name, ads, imported_at FROM sources ORDER BY name').all().map((r) => ({ ...r }));
+  const sources = db.prepare('SELECT name, ads, imported_at, duration_ms, inserted, skipped, errors, enriched FROM sources ORDER BY name').all().map((r) => ({ ...r }));
   return { total: totalAds(db), min: t.mn, max: t.mx, sources };
 }
 
@@ -959,6 +1025,8 @@ function removeSource(db, name) {
     reconcileLegacyMappings(db, {
       occupations: [...affected.occupations],
       locations: [...affected.locations],
+    }, {
+      onEnrichmentChange: (source, delta) => adjustSourceEnriched(db, source, delta),
     });
     db.exec('COMMIT');
   } catch (e) {
@@ -969,7 +1037,7 @@ function removeSource(db, name) {
 
 module.exports = {
   reprocess,
-  open, toRow, projectionValues, INSERT_SQL, legacyReferences, adjustLegacyReferences, reconcileLegacyMappings,
+  open, toRow, projectionValues, INSERT_SQL, legacyReferences, adjustLegacyReferences, adjustSourceEnriched, reconcileLegacyMappings,
   search, count, facets, timeline, getAd, info, datasetStats, removeSource,
   isBuilt, ensureSummary, newAcc, accAdd, accFlush,
 };

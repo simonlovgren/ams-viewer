@@ -61,8 +61,11 @@ ads_fts USING fts5(headline, employer, body,
   content='', contentless_delete=1,
   tokenize='unicode61 remove_diacritics 2')   -- rowid = ads.rowid
 
-sources(name TEXT PRIMARY KEY, path TEXT, ads INTEGER, imported_at TEXT)
-meta(key PRIMARY KEY, value)                    -- summary_version = '2', employer_identity_version = '1', legacy_enrichment_version = '1' once ready
+sources(
+  name TEXT PRIMARY KEY, path TEXT, ads INTEGER, imported_at TEXT,
+  duration_ms INTEGER, inserted INTEGER, skipped INTEGER, errors INTEGER, enriched INTEGER
+) -- latest run metrics; enriched is current derived count
+meta(key PRIMARY KEY, value)                    -- summary_version = '2', employer_identity_version = '1', legacy_enrichment_version = '1', source_enrichment_count_version = '1' once ready
 sum_occ(field_id, field, group_id, grp, occ_id, occ, n)  -- PK (field_id, group_id, occ_id)
 sum_loc(region, muni, n)   sum_year(year, n)   sum_emp(v, n)   sum_hours(v, n)   sum_day(day, n)
 sum_employer(org_id, v, n) -- PK (org_id,v): organization/name variant counts; missing ID stored as ''
@@ -70,6 +73,12 @@ employer_catalog(org_id, name_key, v, n) -- PK (org_id,name_key): precomputed re
 legacy_occ_map(legacy_id, tuple, n)      -- complete modern taxonomy candidates and contribution counts
 legacy_loc_map(municipality_code, tuple, n) -- municipality/region candidates and contribution counts
 ```
+
+### Import-run statistics (DAT-014, D61)
+
+`duration_ms`, `inserted`, `skipped` and `errors` describe only the source's latest import run; re-import overwrites these values, with no history. They remain `NULL` for pre-existing sources until they are imported again, and the Datasets view shows `n/a`. `ads` is the current number of ads owned by that source, distinct from latest-run `inserted`.
+
+`enriched` is a static current count of that source's ads with at least one promoted taxonomy/location value missing from immutable `raw` but present in the current projection. A one-time build-worker scan initializes counts for existing stored ads and sets `source_enrichment_count_version = '1'`; this is not an import-stat backfill. Import, source removal and reprocessing update counts transactionally as ads enter or leave the enriched state. Datasets displays this count as `Enriched ads`; live import progress omits it because it is not a run counter.
 
 ### Indexes
 

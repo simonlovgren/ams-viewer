@@ -291,6 +291,8 @@ mark.ad-match.current { outline: 2px solid var(--theme-find-current-background);
 .drop.over { border-color: var(--teal); background: var(--theme-drop-target-background); color: var(--text); }
 .drop .btn { margin-top: 12px; }
 table { width: 100%; border-collapse: collapse; margin-top: 18px; }
+.source-table-wrap { max-width: 100%; overflow-x: auto; }
+.source-table-wrap table { min-width: 760px; }
 th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
 td.r, th.r { text-align: right; }

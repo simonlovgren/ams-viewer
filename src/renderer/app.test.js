@@ -284,6 +284,48 @@ test('compact counts retain exact hover values and round across units', () => {
   assert.match(evaluate('countHtml(11252350)'), /title="11,252,350">11.3M/);
 });
 
+test('import duration formats seconds and migrated missing values', () => {
+  const evaluate = rendererContext();
+  for (const [value, expected] of [[null, 'n/a'], [0, '0s'], [59000, '59s'], [60000, '1m 00s'], [65000, '1m 05s']]) {
+    assert.equal(evaluate(`fmtDuration(${value})`), expected);
+  }
+});
+
+test('datasets table and live import progress show stored and current metrics', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const data = { innerHTML: '' };
+  const progress = { innerHTML: '' };
+  const context = vm.createContext({
+    api: {
+      info: async () => ({ total: 3, min: '2026-01-01', max: '2026-12-31', sources: [
+        { name: 'legacy.jsonl', ads: 1, imported_at: '2025-01-01', duration_ms: null, skipped: null, errors: null, enriched: null },
+        { name: 'new.jsonl', ads: 2, imported_at: '2026-10-31', duration_ms: 65000, inserted: 2, skipped: 3, errors: 4, enriched: 5 },
+      ] }),
+      datasets: async () => ({ active: { id: 'active', name: 'Dataset', description: '' } }),
+    },
+    $: selector => selector === '#data' ? data : selector === '#progress' ? progress : { textContent: '' },
+    esc: value => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
+    icon: () => '<svg></svg>', countHtml: value => `<span>${value}</span>`,
+    setCount() {}, hydrateIcons() {}, renderProgress() {},
+  });
+  const durationCode = source.slice(source.indexOf('  const fmtDuration ='), source.indexOf('  function setCount('));
+  const dataCode = source.slice(source.indexOf('  async function renderData()'), source.indexOf('  function applyDatasetChange('));
+  vm.runInContext(`${durationCode}let dataRenderSeq = 0; let activeDataset = null; let datasetHistoryBoundary = false; let datasetContextId = null; let datasetEditor = null; let reprocessBusy = false; let curView = 'data';\n${dataCode}`, context);
+  await vm.runInContext('renderData()', context);
+  assert.match(data.innerHTML, /<th class="r">Duration<\/th>/);
+  assert.match(data.innerHTML, /<th class="r">Duplicates<\/th>/);
+  assert.match(data.innerHTML, /<th class="r">Enriched ads<\/th>/);
+  assert.match(data.innerHTML, /class="source-table-wrap" role="region" aria-label="Imported file statistics" tabindex="0"/);
+  assert.match(data.innerHTML, /legacy\.jsonl[\s\S]*?n\/a[\s\S]*?n\/a[\s\S]*?n\/a[\s\S]*?n\/a/);
+  assert.match(data.innerHTML, /new\.jsonl[\s\S]*?<span>2<\/span>[\s\S]*?1m 05s[\s\S]*?<span>3<\/span>[\s\S]*?<span>4<\/span>[\s\S]*?<span>5<\/span>/);
+
+  const progressCode = source.slice(source.indexOf('  function renderProgress()'), source.indexOf('  async function startImport('));
+  vm.runInContext(`let importState = { type: 'progress', file: 'new.jsonl', fileIndex: 0, files: 1, inserted: 2, skipped: 3, errors: 4, enriched: 5, duration_ms: 65000, pct: 0.5 };\n${progressCode}renderProgress()`, context);
+  assert.match(progress.innerHTML, /1m 05s/);
+  assert.match(progress.innerHTML, /2<\/span> added/);
+  assert.doesNotMatch(progress.innerHTML, /enriched/);
+});
+
 test('top employers render escaped names, compact counts and full-name tooltips', () => {
   const employerWidget = { innerHTML: '' };
   const evaluate = rendererContext({ querySelectorAll: () => [] }, { $: selector => selector === '#widget-employers' ? employerWidget : null });

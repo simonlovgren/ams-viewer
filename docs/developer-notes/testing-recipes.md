@@ -2,6 +2,9 @@
 
 Count logic has headless regression tests; visual layout still needs manual review.
 
+## Latest import statistics (DAT-014 / D61)
+`node --test --test-name-pattern='source import-stat migration|import metrics include|legacy enrichment backfills|manual reprocessing restores|import duration|datasets table and live import' src/main/db.test.js src/renderer/app.test.js` covers nullable legacy import metrics, static enrichment-count initialization and transitions across import order, conflicts, source removal and reprocessing, duration formatting and table/progress rendering. The complete suite passes 126 tests (2026-10-31). A browser visual check was unavailable because the shared local server refused connections; full-scale initialization/import overhead is unmeasured.
+
 ## Ad source inspection (AD-012, D60)
 `node --test --test-name-pattern='ad source|source route|source view shares|source JSON find' src/main/db.test.js src/main/dataset-catalog.test.js src/renderer/app.test.js` covers immutable source/additions-only responses, ID-less ads, taxonomy array positions, sender/ID/dataset validation, page-icon/header rendering, escaped pretty-print/highlighting, hidden empty-enrichment panels, all Back inputs, forward/history/list-scroll retention, shared find shortcuts, JSON match cycling/clearing, missing ads, stale replies and recoverable read failures.
 

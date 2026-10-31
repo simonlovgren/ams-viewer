@@ -9,10 +9,12 @@ const dbm = require('./db');
 
 function runImport(dbPath, files) {
   return new Promise((resolve, reject) => {
+    const messages = [];
     const worker = new Worker(path.join(__dirname, 'import-worker.js'), { workerData: { dbPath, files } });
     worker.on('message', message => {
+      messages.push(message);
       if (message.type === 'error') reject(new Error(`${path.basename(files[0])}: ${message.message}`));
-      if (message.type === 'done') resolve();
+      if (message.type === 'done') resolve(messages);
     });
     worker.on('error', reject);
     worker.on('exit', code => { if (code && code !== 0) reject(new Error(`Import worker exited ${code}`)); });
@@ -36,6 +38,91 @@ test('opening an existing database adds indexed legacy-key columns', () => {
     assert.ok(indexes.has('ix_legacy_muni_code'));
   } finally {
     db.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('source import-stat migration leaves existing source metrics unset', () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'ams-source-stats-'));
+  const file = path.join(directory, 'ads.db');
+  let db = dbm.open(file);
+  try {
+    db.exec('ALTER TABLE sources DROP COLUMN duration_ms; ALTER TABLE sources DROP COLUMN inserted; ALTER TABLE sources DROP COLUMN skipped; ALTER TABLE sources DROP COLUMN errors; ALTER TABLE sources DROP COLUMN enriched;');
+    db.prepare('INSERT INTO sources(name, path, ads, imported_at) VALUES (?, ?, ?, ?)').run('legacy.jsonl', '/old/legacy.jsonl', 12, '2025-01-01');
+    db.close();
+    db = dbm.open(file);
+    const source = db.prepare('SELECT * FROM sources WHERE name = ?').get('legacy.jsonl');
+    assert.deepEqual({ ...source }, {
+      name: 'legacy.jsonl', path: '/old/legacy.jsonl', ads: 12, imported_at: '2025-01-01',
+      duration_ms: null, inserted: null, skipped: null, errors: null, enriched: null,
+    });
+  } finally {
+    db.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('import metrics include enrichment effects without backfilling older source stats', async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'ams-import-stats-'));
+  const file = path.join(directory, 'ads.db');
+  const olderFile = path.join(directory, 'older.jsonl');
+  const referenceFile = path.join(directory, 'reference.jsonl');
+  const duplicateFile = path.join(directory, 'duplicate.jsonl');
+  const older = { id: 'older', occupation: { legacy_ams_taxonomy_id: '7788' }, workplace_address: { municipality_code: '0180' } };
+  const reference = {
+    id: 'reference',
+    occupation: { concept_id: 'occ-1', label: 'Engineer', legacy_ams_taxonomy_id: '7788' },
+    occupation_group: { concept_id: 'group-1', label: 'Engineering' },
+    occupation_field: { concept_id: 'field-1', label: 'Technology' },
+    workplace_address: { municipality_code: '0180', municipality: 'Stockholm', region: 'Stockholms län' },
+  };
+  writeFileSync(olderFile, `${JSON.stringify(older)}\n`);
+  writeFileSync(referenceFile, `${JSON.stringify(reference)}\nnot-json\n`);
+  writeFileSync(duplicateFile, `${JSON.stringify(reference)}\n`);
+  try {
+    let db = dbm.open(file);
+    db.prepare('INSERT INTO sources(name, path, ads, imported_at) VALUES (?, ?, ?, ?)').run('legacy.jsonl', '/old/legacy.jsonl', 12, '2025-01-01');
+    db.close();
+
+    const olderMessages = await runImport(file, [olderFile]);
+    const olderDone = olderMessages.find(message => message.type === 'file-done');
+    assert.equal(olderDone.inserted, 1);
+    assert.equal(olderDone.skipped, 0);
+    assert.equal(olderDone.errors, 0);
+    assert.equal('enriched' in olderDone, false);
+    assert.ok(olderDone.duration_ms >= 0);
+
+    const referenceMessages = await runImport(file, [referenceFile]);
+    const referenceDone = referenceMessages.find(message => message.type === 'file-done');
+    assert.equal(referenceDone.inserted, 1);
+    assert.equal(referenceDone.skipped, 0);
+    assert.equal(referenceDone.errors, 1);
+    assert.equal('enriched' in referenceDone, false);
+
+    const duplicateMessages = await runImport(file, [duplicateFile]);
+    const duplicateDone = duplicateMessages.find(message => message.type === 'file-done');
+    assert.equal(duplicateDone.inserted, 0);
+    assert.equal(duplicateDone.skipped, 1);
+    assert.equal(duplicateDone.errors, 0);
+    assert.equal('enriched' in duplicateDone, false);
+
+    db = dbm.open(file);
+    try {
+      dbm.ensureSummary(db);
+      const sources = Object.fromEntries(db.prepare('SELECT name, duration_ms, inserted, skipped, errors, enriched FROM sources').all().map(row => [row.name, { ...row }]));
+      assert.deepEqual(sources['legacy.jsonl'], { name: 'legacy.jsonl', duration_ms: null, inserted: null, skipped: null, errors: null, enriched: 0 });
+      assert.equal(sources['older.jsonl'].enriched, 1);
+      assert.equal(sources['older.jsonl'].inserted, 1);
+      assert.equal(sources['older.jsonl'].skipped, 0);
+      assert.equal(sources['reference.jsonl'].errors, 1);
+      assert.equal(sources['reference.jsonl'].enriched, 0);
+      assert.equal(sources['duplicate.jsonl'].skipped, 1);
+      assert.equal(sources['duplicate.jsonl'].enriched, 0);
+      const listed = dbm.info(db).sources.find(source => source.name === 'reference.jsonl');
+      assert.equal(listed.inserted, 1);
+      assert.equal(listed.enriched, 0);
+    } finally { db.close(); }
+  } finally {
     rmSync(directory, { recursive: true, force: true });
   }
 });
@@ -106,6 +193,7 @@ test('legacy enrichment backfills existing ads and follows imports, conflicts an
       assert.equal(db.prepare('SELECT n FROM legacy_occ_map WHERE legacy_id = ?').get('7788').n, 1);
       assert.equal(dbm.facets(db, {}).occ[0].n, 2);
       assert.equal(stockholmCount(db), 2);
+      assert.equal(db.prepare("SELECT enriched FROM sources WHERE name = 'older.jsonl'").get().enriched, 1);
       const detail = dbm.getAd(db, 'older');
       assert.deepEqual(detail.occupation, reference.occupation);
       assert.deepEqual(detail.occupation_group, reference.occupation_group);
@@ -123,6 +211,8 @@ test('legacy enrichment backfills existing ads and follows imports, conflicts an
       dbm.ensureSummary(db);
       const reverse = db.prepare("SELECT field_id, occ, region, muni FROM ads WHERE ad_id = 'older'").get();
       assert.deepEqual({ ...reverse }, { field_id: 'field-1', occ: 'Engineer', region: 'Stockholms län', muni: 'Stockholm' });
+      assert.equal(db.prepare("SELECT enriched FROM sources WHERE name = 'older.jsonl'").get().enriched, 1);
+      assert.equal(db.prepare("SELECT enriched FROM sources WHERE name = 'reference.jsonl'").get().enriched, 0);
     } finally { db.close(); }
 
     const originalRaw = older;
@@ -140,7 +230,9 @@ test('legacy enrichment backfills existing ads and follows imports, conflicts an
       assert.deepEqual({ ...restored }, { field_id: 'field-1', occ: 'Engineer', region: 'Stockholms län', muni: 'Stockholm' });
       assert.equal(dbm.facets(db, {}).occ[0].n, 2);
       assert.equal(stockholmCount(db), 2);
+      assert.equal(db.prepare("SELECT enriched FROM sources WHERE name = 'older.jsonl'").get().enriched, 1);
       dbm.reprocess(db);
+      assert.equal(db.prepare("SELECT enriched FROM sources WHERE name = 'older.jsonl'").get().enriched, 1);
       const rebuilt = db.prepare("SELECT field_id, occ, region, muni FROM ads WHERE ad_id = 'older'").get();
       assert.deepEqual({ ...rebuilt }, { field_id: 'field-1', occ: 'Engineer', region: 'Stockholms län', muni: 'Stockholm' });
       assert.equal(db.prepare('SELECT n FROM legacy_occ_map WHERE legacy_id = ?').get('7788').n, 1);
@@ -148,6 +240,7 @@ test('legacy enrichment backfills existing ads and follows imports, conflicts an
       assert.equal(dbm.getAd(db, 'older').occupation.label, 'Engineer');
       dbm.removeSource(db, 'reference.jsonl');
       assert.deepEqual(dbm.getAd(db, 'older'), older);
+      assert.equal(db.prepare("SELECT enriched FROM sources WHERE name = 'older.jsonl'").get().enriched, 0);
     } finally { db.close(); }
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -440,8 +533,8 @@ test('manual reprocessing restores all projections, FTS, summaries, source count
       employment_type: [{ label: 'Permanent' }], working_hours_type: [{ label: 'Full time' }],
     };
     db.prepare(dbm.INSERT_SQL).run(...dbm.toRow(ad, 'test.jsonl').values);
-    db.prepare("INSERT INTO sources VALUES ('test.jsonl', '/missing/test.jsonl', 77, '2026-01-01')").run();
-    db.prepare("INSERT INTO sources VALUES ('empty.jsonl', '/missing/empty.jsonl', 9, '2026-01-02')").run();
+    db.prepare("INSERT INTO sources(name, path, ads, imported_at) VALUES ('test.jsonl', '/missing/test.jsonl', 77, '2026-01-01')").run();
+    db.prepare("INSERT INTO sources(name, path, ads, imported_at) VALUES ('empty.jsonl', '/missing/empty.jsonl', 9, '2026-01-02')").run();
     dbm.ensureSummary(db);
     db.exec(`UPDATE ads SET ad_id = 'preserved-id', headline = 'Stale', year = 2000, employer = 'Stale',
       field = 'Stale', occ_id = NULL, emp_type = NULL, hours = NULL;
@@ -465,6 +558,7 @@ test('manual reprocessing restores all projections, FTS, summaries, source count
     assert.equal(dbm.datasetStats(db).total, 1);
     assert.deepEqual({ ...db.prepare("SELECT * FROM sources WHERE name = 'test.jsonl'").get() }, {
       name: 'test.jsonl', path: '/missing/test.jsonl', ads: 1, imported_at: '2026-01-01',
+      duration_ms: null, inserted: null, skipped: null, errors: null, enriched: 0,
     });
     assert.equal(db.prepare("SELECT ads FROM sources WHERE name = 'empty.jsonl'").get().ads, 0);
     assert.equal(db.prepare("SELECT COUNT(*) n FROM sqlite_stat1 WHERE idx = 'ix_employer'").get().n, 1);
