@@ -1,6 +1,6 @@
 # Project state and preferences
 
-Last updated: 2026-10-18.
+Last updated: 2026-10-31.
 
 ## User preferences
 - 2026-10-18: prefer explicit manual exclusion of erroneous ads over silent import-time date culling (user-reported 2099 dates). Planned as DAT-025/T18; no implementation yet.
@@ -15,6 +15,7 @@ Last updated: 2026-10-18.
 - App name is **AMS Viewer** (`ams-viewer`). The workspace folder is still `ams_oldbrowser`.
 
 ## Implemented highlights
+- 2026-10-31: D56/NFR-011/UI-030 adds generated package license texts, Electron's MIT license, and all 779 Chromium project notices in Settings. Generator/loader/renderer tests pass; Linux unpacked build contains the manifest and Chromium report. Browser fixture verifies headings, isolation and 960x600/1400x900 fit. Full 20 MB Chromium DOM and native UI interaction, AppImage/Windows/macOS builds remain unverified.
 - 2026-10-29: T19 complete (D51-D54, UI-002/003/UI-024-029); see [theming reference](../theming.md). Theme is first in Appearance, label left/name button right. User prefers compact Settings: 450 px content cap and 30 px name-button height. Self-themed/fonted previews support immediate selection, isolated file actions, safe confirmation and unavailable-entry removal. All 98 tests and browser keyboard/workflow/size/font checks pass; native DOM-driven chooser/removal/focus and theme/font restart passed in two normally closed disposable launches. Physical native keyboard, OS Open/Save interaction, startup flashing/full-dataset behavior remain unverified. Live data untouched. Good commit point for completed stage 5.
 - 2026-10-18: UI-023/D50 adds per-widget dimmed refresh overlays for Ads over time and Top employers, plus shared top progress until count/facets/timeline settle. Request identity tokens protect newer loading feedback from old finalizers. All 71 tests and disposable Electron startup pass; browser layout/collapse/resize and cross-view completion/error checks pass. Native full-dataset interaction remains unverified; query performance is unchanged.
 - 2026-10-18: DAT-026/D49 adds confirmed manual reprocessing in Datasets. The build worker regenerates projections, FTS, summaries, source counts, indexes and planner statistics atomically from stored raw ads, preserving identity/source metadata. Top progress persists across views; failures show both modal and dismissible status notice. All 68 tests and disposable Electron startup pass; browser fixture checks modal and injected notices. Live dataset untouched; native rebuild interaction and full-scale time/disk use unverified. Future notification guidance is in this directory's README.

@@ -178,6 +178,45 @@ test('Theme is the first Appearance row with a name button rather than a switch'
   assert.match(css, /\.theme-name-button \{[^}]*min-height: 30px; padding: 3px 12px/);
 });
 
+test('Settings exposes accessible third-party license notices', () => {
+  const html = readFileSync(require.resolve('./index.html'), 'utf8');
+  assert.match(html, /aria-labelledby="licenses-title"/);
+  assert.match(html, /<h2 id="licenses-title">Third-party licenses<\/h2>/);
+  assert.match(html, /<iframe id="chromium-notices"[^>]*title="Chromium and bundled third-party license notices"[^>]*sandbox=""/);
+  assert.match(html, /referrerpolicy="no-referrer"/);
+});
+
+test('license renderer uses text nodes and isolates Chromium notices from network and scripts', () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const code = source.slice(source.indexOf('  function chromiumNoticesDocument'), source.indexOf('  let licensesLoaded = false;'));
+  const roots = new Map();
+  const makeNode = (tagName) => ({
+    tagName,
+    children: [],
+    hidden: false,
+    append(...children) { this.children.push(...children); },
+    replaceChildren(...children) { this.children = children; },
+    set textContent(value) { this.text = value; },
+    get textContent() { return this.text || ''; },
+  });
+  for (const selector of ['#third-party-components', '#chromium-notices', '#chromium-license-section', '#licenses-status']) roots.set(selector, makeNode(selector));
+  const context = vm.createContext({ $, document: { createElement: makeNode } });
+  function $(selector) { return roots.get(selector); }
+  vm.runInContext(code, context);
+  context.renderThirdPartyLicenses({
+    components: [{ name: '<runtime>', version: '1.0', license: 'MIT', texts: [{ file: 'LICENSE', text: '<script>not markup</script>' }] }],
+    chromiumNoticesHtml: '<html><head></head><body><div class="product"><span class="title">Chromium component</span><div class="license"><pre>Full text</pre></div></div></body></html>',
+  });
+  const component = roots.get('#third-party-components').children[0];
+  assert.equal(component.children[0].textContent, '<runtime> 1.0');
+  assert.equal(component.children[3].textContent, '<script>not markup</script>');
+  assert.match(roots.get('#chromium-notices').srcdoc, /<h3 class="title">Chromium component<\/h3>/);
+  assert.match(roots.get('#chromium-notices').srcdoc, /default-src 'none'; script-src 'none'/);
+  assert.match(roots.get('#chromium-notices').srcdoc, /pointer-events:none/);
+  assert.equal(roots.get('#chromium-license-section').hidden, false);
+  assert.equal(roots.get('#licenses-status').hidden, true);
+});
+
 test('theme panel clicks select while disabled and file-action clicks stay isolated', async () => {
   const fixture = themeChooserContext();
   await fixture.evaluate('openThemeChooser()');

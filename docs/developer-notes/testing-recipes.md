@@ -2,6 +2,11 @@
 
 Count logic has headless regression tests; visual layout still needs manual review.
 
+## Third-party licenses (NFR-011 / UI-030 / D56)
+`node --test src/main/generate-licenses.test.js src/main/third-party-licenses.test.js src/renderer/app.test.js` covers production versus dev-only dependencies, multiple license/notice files, missing-license failures, Electron resource layouts, safe text rendering and the sandboxed Chromium document.
+
+`npm run licenses` generates `build/third-party-licenses.json`; `npm run pack` additionally verifies electron-builder copies it to `dist/linux-unpacked/resources/third-party-licenses.json`. The bundled `LICENSES.chromium.html` is at `dist/linux-unpacked/` on Linux, adjacent to `resources/`; do not copy it into the manifest. The real report has 779 projects and is about 20 MB.
+
 ## Theme contract and dark parity (T19 / D51)
 Stage 5 (D54): the full command below passes 98 tests. Chooser fixtures test escaped previews, matching fonts/colors, protected/unavailable actions, independent panel/select/export/delete routes, stale opening responses, duplicate work, errors, focus retention and final Appearance-row markup/compact dimensions. Browser checks cover native Enter/Space/Escape, Tab containment, blocked background shortcuts/mouse navigation, import success/cancel/error and confirmed/canceled deletion with mocked file operations. Eight chooser geometry cases and 12 Appearance-row cases cover both sizes/themes/fonts plus long names; screenshots reviewed. Final layout is 450 px Settings content and a 30 px theme-name button.
 

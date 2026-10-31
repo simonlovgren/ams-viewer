@@ -23,6 +23,7 @@ Planned work that is specified but not started, plus active tasks. Each task lin
 | T17 | Done: Dataset chooser, statistics, switching and deletion | DAT-017, DAT-018, DAT-020, DAT-021, DAT-023, DAT-024 | M |
 | T18 | Manually report and exclude erroneous ads | DAT-025 | M |
 | T19 | Done: file-based themes, light palette and Appearance chooser | UI-002, UI-003, UI-024, UI-025, UI-026, UI-027, UI-028, UI-029 | L |
+| T20 | Done: generated third-party license inventory and Settings section | NFR-011, UI-030 | M |
 
 T15–T17 completed 2026-10-18 (D39–D42). T7, T2, T13, T14, T1, T8 and T9 are complete (D26–D28, D31, D34–D36, D43–D44). T9 uses the statistics bar; T5 remains planned, with no placeholder shown. T3 goes with T4; T10 is independent. T6 follows the [full-scale performance plan](full-scale-performance-plan.md); filtered T9 latency on the full database remains unmeasured.
 
@@ -169,6 +170,11 @@ T15–T17 completed 2026-10-18 (D39–D42). T7, T2, T13, T14, T1, T8 and T9 are 
 - [x] Stage 4: custom-library import/export/removal, generated-ID storage, legacy catalog compatibility and reusable renderer confirmation/error actions implemented (D53). All 93 tests pass, covering bounded/unsafe input, protected defaults, duplicates, cancellation, rollback, corruption and interrupted deletion. Two disposable native launches verify custom startup, preview data, built-in protection, active deletion fallback and dark restart with normal exits. Actual native Open/Save dialogs and chooser interaction remain unverified; live data untouched.
 - [x] Stage 5: Theme is first under Appearance, with label left/name button right; Settings caps at 450 px and button at 30 px minimum height (user revisions, D54). Chooser has self-themed/fonted panels, swatches, check/pressed state, protected defaults and separate import/download/trash controls. All 98 tests pass. Browser keyboard/file-action/confirmation/error/focus workflows and eight chooser plus 12 Appearance geometry cases pass; screenshots reviewed. Native DOM-driven chooser/removal/focus and theme/font restart pass in two normally closed disposable launches. Physical native keyboard, OS Open/Save interaction, startup flashing and full-dataset interaction remain unverified; live data untouched.
 - All five stages are complete. Remaining manual caveats are recorded in [theming verification](theming.md#staged-verification), not pending implementation.
+
+## T20. Done: Generated third-party licenses (NFR-011, UI-030)
+- Completed 2026-10-31; D56. `npm start`, `npm run pack` and `npm run dist` generate a packaged manifest from installed production package-lock entries; missing license metadata/text or Electron notices fail generation. Electron is included despite being a dev dependency; build-only tools are excluded.
+- Settings lists every package with all root license/notice texts and displays Electron's bundled 779-project Chromium report in an isolated offline frame without copying its ~20 MB source.
+- All 111 tests pass; Linux unpacked packaging contains the generated manifest and Chromium report. Browser fixture verifies component headings, text-node safety, sandboxing and no horizontal overflow at 960x600 and 1400x900. Full Chromium DOM rendering, native interaction, AppImage/Windows/macOS builds remain unverified.
 
 ## Other open items (not requirements yet)
 - Re-import `2016.jsonl` (shows 0 ads) and import the remaining files.

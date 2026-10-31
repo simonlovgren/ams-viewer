@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('api', {
   importTheme: () => ipcRenderer.invoke('themes:import'),
   exportTheme: (id) => ipcRenderer.invoke('themes:export', id),
   deleteTheme: (id) => ipcRenderer.invoke('themes:delete', id),
+  licenses: () => ipcRenderer.invoke('licenses:get'),
   onTheme: (cb) => ipcRenderer.on('theme:changed', (_e, theme) => cb(theme)),
   appReady: () => ipcRenderer.send('app:ready'),
   onCloseRequest: (cb) => ipcRenderer.on('app:close-request', () => cb()),

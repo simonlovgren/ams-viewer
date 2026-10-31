@@ -292,6 +292,61 @@
   });
   applySettings();
 
+  function chromiumNoticesDocument(html) {
+    if (typeof html !== 'string' || !html.includes('class="product"') || !/<head[^>]*>/i.test(html)) {
+      throw new Error('Bundled Chromium license notices are invalid');
+    }
+    const policy = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'\">";
+    const style = '<style>body{margin:0;padding:12px;color:CanvasText;background:Canvas;font:13px/1.5 monospace;color-scheme:light dark}.product{padding:10px 0;border-bottom:1px solid ButtonBorder}.title{display:block;margin:0 0 6px;font-size:1.1em;font-weight:700;overflow-wrap:anywhere}.homepage,.show{display:none}.license{margin:8px 0}.license pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}a{pointer-events:none;color:inherit;text-decoration:none}</style>';
+    return html.replace(/<head[^>]*>/i, (head) => head + policy + style)
+      .replace(/<span class="title">([\s\S]*?)<\/span>/g, '<h3 class="title">$1</h3>');
+  }
+
+  function renderThirdPartyLicenses(bundle) {
+    const root = $('#third-party-components');
+    root.replaceChildren();
+    for (const component of bundle.components) {
+      const section = document.createElement('section');
+      section.className = 'license-component';
+      const heading = document.createElement('h3');
+      heading.textContent = `${component.name} ${component.version}`;
+      section.append(heading);
+      const expression = document.createElement('p');
+      expression.className = 'license-expression';
+      expression.textContent = `Declared license: ${component.license}`;
+      section.append(expression);
+      for (const item of component.texts) {
+        const label = document.createElement('h4');
+        label.textContent = item.file;
+        const text = document.createElement('pre');
+        text.className = 'license-text';
+        text.textContent = item.text;
+        section.append(label, text);
+      }
+      root.append(section);
+    }
+    $('#chromium-notices').srcdoc = chromiumNoticesDocument(bundle.chromiumNoticesHtml);
+    $('#chromium-license-section').hidden = false;
+    $('#licenses-status').hidden = true;
+  }
+
+  let licensesLoaded = false;
+  let licensesLoading = false;
+  async function loadThirdPartyLicenses() {
+    if (licensesLoaded || licensesLoading || typeof api.licenses !== 'function') return;
+    licensesLoading = true;
+    $('#licenses-status').textContent = 'Loading license notices…';
+    try {
+      renderThirdPartyLicenses(await api.licenses());
+      licensesLoaded = true;
+    } catch (error) {
+      $('#licenses-status').textContent = 'License notices could not be loaded.';
+      showError('licenses', `Could not load license notices: ${String(error?.message || error)}`);
+    } finally {
+      licensesLoading = false;
+    }
+  }
+
   /* ---------- navigation / history ---------- */
   let idx = 0;
   let curView = 'list';
@@ -307,6 +362,7 @@
     if (view === 'list') $('#list-scroll').scrollTop = listScroll;
     if (view === 'ad') loadAd(id);
     if (view === 'data') renderData();
+    if (view === 'settings' && typeof loadThirdPartyLicenses === 'function') loadThirdPartyLicenses();
   }
   async function nav(view, id) {
     if (view === curView && view !== 'ad') return;

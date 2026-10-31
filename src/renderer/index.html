@@ -144,6 +144,15 @@
               <input id="setting-monospace" class="setting-switch" type="checkbox" role="switch" checked />
             </label>
           </section>
+          <section class="settings-section" aria-labelledby="licenses-title">
+            <h2 id="licenses-title">Third-party licenses</h2>
+            <p id="licenses-status" role="status">License notices load when this section is opened.</p>
+            <div id="third-party-components"></div>
+            <section id="chromium-license-section" hidden>
+              <h3>Chromium and bundled projects</h3>
+              <iframe id="chromium-notices" title="Chromium and bundled third-party license notices" sandbox="" referrerpolicy="no-referrer"></iframe>
+            </section>
+          </section>
         </div>
       </div>
     </section>

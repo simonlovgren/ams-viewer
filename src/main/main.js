@@ -6,6 +6,7 @@ const { Worker } = require('worker_threads');
 const { randomUUID } = require('crypto');
 const datasetCatalog = require('./dataset-catalog');
 const themeCatalog = require('./theme-catalog');
+const thirdPartyLicenses = require('./third-party-licenses');
 let currentTheme;
 
 ipcMain.on('theme:current', (event) => { event.returnValue = currentTheme; });
@@ -625,6 +626,16 @@ function registerHandlers() {
     } finally { sendTask(key, 'done'); }
   };
   ipcMain.handle('themes:list', () => ({ themes: themes.list(), activeId: themes.activeId() }));
+  ipcMain.handle('licenses:get', async (event) => {
+    if (event.sender !== win?.webContents) throw new Error('License notices require the main window');
+    const manifestPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'third-party-licenses.json')
+      : path.resolve(__dirname, '../../build/third-party-licenses.json');
+    const electronDistPath = app.isPackaged
+      ? null
+      : path.join(path.dirname(require.resolve('electron/package.json')), 'dist');
+    return thirdPartyLicenses.load({ manifestPath, resourcesPath: process.resourcesPath, electronDistPath });
+  });
   ipcMain.handle('themes:activate', async (event, id) => {
     assertThemeWindow(event);
     try {
