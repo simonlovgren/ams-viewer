@@ -25,7 +25,7 @@ Planned work that is specified but not started, plus active tasks. Each task lin
 | T19 | Done: file-based themes, light palette and Appearance chooser | UI-002, UI-003, UI-024, UI-025, UI-026, UI-027, UI-028, UI-029 | L |
 | T20 | Done: generated third-party license inventory and dedicated reading view | NFR-011, UI-030 | M |
 
-T12 completed 2026-10-31 (D58). T15–T17 completed 2026-10-18 (D39–D42). T7, T2, T13, T14, T1, T8 and T9 are complete (D26–D28, D31, D34–D36, D43–D44). T9 uses the statistics bar; T5 remains planned, with no placeholder shown. T3 remains planned independently of T4; T10 is independent. T6 follows the [full-scale performance plan](full-scale-performance-plan.md); filtered T9 latency on the full database remains unmeasured. T12 full-scale migration cost and cross-quarter reference comparison remain unverified.
+T3 completed 2026-10-31 (D63). T12 completed 2026-10-31 (D58). T15–T17 completed 2026-10-18 (D39–D42). T7, T2, T13, T14, T1, T8 and T9 are complete (D26–D28, D31, D34–D36, D43–D44). T9 uses the statistics bar; T5 remains planned, with no placeholder shown. T3 remains independent of T4; T10 is independent. T6 follows the [full-scale performance plan](full-scale-performance-plan.md); filtered T9 latency on the full database remains unmeasured. T12 full-scale migration cost and cross-quarter reference comparison remain unverified.
 
 ## T1. Done: vertically resizable filter widgets (UI-010)
 - Completed 2026-10-16; D34. Scope broadened to all six filter widgets at the user's request. Drag each bottom divider to resize the widget above; keyboard Up/Down and Home/End also work.
@@ -39,10 +39,9 @@ T12 completed 2026-10-31 (D58). T15–T17 completed 2026-10-18 (D39–D42). T7, 
 - Nine renderer tests passed. Browser fixture verified reload persistence, keyboard controls, badges, drag resizing and non-overlapping 310 px layout at 960x600 and 1400x900 in both font modes. Electron startup passed against 11.25M ads; actual quit/relaunch preference retention not manually tested.
 
 ## T3. Live-updating import file list (DAT-013)
-- Today `renderData()` runs on the data view and after import completion; per-file completion (`file-done`) is ignored, so the list changes only at the very end.
-- On each `file-done` event, refresh the sources table (and totals) without re-rendering the whole view or the progress panel; also when a file is removed.
-- Consider also updating the row of the file currently importing (ads added so far) from progress events.
-- Watch out: the code that restores `importState` after `renderData()` is a workaround; a targeted table update removes the need for it.
+- Completed 2026-10-31; D63. Refresh source rows and dataset total/source-count/year labels on each `file-done` event, final completion and source removal. Only the source-list contents and count labels change; the Datasets view and progress panel stay mounted.
+- Active-file counts update at the next file boundary or final completion, not on every progress event. The old `importState` save/restore workaround after full rendering is removed.
+- Verification: renderer syntax checks, all renderer tests and the complete `node --test` suite pass; `git diff --check` passes. Native import interaction and visual layout remain unverified.
 
 ## T4. Import statistics per file (DAT-014)
 - Completed 2026-10-31; D61. Store latest-run `duration_ms`, `inserted`, `skipped` and `errors`, plus a static current `enriched` count on each source row. Existing rows keep null import-run values and display `n/a`; only an import of that source creates or replaces them.

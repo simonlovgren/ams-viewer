@@ -2,6 +2,9 @@
 
 Count logic has headless regression tests; visual layout still needs manual review.
 
+## Live import file list (DAT-013 / D63)
+`node --test --test-name-pattern='import completion and source removal refresh datasets in place|source removal requires confirmation' src/renderer/app.test.js` covers targeted table/totals refresh at file completion, import completion and removal, while asserting the Datasets view and progress panel remain mounted. `node --check src/renderer/app.js && node --check src/renderer/app.test.js && node --test` passes the complete Node suite. Native import interaction and visual behavior remain unverified.
+
 ## Latest import statistics (DAT-014 / D61)
 `node --test --test-name-pattern='source import-stat migration|import metrics include|legacy enrichment backfills|manual reprocessing restores|import duration|datasets table and live import' src/main/db.test.js src/renderer/app.test.js` covers nullable legacy import metrics, static enrichment-count initialization and transitions across import order, conflicts, source removal and reprocessing, duration formatting and table/progress rendering. The complete suite passes 126 tests (2026-10-31). A browser visual check was unavailable because the shared local server refused connections; full-scale initialization/import overhead is unmeasured.
 

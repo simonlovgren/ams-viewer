@@ -1435,6 +1435,7 @@
   let activeDataset = null;
   let datasetEditor = null;
   let dataRenderSeq = 0;
+  let sourceRefreshSeq = 0;
   let reprocessBusy = false;
 
   function renderDatasetEditor() {
@@ -1516,20 +1517,26 @@
     return saveDatasetEditor();
   }
 
+  function sourceTableHtml(sources) {
+    if (!sources.length) return '';
+    const rows = sources.map((s) => `<tr><td>${icon('database').replace('<svg', '<svg style="vertical-align:-3px;margin-right:6px;color:var(--teal)"')}${esc(s.name)}</td>
+      <td class="r">${countHtml(s.ads)}</td><td>${esc((s.imported_at || '').slice(0, 10))}</td>
+      <td class="r">${s.inserted == null ? 'n/a' : countHtml(s.inserted)}</td>
+      <td class="r">${esc(fmtDuration(s.duration_ms))}</td><td class="r">${s.skipped == null ? 'n/a' : countHtml(s.skipped)}</td>
+      <td class="r">${s.errors == null ? 'n/a' : countHtml(s.errors)}</td><td class="r">${s.enriched == null ? 'n/a' : countHtml(s.enriched)}</td>
+      <td class="r"><button class="btn sec danger" data-rm="${esc(s.name)}">${icon('trash')}Remove</button></td></tr>`).join('');
+    return `<div class="source-table-wrap" role="region" aria-label="Imported file statistics" tabindex="0"><table><thead><tr><th>File</th><th class="r">Ads</th><th>Imported</th><th class="r">Added</th><th class="r">Duration</th><th class="r">Duplicates</th><th class="r">Errors</th><th class="r">Enriched ads</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
   async function renderData() {
     const sequence = ++dataRenderSeq;
+    sourceRefreshSeq++;
     const [info, catalog] = await Promise.all([api.info(), api.datasets()]);
     if (sequence !== dataRenderSeq) return;
     activeDataset = catalog.active;
     if (!datasetHistoryBoundary) datasetContextId = activeDataset.id;
     setCount('#side-total', info.total, ' ads');
     if (datasetEditor && curView === 'data') return;
-    const rows = info.sources.map((s) => `<tr><td>${icon('database').replace('<svg', '<svg style="vertical-align:-3px;margin-right:6px;color:var(--teal)"')}${esc(s.name)}</td>
-      <td class="r">${countHtml(s.ads)}</td><td>${esc((s.imported_at || '').slice(0, 10))}</td>
-      <td class="r">${s.inserted == null ? 'n/a' : countHtml(s.inserted)}</td>
-      <td class="r">${esc(fmtDuration(s.duration_ms))}</td><td class="r">${s.skipped == null ? 'n/a' : countHtml(s.skipped)}</td>
-      <td class="r">${s.errors == null ? 'n/a' : countHtml(s.errors)}</td><td class="r">${s.enriched == null ? 'n/a' : countHtml(s.enriched)}</td>
-      <td class="r"><button class="btn sec danger" data-rm="${esc(s.name)}">${icon('trash')}Remove</button></td></tr>`).join('');
     $('#data').innerHTML = `
       <div class="dataset-heading-row"><div class="dataset-heading-copy"><h1><button id="dataset-name" class="dataset-name" type="button" aria-label="Edit dataset name">${esc(activeDataset.name)}</button></h1>
         <div id="dataset-meta" class="dataset-meta">${activeDataset.description ? esc(activeDataset.description) : ''}</div></div>
@@ -1537,9 +1544,9 @@
           <button id="dataset-swap" class="icon-btn" type="button" aria-label="Swap dataset" title="Swap dataset"><span data-i="layers"></span></button></div></div>
       <div style="color:var(--muted)">Import JSONL / JSON ad files. Several files can be selected at once; ads already present are skipped.</div>
       <div class="stats">
-        <div class="stat"><b>${countHtml(info.total)}</b><small>ads stored</small></div>
-        <div class="stat"><b>${countHtml(info.sources.length)}</b><small>source files</small></div>
-        <div class="stat"><b>${info.min ? esc(info.min.slice(0, 4)) + ' – ' + esc(info.max.slice(0, 4)) : '–'}</b><small>years covered</small></div>
+        <div class="stat"><b id="dataset-total">${countHtml(info.total)}</b><small>ads stored</small></div>
+        <div class="stat"><b id="dataset-source-count">${countHtml(info.sources.length)}</b><small>source files</small></div>
+        <div class="stat"><b id="dataset-years">${info.min ? esc(info.min.slice(0, 4)) + ' – ' + esc(info.max.slice(0, 4)) : '–'}</b><small>years covered</small></div>
       </div>
       <div class="drop" id="drop">${icon('upload').replace('<svg', '<svg style="width:32px;height:32px;color:var(--purple)"')}
         <div style="margin-top:8px">Drop .jsonl / .ndjson / .json files here</div>
@@ -1548,9 +1555,25 @@
         <button class="btn sec" id="dataset-reprocess" type="button"${reprocessBusy ? ' disabled' : ''}>${icon('database')}Reprocess dataset</button>
       </div>
       <div id="progress"></div>
-      ${info.sources.length ? `<div class="source-table-wrap" role="region" aria-label="Imported file statistics" tabindex="0"><table><thead><tr><th>File</th><th class="r">Ads</th><th>Imported</th><th class="r">Added</th><th class="r">Duration</th><th class="r">Duplicates</th><th class="r">Errors</th><th class="r">Enriched ads</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}`;
+      <div id="source-list">${sourceTableHtml(info.sources)}</div>`;
     hydrateIcons($('#data'));
     renderProgress();
+  }
+
+  async function refreshDataSources() {
+    const sequence = ++sourceRefreshSeq;
+    try {
+      const info = await api.info();
+      if (sequence !== sourceRefreshSeq) return;
+      setCount('#side-total', info.total, ' ads');
+      if (curView !== 'data' || !$('#source-list')) return;
+      setCount('#dataset-total', info.total);
+      setCount('#dataset-source-count', info.sources.length);
+      $('#dataset-years').textContent = info.min ? `${info.min.slice(0, 4)} – ${info.max.slice(0, 4)}` : '–';
+      $('#source-list').innerHTML = sourceTableHtml(info.sources);
+    } catch (error) {
+      console.error('Could not refresh imported files:', error);
+    }
   }
 
   function applyDatasetChange(dataset) {
@@ -1702,14 +1725,20 @@
     }
   }
 
-  api.onImport((m) => {
-    importState = m.type === 'file-done' ? importState : m;
+  async function handleImportMessage(m) {
+    if (m.type === 'file-done') {
+      if (curView === 'data') await refreshDataSources();
+      return;
+    }
+    importState = m;
     if (m.type === 'done' || m.type === 'error') {
-      api.info().then((i) => setCount('#side-total', i.total, ' ads'));
-      if (curView === 'data') { const keep = importState; renderData().then(() => { importState = keep; renderProgress(); }); }
+      if (curView === 'data') await refreshDataSources();
+      else api.info().then((i) => setCount('#side-total', i.total, ' ads'));
+      if (curView === 'data') renderProgress();
       reload();
     } else renderProgress();
-  });
+  }
+  api.onImport(handleImportMessage);
 
   const dataEl = $('#data');
   $('#dataset-dialog').addEventListener('cancel', (event) => {
@@ -1764,7 +1793,7 @@
         await showMessage({ title: 'Removal failed', message: error.message || 'Could not remove data source.' });
         return;
       }
-      await renderData();
+      await refreshDataSources();
       reload();
     }
   });

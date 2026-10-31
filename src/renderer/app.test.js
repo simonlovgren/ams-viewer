@@ -309,8 +309,8 @@ test('datasets table and live import progress show stored and current metrics', 
     setCount() {}, hydrateIcons() {}, renderProgress() {},
   });
   const durationCode = source.slice(source.indexOf('  const fmtDuration ='), source.indexOf('  function setCount('));
-  const dataCode = source.slice(source.indexOf('  async function renderData()'), source.indexOf('  function applyDatasetChange('));
-  vm.runInContext(`${durationCode}let dataRenderSeq = 0; let activeDataset = null; let datasetHistoryBoundary = false; let datasetContextId = null; let datasetEditor = null; let reprocessBusy = false; let curView = 'data';\n${dataCode}`, context);
+  const dataCode = source.slice(source.indexOf('  function sourceTableHtml('), source.indexOf('  function applyDatasetChange('));
+  vm.runInContext(`${durationCode}let dataRenderSeq = 0; let sourceRefreshSeq = 0; let activeDataset = null; let datasetHistoryBoundary = false; let datasetContextId = null; let datasetEditor = null; let reprocessBusy = false; let curView = 'data';\n${dataCode}`, context);
   await vm.runInContext('renderData()', context);
   assert.match(data.innerHTML, /<th class="r">Duration<\/th>/);
   assert.match(data.innerHTML, /<th class="r">Duplicates<\/th>/);
@@ -324,6 +324,93 @@ test('datasets table and live import progress show stored and current metrics', 
   assert.match(progress.innerHTML, /1m 05s/);
   assert.match(progress.innerHTML, /2<\/span> added/);
   assert.doesNotMatch(progress.innerHTML, /enriched/);
+});
+
+test('import completion and source removal refresh datasets in place', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const elements = new Map();
+  const element = selector => {
+    if (!elements.has(selector)) elements.set(selector, { innerHTML: '', textContent: '', title: '', listeners: new Map(), addEventListener(name, listener) { this.listeners.set(name, listener); } });
+    return elements.get(selector);
+  };
+  const data = element('#data');
+  const progress = element('#progress');
+  const sourceList = element('#source-list');
+  const counters = new Map();
+  let info = { total: 11, min: '2021-01-01', max: '2025-12-31', sources: [
+    { name: 'new.jsonl', ads: 11, imported_at: '2026-10-31', inserted: 11, duration_ms: 1000, skipped: 0, errors: 0, enriched: 0 },
+  ] };
+  let importListener;
+  let reloads = 0;
+  let progressRenders = 0;
+  let removed = null;
+  const context = vm.createContext({
+    api: {
+      info: async () => info,
+      onImport: listener => { importListener = listener; },
+      removeSource: async name => {
+        removed = name;
+        info = { total: 0, min: null, max: null, sources: [] };
+        return { ok: true };
+      },
+    },
+    $: selector => element(selector),
+    setCount: (selector, value, suffix = '') => {
+      const target = element(selector);
+      target.textContent = `${value}${suffix}`;
+      counters.set(selector, value);
+    },
+    fmtNum: value => String(value),
+    fmtDuration: value => value == null ? 'n/a' : `${value}ms`,
+    countHtml: value => `<span>${value}</span>`,
+    esc: value => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
+    icon: () => '<svg></svg>',
+    hydrateIcons() {},
+    renderProgress: () => { progressRenders++; progress.innerHTML = 'finished'; },
+    reload: () => { reloads++; },
+    showMessage: async () => true,
+    window: { addEventListener() {} },
+    console,
+  });
+  const durationCode = source.slice(source.indexOf('  const fmtDuration ='), source.indexOf('  function setCount('));
+  const dataCode = source.slice(source.indexOf('  function sourceTableHtml('), source.indexOf('  function applyDatasetChange('));
+  const handlerStart = source.indexOf('  async function handleImportMessage(');
+  const handlerEnd = source.indexOf('  api.onImport(handleImportMessage);', handlerStart) + '  api.onImport(handleImportMessage);'.length;
+  const listenerStart = source.indexOf("  dataEl.addEventListener('input'");
+  const listenerCode = source.slice(listenerStart, source.indexOf('  const columns =', listenerStart));
+  vm.runInContext(`${durationCode}let dataRenderSeq = 0; let sourceRefreshSeq = 0; let activeDataset = null; let datasetHistoryBoundary = false; let datasetContextId = null; let datasetEditor = null; let reprocessBusy = false; let curView = 'data'; let importState = { type: 'progress' };\n${dataCode}\n${source.slice(handlerStart, handlerEnd)}`, context);
+  vm.runInContext("const dataEl = $('#data');", context);
+  vm.runInContext(listenerCode, context);
+  data.innerHTML = 'mounted Datasets view';
+  progress.innerHTML = 'current progress';
+
+  await importListener({ type: 'file-done' });
+  assert.match(sourceList.innerHTML, /new\.jsonl/);
+  assert.equal(counters.get('#side-total'), 11);
+  assert.equal(counters.get('#dataset-total'), 11);
+  assert.equal(counters.get('#dataset-source-count'), 1);
+  assert.equal(element('#dataset-years').textContent, '2021 – 2025');
+  assert.equal(data.innerHTML, 'mounted Datasets view');
+  assert.equal(progress.innerHTML, 'current progress');
+  assert.equal(progressRenders, 0);
+  assert.equal(reloads, 0);
+
+  await importListener({ type: 'done' });
+  assert.equal(data.innerHTML, 'mounted Datasets view');
+  assert.equal(progress.innerHTML, 'finished');
+  assert.equal(progressRenders, 1);
+  assert.equal(reloads, 1);
+
+  await element('#data').listeners.get('click')({ target: { closest: selector => selector === '[data-rm]' ? { dataset: { rm: 'new.jsonl' } } : null } });
+  assert.equal(removed, 'new.jsonl');
+  assert.equal(sourceList.innerHTML, '');
+  assert.equal(counters.get('#side-total'), 0);
+  assert.equal(counters.get('#dataset-total'), 0);
+  assert.equal(counters.get('#dataset-source-count'), 0);
+  assert.equal(element('#dataset-years').textContent, '–');
+  assert.equal(data.innerHTML, 'mounted Datasets view');
+  assert.equal(progress.innerHTML, 'finished');
+  assert.equal(reloads, 2);
 });
 
 test('top employers render escaped names, compact counts and full-name tooltips', () => {
@@ -924,7 +1011,7 @@ test('dataset reprocess button routes through its confirmation handler', async (
 test('source removal requires confirmation and shows returned or rejected errors in a modal', async () => {
   const source = readFileSync(require.resolve('./app.js'), 'utf8');
   for (const outcome of ['cancel', 'success', 'error', 'reject']) {
-    let click, removals = 0, renders = 0, reloads = 0;
+    let click, removals = 0, renders = 0, refreshes = 0, reloads = 0;
     const messages = [];
     const context = vm.createContext({
       $: () => ({ addEventListener: (event, listener) => { click = listener; } }),
@@ -935,12 +1022,13 @@ test('source removal requires confirmation and shows returned or rejected errors
         if (outcome === 'reject') throw new Error('Worker failed');
         return outcome === 'error' ? { ok: false, error: 'Busy' } : { ok: true };
       } },
-      renderData: async () => { renders++; }, reload: () => { reloads++; },
+      renderData: async () => { renders++; }, refreshDataSources: async () => { refreshes++; }, reload: () => { reloads++; },
     });
     vm.runInContext(source.slice(source.indexOf("  const dataEl ="), source.indexOf("  window.addEventListener('dragover'")), context);
     await click({ target: { closest: selector => selector === '[data-rm]' ? { dataset: { rm: '<source>.jsonl' } } : null } });
     assert.equal(removals, outcome === 'cancel' ? 0 : 1);
-    assert.equal(renders, outcome === 'success' ? 1 : 0);
+    assert.equal(renders, 0);
+    assert.equal(refreshes, outcome === 'success' ? 1 : 0);
     assert.equal(reloads, outcome === 'success' ? 1 : 0);
     assert.equal(messages[0].confirmLabel, 'Remove');
     if (outcome === 'error' || outcome === 'reject') {
