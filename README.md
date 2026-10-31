@@ -4,7 +4,10 @@ Desktop app for browsing historical Swedish job ads (Arbetsförmedlingen / JobTe
 
 ![Reference search-listing screenshot](docs/search-listing.png)
 
-*Placeholder screenshot; replace with a fresh application capture.*
+## Getting the data
+Arbetsförmedlingen publishes their historical data at https://data.arbetsformedlingen.se.
+
+The exact location of the data files, at the time of writing, is: https://data.arbetsformedlingen.se/annonser/historiska/index.html
 
 ## Using the app
 

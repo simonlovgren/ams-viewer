@@ -2,10 +2,14 @@
 
 Count logic has headless regression tests; visual layout still needs manual review.
 
-## Third-party licenses (NFR-011 / UI-030 / D56)
-`node --test src/main/generate-licenses.test.js src/main/third-party-licenses.test.js src/renderer/app.test.js` covers production versus dev-only dependencies, multiple license/notice files, missing-license failures, Electron resource layouts, safe text rendering and the sandboxed Chromium document.
+## Third-party licenses (NFR-011 / UI-030 / D56 / D57)
+`node --check src/renderer/app.js && node --test src/main/generate-licenses.test.js src/main/third-party-licenses.test.js src/renderer/app.test.js` passes 62 tests. Covers production versus dev-only dependencies, multiple license/notice files, missing-license failures, Electron resource layouts, inert Chromium parsing, safe text rendering, the Settings entry button, lazy loading, Back, sidebar selection and retained list scroll. License texts have no frames or independent overflow.
 
 `npm run licenses` generates `build/third-party-licenses.json`; `npm run pack` additionally verifies electron-builder copies it to `dist/linux-unpacked/resources/third-party-licenses.json`. The bundled `LICENSES.chromium.html` is at `dist/linux-unpacked/` on Linux, adjacent to `resources/`; do not copy it into the manifest. The real report has 779 projects and is about 20 MB.
+
+Browser fixtures must apply complete built-in theme color/font tokens, not just `{name: 'ams-dark'}` or a no-op `amsTheme.apply`; otherwise geometry can pass with unstyled default fonts/colors. Copy only headings and license `textContent` out of the inert template; never attach its source nodes.
+
+2026-10-31 D57: browser fixture with the real 779-project Chromium report passes eight cases (960x600/1400x900, both built-in palettes/fonts): no horizontal overflow, no nested scrollbars, last notice reachable and Back returns Settings. Styled screenshot reviewed. Electron package text is a fixture; native interaction remains unverified.
 
 ## Theme contract and dark parity (T19 / D51)
 Stage 5 (D54): the full command below passes 98 tests. Chooser fixtures test escaped previews, matching fonts/colors, protected/unavailable actions, independent panel/select/export/delete routes, stale opening responses, duplicate work, errors, focus retention and final Appearance-row markup/compact dimensions. Browser checks cover native Enter/Space/Escape, Tab containment, blocked background shortcuts/mouse navigation, import success/cancel/error and confirmed/canceled deletion with mocked file operations. Eight chooser geometry cases and 12 Appearance-row cases cover both sizes/themes/fonts plus long names; screenshots reviewed. Final layout is 450 px Settings content and a 30 px theme-name button.

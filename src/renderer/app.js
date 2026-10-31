@@ -293,16 +293,33 @@
   applySettings();
 
   function chromiumNoticesDocument(html) {
-    if (typeof html !== 'string' || !html.includes('class="product"') || !/<head[^>]*>/i.test(html)) {
+    if (typeof html !== 'string' || !html.includes('class="product"')) {
       throw new Error('Bundled Chromium license notices are invalid');
     }
-    const policy = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'\">";
-    const style = '<style>body{margin:0;padding:12px;color:CanvasText;background:Canvas;font:13px/1.5 monospace;color-scheme:light dark}.product{padding:10px 0;border-bottom:1px solid ButtonBorder}.title{display:block;margin:0 0 6px;font-size:1.1em;font-weight:700;overflow-wrap:anywhere}.homepage,.show{display:none}.license{margin:8px 0}.license pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}a{pointer-events:none;color:inherit;text-decoration:none}</style>';
-    return html.replace(/<head[^>]*>/i, (head) => head + policy + style)
-      .replace(/<span class="title">([\s\S]*?)<\/span>/g, '<h3 class="title">$1</h3>');
+    const template = document.createElement('template');
+    template.innerHTML = html;
+    const notices = document.createDocumentFragment();
+    const products = template.content.querySelectorAll('.product');
+    if (!products.length) throw new Error('Bundled Chromium license notices are invalid');
+    for (const product of products) {
+      const title = product.querySelector('.title');
+      const license = product.querySelector('.license');
+      if (!title || !license) throw new Error('Bundled Chromium license notices are invalid');
+      const section = document.createElement('section');
+      section.className = 'license-component';
+      const heading = document.createElement('h3');
+      heading.textContent = title.textContent;
+      const text = document.createElement('pre');
+      text.className = 'license-text';
+      text.textContent = license.textContent;
+      section.append(heading, text);
+      notices.append(section);
+    }
+    return notices;
   }
 
   function renderThirdPartyLicenses(bundle) {
+    const chromiumNotices = chromiumNoticesDocument(bundle.chromiumNoticesHtml);
     const root = $('#third-party-components');
     root.replaceChildren();
     for (const component of bundle.components) {
@@ -325,7 +342,7 @@
       }
       root.append(section);
     }
-    $('#chromium-notices').srcdoc = chromiumNoticesDocument(bundle.chromiumNoticesHtml);
+    $('#chromium-notices').replaceChildren(chromiumNotices);
     $('#chromium-license-section').hidden = false;
     $('#licenses-status').hidden = true;
   }
@@ -357,12 +374,12 @@
   function show(view, id) {
     if (curView === 'list') listScroll = $('#list-scroll').scrollTop;
     curView = view;
-    for (const v of ['list', 'ad', 'data', 'settings']) $('#view-' + v).classList.toggle('hidden', v !== view);
-    document.querySelectorAll('.nav').forEach((n) => n.classList.toggle('active', n.dataset.view === (view === 'ad' ? 'list' : view)));
+    for (const v of ['list', 'ad', 'data', 'settings', 'licenses']) $('#view-' + v).classList.toggle('hidden', v !== view);
+    document.querySelectorAll('.nav').forEach((n) => n.classList.toggle('active', n.dataset.view === (view === 'ad' ? 'list' : view === 'licenses' ? 'settings' : view)));
     if (view === 'list') $('#list-scroll').scrollTop = listScroll;
     if (view === 'ad') loadAd(id);
     if (view === 'data') renderData();
-    if (view === 'settings' && typeof loadThirdPartyLicenses === 'function') loadThirdPartyLicenses();
+    if (view === 'licenses') loadThirdPartyLicenses();
   }
   async function nav(view, id) {
     if (view === curView && view !== 'ad') return;
@@ -371,6 +388,8 @@
     show(view, id);
   }
   function back() { if (idx > 0) history.back(); else nav('list'); }
+  $('#view-licenses-button').addEventListener('click', () => nav('licenses'));
+  $('#licenses-back').addEventListener('click', back);
   let historyGuardPending = false;
   let ignoreRestoredPopState = false;
   window.addEventListener('popstate', async (e) => {

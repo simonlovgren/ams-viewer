@@ -24,6 +24,7 @@
 - List paging uses `LIMIT/OFFSET`; deep scrolling in very large result sets becomes slower (keyset paging would be the fix).
 - No auto-update, code signing or custom app icon. Packaging uses electron-builder (`npm run dist`); only the Linux unpacked build has been tried.
 - Third-party license generation requires installed package-lock dependencies and their root license/notice files; missing metadata or texts stop the build. Electron supplies its Chromium notices separately, so the generated manifest avoids duplicating that ~20 MB file. Linux packaging is verified; AppImage, Windows and macOS artifacts are not.
+- The dedicated licenses view parses and renders the entire Chromium report once per renderer session (D57); malformed product headings or missing license bodies fail visibly rather than silently omitting notices. The real 779-project report is browser-tested; native Electron interaction remains unverified.
 - Linux tested only. Mouse back/forward buttons are handled via DOM `mouseup` buttons 3 and 4; behaviour may differ on other platforms.
 - Electron may require `--no-sandbox` on systems where the `chrome-sandbox` helper is not set up.
 - Resized filter/statistics widget bodies are limited to 80 px through max(80 px, window height minus 160 px); excess content scrolls. Unsized filter widgets retain natural heights; unsized trees retain their 240 px cap. Statistics bodies start at 200 px (D34, D35).

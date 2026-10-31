@@ -178,12 +178,19 @@ test('Theme is the first Appearance row with a name button rather than a switch'
   assert.match(css, /\.theme-name-button \{[^}]*min-height: 30px; padding: 3px 12px/);
 });
 
-test('Settings exposes accessible third-party license notices', () => {
+test('Settings opens a separate accessible license view with one page scroll area', () => {
   const html = readFileSync(require.resolve('./index.html'), 'utf8');
-  assert.match(html, /aria-labelledby="licenses-title"/);
-  assert.match(html, /<h2 id="licenses-title">Third-party licenses<\/h2>/);
-  assert.match(html, /<iframe id="chromium-notices"[^>]*title="Chromium and bundled third-party license notices"[^>]*sandbox=""/);
-  assert.match(html, /referrerpolicy="no-referrer"/);
+  const settings = html.slice(html.indexOf('<section id="view-settings"'), html.indexOf('<section id="view-licenses"'));
+  assert.match(settings, /id="view-licenses-button"[^>]*aria-controls="view-licenses"/);
+  assert.match(settings, /View third party licenses/);
+  assert.doesNotMatch(settings, /id="third-party-components"|id="chromium-notices"/);
+  assert.match(html, /id="view-licenses"[^>]*aria-labelledby="licenses-title"/);
+  assert.match(html, /id="licenses-back"[^>]*aria-label="Back"/);
+  assert.doesNotMatch(html, /<iframe/);
+  const css = readFileSync(require.resolve('./styles.css'), 'utf8');
+  assert.match(css, /#licenses-scroll \{[^}]*overflow-y: auto/);
+  assert.match(css, /\.license-text \{[^}]*white-space: pre-wrap; overflow-wrap: anywhere/);
+  assert.doesNotMatch(css, /#chromium-notices \{[^}]*height|\.license-text \{[^}]*overflow-y/);
 });
 
 test('license renderer uses text nodes and isolates Chromium notices from network and scripts', () => {
@@ -200,7 +207,15 @@ test('license renderer uses text nodes and isolates Chromium notices from networ
     get textContent() { return this.text || ''; },
   });
   for (const selector of ['#third-party-components', '#chromium-notices', '#chromium-license-section', '#licenses-status']) roots.set(selector, makeNode(selector));
-  const context = vm.createContext({ $, document: { createElement: makeNode } });
+  const product = { querySelector: (selector) => selector === '.title' ? { textContent: 'Chromium component' } : { textContent: 'Full text <script>not markup</script>' } };
+  let parsedHtml;
+  const context = vm.createContext({ $, document: {
+    createElement: (tagName) => tagName === 'template' ? {
+      set innerHTML(value) { parsedHtml = value; },
+      content: { querySelectorAll: () => [product] },
+    } : makeNode(tagName),
+    createDocumentFragment: () => makeNode('fragment'),
+  } });
   function $(selector) { return roots.get(selector); }
   vm.runInContext(code, context);
   context.renderThirdPartyLicenses({
@@ -210,9 +225,12 @@ test('license renderer uses text nodes and isolates Chromium notices from networ
   const component = roots.get('#third-party-components').children[0];
   assert.equal(component.children[0].textContent, '<runtime> 1.0');
   assert.equal(component.children[3].textContent, '<script>not markup</script>');
-  assert.match(roots.get('#chromium-notices').srcdoc, /<h3 class="title">Chromium component<\/h3>/);
-  assert.match(roots.get('#chromium-notices').srcdoc, /default-src 'none'; script-src 'none'/);
-  assert.match(roots.get('#chromium-notices').srcdoc, /pointer-events:none/);
+  const chromium = roots.get('#chromium-notices').children[0].children[0];
+  assert.equal(chromium.children[0].textContent, 'Chromium component');
+  assert.equal(chromium.children[1].textContent, 'Full text <script>not markup</script>');
+  assert.match(parsedHtml, /class="product"/);
+  assert.equal(roots.get('#chromium-notices').srcdoc, undefined);
+  assert.throws(() => context.chromiumNoticesDocument('invalid'), /notices are invalid/);
   assert.equal(roots.get('#chromium-license-section').hidden, false);
   assert.equal(roots.get('#licenses-status').hidden, true);
 });
@@ -1199,29 +1217,45 @@ test('monospace remains usable if settings storage is unavailable', () => {
   assert.equal(root.dataset.monospace, 'false');
 });
 
-test('Settings joins history navigation without losing list scroll', async () => {
+test('Settings and licenses join history navigation without losing list scroll', async () => {
   const source = readFileSync(require.resolve('./app.js'), 'utf8');
-  const views = new Map(['list', 'ad', 'data', 'settings'].map(view => [view, new Set()]));
-  const links = [...views.keys()].filter(view => view !== 'ad').map(view => ({
+  const views = new Map(['list', 'ad', 'data', 'settings', 'licenses'].map(view => [view, new Set()]));
+  const links = [...views.keys()].filter(view => !['ad', 'licenses'].includes(view)).map(view => ({
     dataset: { view }, classList: { toggle: (name, active) => { links.find(link => link.dataset.view === view).active = active; } },
   }));
   const listScroll = { scrollTop: 240 };
   const states = [];
+  const clicks = new Map();
+  let loads = 0;
+  let backs = 0;
   const context = vm.createContext({
     $: selector => selector === '#list-scroll' ? listScroll : {
       classList: { toggle: (name, hidden) => { if (hidden) views.get(selector.slice(6)).add(name); else views.get(selector.slice(6)).delete(name); } },
+      addEventListener: (_name, callback) => clicks.set(selector, callback),
     },
     document: { querySelectorAll: () => links },
-    history: { pushState: state => states.push(state) },
+    history: { pushState: state => states.push(state), back: () => { backs++; } },
     loadAd: () => {}, renderData: () => {},
+    loadThirdPartyLicenses: () => { loads++; },
     leaveDatasetEditor: async () => true,
   });
-  vm.runInContext(source.slice(source.indexOf('  let idx ='), source.indexOf('  function back()')), context);
+  vm.runInContext(source.slice(source.indexOf('  let idx ='), source.indexOf('  let historyGuardPending')), context);
   await vm.runInContext("nav('settings')", context);
   assert.equal(states[0].view, 'settings');
   assert.equal(views.get('settings').has('hidden'), false);
   assert.equal(views.get('list').has('hidden'), true);
   assert.equal(links.find(link => link.dataset.view === 'settings').active, true);
+  assert.equal(loads, 0);
+  await clicks.get('#view-licenses-button')();
+  assert.equal(states[1].view, 'licenses');
+  assert.equal(views.get('licenses').has('hidden'), false);
+  assert.equal(views.get('settings').has('hidden'), true);
+  assert.equal(links.find(link => link.dataset.view === 'settings').active, true);
+  assert.equal(loads, 1);
+  clicks.get('#licenses-back')();
+  assert.equal(backs, 1);
+  vm.runInContext("show('settings')", context);
+  assert.equal(views.get('licenses').has('hidden'), true);
   listScroll.scrollTop = 0;
   vm.runInContext("show('list')", context);
   assert.equal(listScroll.scrollTop, 240);
@@ -1235,7 +1269,7 @@ test('dataset history boundary rejects entries from the previous dataset', async
     window: { addEventListener: (name, listener) => { if (name === 'popstate') popstate = listener; } },
     history: { replaceState() {}, forward() { forwards++; } },
     document: { querySelectorAll: () => [] },
-    $: () => ({ scrollTop: 0, classList: { toggle() {} } }),
+    $: () => ({ scrollTop: 0, classList: { toggle() {} }, addEventListener() {} }),
     leaveDatasetEditor: async () => true,
     loadAd() {}, renderData() {},
     show() { shown++; },
@@ -1258,7 +1292,7 @@ test('canceling dirty browser navigation restores the current history entry once
     window: { addEventListener: (name, listener) => { if (name === 'popstate') popstate = listener; } },
     history: { replaceState() {}, forward() { forwards++; } },
     document: { querySelectorAll: () => [] },
-    $: () => ({ scrollTop: 0, classList: { toggle() {} } }),
+    $: () => ({ scrollTop: 0, classList: { toggle() {} }, addEventListener() {} }),
     leaveDatasetEditor: async () => { prompts++; return false; },
   });
   vm.runInContext(source.slice(source.indexOf('  let idx ='), source.indexOf("  history.replaceState({ view: 'list', i: 0 }, '');") + 54), context);

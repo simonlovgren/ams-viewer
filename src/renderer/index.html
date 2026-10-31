@@ -144,14 +144,27 @@
               <input id="setting-monospace" class="setting-switch" type="checkbox" role="switch" checked />
             </label>
           </section>
-          <section class="settings-section" aria-labelledby="licenses-title">
-            <h2 id="licenses-title">Third-party licenses</h2>
-            <p id="licenses-status" role="status">License notices load when this section is opened.</p>
-            <div id="third-party-components"></div>
-            <section id="chromium-license-section" hidden>
-              <h3>Chromium and bundled projects</h3>
-              <iframe id="chromium-notices" title="Chromium and bundled third-party license notices" sandbox="" referrerpolicy="no-referrer"></iframe>
-            </section>
+          <section class="settings-section" aria-labelledby="settings-licenses-title">
+            <h2 id="settings-licenses-title">Third-party licenses</h2>
+            <button id="view-licenses-button" class="btn sec" type="button" aria-controls="view-licenses"><span data-i="chev-r"></span>View third party licenses</button>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-licenses" class="view hidden" aria-labelledby="licenses-title">
+      <div class="crumbbar">
+        <button id="licenses-back" class="icon-btn" type="button" title="Back (Backspace)" aria-label="Back"><span data-i="arrow-left"></span></button>
+        <span>Settings / Third-party licenses</span>
+      </div>
+      <div id="licenses-scroll">
+        <div id="licenses">
+          <h1 id="licenses-title">Third-party licenses</h1>
+          <p id="licenses-status" role="status">Loading license notices...</p>
+          <div id="third-party-components"></div>
+          <section id="chromium-license-section" hidden>
+            <h2>Chromium and bundled projects</h2>
+            <div id="chromium-notices"></div>
           </section>
         </div>
       </div>

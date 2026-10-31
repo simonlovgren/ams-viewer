@@ -288,9 +288,13 @@ td.r, th.r { text-align: right; }
 .bar i { display: block; height: 100%; width: 0; background: var(--grad); transition: width .2s; }
 .err { color: var(--theme-error); }
 
-#view-settings { flex-direction: column; }
+#view-settings, #view-licenses { flex-direction: column; }
 #settings-scroll { flex: 1; overflow-y: auto; padding: 24px; }
 #settings { width: 100%; max-width: 450px; margin: 0 auto; }
+#licenses-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 24px; }
+#licenses { width: 100%; max-width: 1100px; margin: 0 auto; }
+#licenses h1 { margin: 0 0 24px; font-size: 24px; overflow-wrap: anywhere; }
+#chromium-license-section h2 { margin: 24px 0 12px; font-size: 18px; }
 #settings h1 { margin: 0 0 28px; font-size: 24px; overflow-wrap: anywhere; }
 .settings-section { border-top: 1px solid var(--line); padding: 20px 0; }
 .settings-section h2 { margin: 0 0 16px; font-size: 16px; }
@@ -298,10 +302,9 @@ td.r, th.r { text-align: right; }
 .setting-row span { min-width: 0; overflow-wrap: anywhere; }
 .license-component { padding: 12px 0; border-bottom: 1px solid var(--line); }
 .license-component h3, #chromium-license-section h3 { margin: 0 0 6px; font-size: 14px; overflow-wrap: anywhere; }
-.license-expression, .license-text h4 { margin: 0 0 8px; color: var(--muted); font-size: 12px; }
-.license-text h4 { margin-top: 12px; }
-.license-text pre { margin: 0; padding: 10px; border: 1px solid var(--line); background: var(--bg2); color: var(--text); font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
-#chromium-notices { display: block; width: 100%; height: min(640px, 70vh); border: 1px solid var(--line); color-scheme: light dark; }
+.license-expression, .license-component h4 { margin: 0 0 8px; color: var(--muted); font-size: 12px; }
+.license-component h4 { margin-top: 12px; }
+.license-text { margin: 0; color: var(--text); font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
 .setting-switch { appearance: none; position: relative; width: 44px; height: 26px; flex: none; margin: 0; padding: 0; border: 1px solid var(--muted); border-radius: 13px; background: var(--bg2); cursor: pointer; transition: background .15s, border-color .15s; }
 .setting-switch::before { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--text); transition: transform .15s; }
 .setting-switch:checked { background: var(--theme-switch-track); border-color: var(--theme-switch-track); }
