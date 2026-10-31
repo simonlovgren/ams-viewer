@@ -15,7 +15,7 @@ Planned work that is specified but not started, plus active tasks. Each task lin
 | T9 | Done: Top-30 employers widget and exact-name selection | SRC-020, SRC-022 | M |
 | T10 | Employer logo cache | AD-010 | M |
 | T11 | Favorite lists and star-action popover | LST-009, LST-010, LST-011, LST-012, LST-013 | M |
-| T12 | Enrich older ads from newer taxonomy and geographic data | DAT-015, DAT-016 | L |
+| T12 | Done: enrich older ads from newer taxonomy and geographic data | DAT-015, DAT-016 | L |
 | T13 | Done: Find and navigate text matches in the ad view | AD-011 | S |
 | T14 | Done: Contextual keyboard-shortcut help modal | NAV-011, NAV-010, UI-001 | S |
 | T15 | Done: Named dataset storage, lifecycle and existing-database migration | DAT-017, DAT-018, DAT-021, DAT-022 | L |
@@ -25,7 +25,7 @@ Planned work that is specified but not started, plus active tasks. Each task lin
 | T19 | Done: file-based themes, light palette and Appearance chooser | UI-002, UI-003, UI-024, UI-025, UI-026, UI-027, UI-028, UI-029 | L |
 | T20 | Done: generated third-party license inventory and dedicated reading view | NFR-011, UI-030 | M |
 
-T15–T17 completed 2026-10-18 (D39–D42). T7, T2, T13, T14, T1, T8 and T9 are complete (D26–D28, D31, D34–D36, D43–D44). T9 uses the statistics bar; T5 remains planned, with no placeholder shown. T3 goes with T4; T10 is independent. T6 follows the [full-scale performance plan](full-scale-performance-plan.md); filtered T9 latency on the full database remains unmeasured.
+T12 completed 2026-10-31 (D58). T15–T17 completed 2026-10-18 (D39–D42). T7, T2, T13, T14, T1, T8 and T9 are complete (D26–D28, D31, D34–D36, D43–D44). T9 uses the statistics bar; T5 remains planned, with no placeholder shown. T3 goes with T4; T10 is independent. T6 follows the [full-scale performance plan](full-scale-performance-plan.md); filtered T9 latency on the full database remains unmeasured. T12 full-scale migration cost and cross-quarter reference comparison remain unverified.
 
 ## T1. Done: vertically resizable filter widgets (UI-010)
 - Completed 2026-10-16; D34. Scope broadened to all six filter widgets at the user's request. Drag each bottom divider to resize the widget above; keyboard Up/Down and Home/End also work.
@@ -110,14 +110,20 @@ T15–T17 completed 2026-10-18 (D39–D42). T7, T2, T13, T14, T1, T8 and T9 are 
 - Docs: planned interaction recorded in D24. Record storage/schema and navigation decisions before implementation; update affected requirements, data model, system description, constraints and developer notes as needed.
 
 ## T12. Legacy taxonomy and geographic enrichment (DAT-015, DAT-016)
-- Status: planned only; priority relative to existing tasks is not assigned.
-- Inspect representative older and newer records first. Older datasets contain occupation `legacy_taxonomy_id`; survey whether other taxonomy fields also expose usable legacy identifiers. Check which fields under `workplace_address` carry usable location information across dataset generations.
+- Status: implementation complete (2026-10-31; D58). Full-scale migration time/disk use and cross-quarter reference comparison remain unverified; no live dataset was changed.
+- Inspect representative older and newer records first. Older datasets contain occupation `legacy_ams_taxonomy_id`; survey whether other taxonomy fields also expose usable legacy identifiers. Check which fields under `workplace_address` carry usable location information across dataset generations.
 - Cross-reference legacy occupation identifiers with the newest available dataset containing both legacy identifiers and modern taxonomy information. Use reliable matches to fill missing occupation labels and hierarchy so older ads display and filter like newer ads. Assess other taxonomy fields after confirming their mappings.
 - Similarly, cross-reference available `workplace_address` fields with the newest available geographic data to fill missing location labels and hierarchy. Do not assume names alone identify a unique place or that historical administrative boundaries match current ones.
 - Preserve existing populated values and original source data. Keep ambiguous, conflicting or unmatched mappings unresolved rather than guessing; define mapping provenance and report matched, unmatched and ambiguous coverage.
-- Before implementation, decide mapping keys and conflict rules, reference-dataset selection, offline persistence, import-time versus backfill enrichment, and how newly imported reference data updates previously imported ads. Keep expensive work off the main thread and update affected search indexes and summary tables consistently.
-- Verification: fixtures from older and newer generations; resolved occupation hierarchy and location displayed in list/detail and available in filters; ambiguous and unmatched cases unchanged; existing values preserved; import-order independence and repeat-run stability. Measure coverage and full-dataset processing cost.
-- Docs: record implementation decisions with DAT-015/DAT-016; update the data model and migration/backfill procedure, data flow, constraints and developer notes as needed. Coordinate geographic coverage findings with T5.
+- Decisions: D58 uses exact legacy IDs/codes and complete tuples, dataset-local offline references, consensus-only fills, and immutable `raw` as the source-projection baseline. Backfill, import, removal and reprocessing run in existing workers; changed summaries are maintained with the relevant transaction.
+- Verification: temporary worker fixtures cover migration/retry, both import orders, duplicate-safe contributions, consensus conflict/removal, source-value/raw preservation, independent municipality/region behavior, reprocessing and summary/facet consistency. `node --test src/main/db.test.js` passes. Disposable Electron startup passed; full-scale processing cost and native visual inspection remain unverified.
+- Docs: D58 and implementation details are recorded in the data model and system description; DAT-015/016 are Implemented with full-scale caveats. Coordinate geographic coverage findings with T5.
+
+### Initial coverage survey (2026-10-31)
+- Read-only full-file scan of 2006–2017 JSONL files against `2026-Q3.jsonl` (129,721 records); no source files or app databases changed.
+- Taxonomy: `occupation.legacy_ams_taxonomy_id` maps uniquely to a complete modern field/group/occupation tuple for 4,038,404 of 4,667,640 ads from 2007–2017 (86.5%). All 129,721 Q3 records have one aligned field, group and occupation item; two legacy occupation IDs have conflicting full tuples. 2006 is an outlier: 245,192 of 245,227 IDs are `0`, which has no Q3 mapping; 21 of the 26 distinct nonzero IDs map uniquely, covering 28 ads. Field/group legacy IDs are null throughout 2006–2017.
+- Geography: across 2007–2017, 4,606,062 ads have `workplace_address.municipality_code`; 4,573,278 resolve to a unique municipality (99.3% of coded ads), and 4,076,347 also have a unique region hierarchy (88.5%). Ten codes have conflicting region metadata in Q3. For 2006, 242,308 of 245,227 ads have a code; 240,179 resolve to a municipality, while 22,700 have conflicting region data. `ALLA` (1,873 ads) and `1917` (256 ads) do not match. Free-text `city` is weaker than the code.
+- Q3 carries municipality and region fields on 127,292 records and finite coordinates on 117,339. The scan does not compare all 2026 quarters. D58 resolves consensus and persistence policy; comparing Q1/Q2 2026 and measuring full-scale runtime/disk cost remain open.
 
 ## T13. Done: Find and navigate text matches in the ad view (AD-011)
 - Completed 2026-10-16; D28. The ad toolbar searches displayed content case-insensitively, highlights all matches, reports the current position and cycles with previous/next buttons or Enter/Shift+Enter. Escape clears the query.

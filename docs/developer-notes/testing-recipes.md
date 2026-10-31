@@ -2,6 +2,17 @@
 
 Count logic has headless regression tests; visual layout still needs manual review.
 
+## Legacy taxonomy and location enrichment (DAT-015/016, D58)
+`node --check src/main/db.js && node --check src/main/import-worker.js && node --test src/main/db.test.js` covers retryable key/map backfill, reference-first and legacy-first import, duplicate-safe contributions, preserved source values/raw JSON, taxonomy and independent location consensus, conflict removal, reprocessing, and summary/facet consistency. Worker fixtures use temporary databases and files only. Do not validate the one-time migration against the live 11.25M-ad database without explicitly planning its write cost; full-scale time/disk use is not measured.
+
+Disposable startup smoke test (Linux):
+```bash
+temp_config=$(mktemp -d)
+trap 'rm -rf "$temp_config"' EXIT
+XDG_CONFIG_HOME="$temp_config" timeout 12s npm start -- --no-sandbox
+```
+Window displayed in 522 ms and empty-dataset startup completed. Timeout termination may emit the known Electron GPU/SIGTRAP shutdown noise; this is not a clean-quit check. Live dataset untouched.
+
 ## Third-party licenses (NFR-011 / UI-030 / D56 / D57)
 `node --check src/renderer/app.js && node --test src/main/generate-licenses.test.js src/main/third-party-licenses.test.js src/renderer/app.test.js` passes 62 tests. Covers production versus dev-only dependencies, multiple license/notice files, missing-license failures, Electron resource layouts, inert Chromium parsing, safe text rendering, the Settings entry button, lazy loading, Back, sidebar selection and retained list scroll. License texts have no frames or independent overflow.
 

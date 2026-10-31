@@ -3,7 +3,7 @@ const { parentPort, workerData } = require('worker_threads');
 const fs = require('fs');
 const path = require('path');
 const { StringDecoder } = require('string_decoder');
-const { open, toRow, INSERT_SQL, isBuilt, newAcc, accAdd, accFlush } = require('./db');
+const { open, toRow, INSERT_SQL, isBuilt, newAcc, accAdd, accFlush, projectionValues, legacyReferences, adjustLegacyReferences, reconcileLegacyMappings } = require('./db');
 
 const { dbPath, files } = workerData;
 const db = open(dbPath);
@@ -12,6 +12,7 @@ const summary = isBuilt(db);
 const acc = newAcc();
 const insAd = db.prepare(INSERT_SQL);
 const insFts = db.prepare('INSERT INTO ads_fts(rowid, headline, employer, body) VALUES (?,?,?,?)');
+const selectProjection = db.prepare('SELECT rowid, raw, source, region, muni, field_id, field, group_id, grp, occ_id, occ FROM ads WHERE rowid = ?');
 const BATCH = 2000;
 
 // readline would also split on U+2028/2029, which occur inside ad texts.
@@ -83,6 +84,24 @@ async function importFile(file, fileIndex) {
   const st = { type: 'progress', file: name, fileIndex, files: files.length, lines: 0, inserted: 0, skipped: 0, errors: 0, pct: 0 };
   let last = 0;
   let pending = 0;
+  const affected = { occupations: new Set(), locations: new Set() };
+  const inserted = [];
+
+  const finishBatch = () => {
+    if (affected.occupations.size || affected.locations.size) {
+      reconcileLegacyMappings(db, {
+        occupations: [...affected.occupations],
+        locations: [...affected.locations],
+      }, { skipSummaryRows: new Set(inserted) });
+    }
+    if (summary) {
+      for (const rowid of inserted) accAdd(acc, projectionValues(selectProjection.get(rowid)));
+      accFlush(db, acc);
+    }
+    affected.occupations.clear();
+    affected.locations.clear();
+    inserted.length = 0;
+  };
 
   const emit = (force) => {
     const now = Date.now();
@@ -93,20 +112,30 @@ async function importFile(file, fileIndex) {
   };
   const handle = (d) => {
     st.lines++;
+    let mapped;
     try {
       if (!d || typeof d !== 'object') throw new Error('not an object');
-      const { values, fts } = toRow(d, name);
-      const r = insAd.run(...values);
-      if (r.changes) {
-        insFts.run(r.lastInsertRowid, ...fts);
-        if (summary) accAdd(acc, values);
-        st.inserted++;
-      } else st.skipped++;
+      mapped = toRow(d, name);
     } catch {
       st.errors++;
     }
+    if (mapped) {
+      const { values, fts } = mapped;
+      const r = insAd.run(...values);
+      if (r.changes) {
+        insFts.run(r.lastInsertRowid, ...fts);
+        const references = legacyReferences(d);
+        adjustLegacyReferences(db, references);
+        for (const reference of references.occupations) affected.occupations.add(reference.id);
+        for (const reference of references.locations) affected.locations.add(reference.code);
+        if (values[19]) affected.occupations.add(values[19]);
+        if (values[20]) affected.locations.add(values[20]);
+        inserted.push(Number(r.lastInsertRowid));
+        st.inserted++;
+      } else st.skipped++;
+    }
     if (++pending >= BATCH) {
-      if (summary) accFlush(db, acc);
+      finishBatch();
       db.exec('COMMIT; BEGIN');
       pending = 0;
     }
@@ -123,7 +152,7 @@ async function importFile(file, fileIndex) {
       handle(d);
       if (st.lines % 200 === 0) { st.pct = Math.min(1, stream.bytesRead / size); emit(); }
     }
-    if (summary) accFlush(db, acc);
+    finishBatch();
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');

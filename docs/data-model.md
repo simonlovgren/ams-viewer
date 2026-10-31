@@ -48,7 +48,9 @@ ads(
   emp_type TEXT, hours TEXT,
   source TEXT,           -- import file name
   raw TEXT,              -- pruned JSON of the full record
-  employer_id TEXT       -- trimmed organization_number; NULL when absent
+  employer_id TEXT,      -- trimmed organization_number; NULL when absent
+  legacy_occ_id TEXT,    -- occupation.legacy_ams_taxonomy_id
+  legacy_muni_code TEXT  -- workplace_address.municipality_code
 )
 
 ads_fts USING fts5(headline, employer, body,
@@ -56,11 +58,13 @@ ads_fts USING fts5(headline, employer, body,
   tokenize='unicode61 remove_diacritics 2')   -- rowid = ads.rowid
 
 sources(name TEXT PRIMARY KEY, path TEXT, ads INTEGER, imported_at TEXT)
-meta(key PRIMARY KEY, value)                    -- summary_version = '2', employer_identity_version = '1' once ready
+meta(key PRIMARY KEY, value)                    -- summary_version = '2', employer_identity_version = '1', legacy_enrichment_version = '1' once ready
 sum_occ(field_id, field, group_id, grp, occ_id, occ, n)  -- PK (field_id, group_id, occ_id)
 sum_loc(region, muni, n)   sum_year(year, n)   sum_emp(v, n)   sum_hours(v, n)   sum_day(day, n)
 sum_employer(org_id, v, n) -- PK (org_id,v): organization/name variant counts; missing ID stored as ''
 employer_catalog(org_id, name_key, v, n) -- PK (org_id,name_key): precomputed representative name and total
+legacy_occ_map(legacy_id, tuple, n)      -- complete modern taxonomy candidates and contribution counts
+legacy_loc_map(municipality_code, tuple, n) -- municipality/region candidates and contribution counts
 ```
 
 ### Indexes
@@ -75,8 +79,20 @@ employer_catalog(org_id, name_key, v, n) -- PK (org_id,name_key): precomputed re
 | `ix_employer (employer COLLATE BINARY, pub_date)` | Exact employer filters; covering counts and timeline date reads (D46) |
 | `ix_employer_id (employer_id, pub_date)` | Organization filters; covering counts and timeline date reads (D55) |
 | `ix_employer_rank (n DESC, v COLLATE NOCASE, v COLLATE BINARY, org_id)` on `employer_catalog` | Indexed unfiltered Top-30 without grouping (D55) |
+| `ix_legacy_occ_id (legacy_occ_id)`, `ix_legacy_muni_code (legacy_muni_code)` | Reconcile only ads affected by a legacy-key consensus change (D58) |
 
 `ix_employer` and `ix_employer_id` are created once by `ensureSummary()` in the build worker. They are not built when opening read connections. Startup/activation reports indexing progress; SQLite maintains them on subsequent imports/removals. D55 adds the organization-ID backfill and catalog rebuild below, without re-import.
+
+### Employer identity backfill and catalog (D55)
+### Legacy taxonomy and location enrichment (DAT-015/016, D58)
+
+`legacy_occ_map` stores counts for each complete field/group/occupation tuple observed with an occupation legacy ID. `legacy_loc_map` stores counts for each available municipality/region tuple observed with a municipality code. Counts represent successfully imported ads, not import attempts; duplicate ad IDs do not contribute twice. Each named dataset has independent maps and remains offline.
+
+`ensureSummary()` performs a one-time migration in the build worker. It clears partial candidate maps when the completion marker is absent, scans stored `raw` in 500-row transactions to backfill the indexed legacy-key columns and candidate counts, then reconciles all affected keys before setting `legacy_enrichment_version = '1'`. The migration invalidates summary readiness first, so summaries rebuild from the resulting promoted columns. An interrupted scan can safely restart by clearing and rebuilding the candidate maps; `raw` is unchanged.
+
+On import, only newly inserted ads contribute candidates. The worker reconciles both their reference keys and their own legacy keys before committing each batch, so import order does not matter. Existing rows are restored from their source projection in `raw`, then missing taxonomy fields are filled only when one complete tuple remains; municipality and region are resolved independently when each has one candidate. Summary deltas for changed existing rows and final projections for new rows are committed with the batch. Source removal subtracts that source's candidates, deletes its ads, reconciles survivors and updates summaries in the same build-worker transaction. Manual reprocessing rebuilds keys, candidate maps, enriched projections, FTS and summaries from `raw`.
+
+No live dataset was migrated during T12 verification. Full-scale migration time, disk use and import/removal cost on the 11.25M-ad dataset remain unmeasured.
 
 ### Employer identity backfill and catalog (D55)
 
@@ -114,10 +130,13 @@ Dates are `YYYY-MM-DD` strings compared lexicographically. `sort` is `newest | o
 
 | Years | Format | `id` | Taxonomy (field/group/occupation) | Location | Other |
 |---|---|---|---|---|---|
-| 2006–2016 | `.jsonl` | null (synthetic `h-<sha1>`) | empty | empty | dates `YYYY-MM-DD`; hours present |
-| 2017 | `.jsonl` | string `0017-nnnnnn` | empty | empty | |
+| 2006 | `.jsonl` | null (synthetic `h-<sha1>`) | Modern labels/concepts are null; `occupation.legacy_ams_taxonomy_id` is `0` on 245,192 of 245,227 ads; field/group legacy IDs are null | `municipality_code` on 242,308 ads; `city` on 157,991; municipality/region labels, concept IDs and coordinates absent | dates `YYYY-MM-DD`; hours present |
+| 2007–2016 | `.jsonl` | null (synthetic `h-<sha1>`) | Modern labels/concepts are null; occupation legacy IDs present in most records; field/group legacy IDs absent (T12 full scan) | `municipality_code` present in most records; city is common; municipality/region labels, concepts and coordinates absent (T12 full scan) | dates `YYYY-MM-DD`; hours present |
+| 2017 | `.jsonl` | string `0017-nnnnnn` | Modern labels/concepts are null; occupation legacy IDs present; field/group legacy IDs absent (T12 full scan) | `municipality_code` present; city is common; municipality/region labels, concepts and coordinates absent (T12 full scan) | |
 | 2018, 2019 | `.json` array (3.5–3.6 GB, one line) | number | present | municipality and region present | dates `YYYY-MM-DD HH:MM:SS,000000000`; `*_municipality_patched.zip` exist (not used) |
 | 2020–2022 | `.jsonl` | string | present, objects | municipality in ~52% (2020) to ~98% | |
 | 2023–2026 | `.jsonl` | 40-char hash | arrays of objects | present | employment type is an array; first element stored |
 
 The folder also holds `.zip`/`.zst` copies, which the importer does not accept. `publication_date` is cut to its first 10 characters, which works for both date formats.
+
+T12 full-file survey (2026-10-31): against `2026-Q3.jsonl`, 4,038,404 of 4,667,640 ads from 2007–2017 have a unique complete modern field/group/occupation tuple; 4,573,278 of 4,606,062 coded ads map to a unique municipality, and 4,076,347 also map to a unique region hierarchy. 2006 has lower occupation coverage (28 ads) but 240,179 municipality-code matches. Ten municipality codes have conflicting region metadata. T12 promotes indexed legacy keys and enriches missing query/display columns from dataset-local consensus while preserving `raw`; full-scale migration and cost remain unverified. See [T12](tasks.md#t12-legacy-taxonomy-and-geographic-enrichment-dat-015-dat-016) for survey details.

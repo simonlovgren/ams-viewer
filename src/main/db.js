@@ -20,7 +20,9 @@ CREATE TABLE IF NOT EXISTS ads (
   hours TEXT,
   source TEXT,
   raw TEXT,
-  employer_id TEXT
+  employer_id TEXT,
+  legacy_occ_id TEXT,
+  legacy_muni_code TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_pub ON ads(pub_date);
 CREATE INDEX IF NOT EXISTS ix_year ON ads(year);
@@ -53,6 +55,8 @@ CREATE TABLE IF NOT EXISTS sum_day (day TEXT NOT NULL PRIMARY KEY, n INTEGER NOT
 CREATE TABLE IF NOT EXISTS sum_employer (org_id TEXT NOT NULL, v TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (org_id, v));
 CREATE TABLE IF NOT EXISTS employer_catalog (org_id TEXT NOT NULL, name_key TEXT NOT NULL, v TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (org_id, name_key));
 CREATE INDEX IF NOT EXISTS ix_employer_rank ON employer_catalog(n DESC, v COLLATE NOCASE, v COLLATE BINARY, org_id);
+CREATE TABLE IF NOT EXISTS legacy_occ_map (legacy_id TEXT NOT NULL, tuple TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (legacy_id, tuple));
+CREATE TABLE IF NOT EXISTS legacy_loc_map (municipality_code TEXT NOT NULL, tuple TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (municipality_code, tuple));
 `;
 
 function open(path) {
@@ -60,10 +64,14 @@ function open(path) {
   // busy_timeout first: opening several connections at once on a WAL database that needs recovery otherwise fails with SQLITE_BUSY.
   db.exec('PRAGMA busy_timeout=30000; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;');
   db.exec(SCHEMA);
-  if (!db.prepare('PRAGMA table_info(ads)').all().some(column => column.name === 'employer_id')) {
+  const columns = db.prepare('PRAGMA table_info(ads)').all().map(column => column.name);
+  if (!['employer_id', 'legacy_occ_id', 'legacy_muni_code'].every(name => columns.includes(name))) {
     db.exec('BEGIN IMMEDIATE');
     try {
-      if (!db.prepare('PRAGMA table_info(ads)').all().some(column => column.name === 'employer_id')) db.exec('ALTER TABLE ads ADD COLUMN employer_id TEXT');
+      const current = new Set(db.prepare('PRAGMA table_info(ads)').all().map(column => column.name));
+      for (const name of ['employer_id', 'legacy_occ_id', 'legacy_muni_code']) {
+        if (!current.has(name)) db.exec(`ALTER TABLE ads ADD COLUMN ${name} TEXT`);
+      }
       db.exec('COMMIT');
     } catch (error) {
       db.exec('ROLLBACK');
@@ -92,8 +100,14 @@ function prune(v) {
 
 const lbl = (o) => (o && o.label) || null;
 const cid = (o) => (o && (o.concept_id || o.label)) || null;
+const legacyId = (o) => {
+  const value = o && (o.legacy_ams_taxonomy_id ?? o.legacy_taxonomy_id);
+  return value === null || value === undefined || String(value).trim() === '' ? null : String(value).trim();
+};
+const legacyCode = (value) => value === null || value === undefined || String(value).trim() === '' ? null : String(value).trim();
 // From 2023 the source holds arrays for occupation and employment type; the first entry is used.
 const one = (x) => (Array.isArray(x) ? x.find(Boolean) || null : x);
+const items = (x) => Array.isArray(x) ? x.filter(Boolean) : x ? [x] : [];
 const employerId = (value) => typeof value === 'string' || typeof value === 'number' ? String(value).trim() || null : null;
 
 // 2006-2016 ads have no id; derive a stable one from their content so re-imports are skipped.
@@ -127,14 +141,144 @@ function toRow(d, source) {
       source,
       JSON.stringify(prune(d) || {}),
       employerId(d.employer?.organization_number),
+      legacyId(occ),
+      legacyCode(addr.municipality_code),
     ],
     fts: [d.headline || '', (d.employer && d.employer.name) || '', (d.description && d.description.text) || ''],
   };
 }
 
+function projectionValues(row) {
+  const values = toRow(JSON.parse(row.raw), row.source).values;
+  for (const [index, column] of [[6, 'region'], [7, 'muni'], [8, 'field_id'], [9, 'field'], [10, 'group_id'], [11, 'grp'], [12, 'occ_id'], [13, 'occ']]) {
+    if (row[column] !== undefined) values[index] = row[column];
+  }
+  return values;
+}
+
 const INSERT_SQL = `INSERT OR IGNORE INTO ads
- (ad_id,headline,pub_date,year,deadline,employer,region,muni,field_id,field,group_id,grp,occ_id,occ,emp_type,hours,source,raw,employer_id)
- VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+ (ad_id,headline,pub_date,year,deadline,employer,region,muni,field_id,field,group_id,grp,occ_id,occ,emp_type,hours,source,raw,employer_id,legacy_occ_id,legacy_muni_code)
+ VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+
+function legacyReferences(ad) {
+  const references = { occupations: [], locations: [] };
+  const occupations = items(ad.occupation);
+  const groups = items(ad.occupation_group);
+  const fields = items(ad.occupation_field);
+  if (occupations.length === groups.length && occupations.length === fields.length) {
+    for (let index = 0; index < occupations.length; index++) {
+      const id = legacyId(occupations[index]);
+      const tuple = {
+        field_id: cid(fields[index]), field: lbl(fields[index]),
+        group_id: cid(groups[index]), grp: lbl(groups[index]),
+        occ_id: cid(occupations[index]), occ: lbl(occupations[index]),
+      };
+      if (id && tuple.field_id && tuple.field && tuple.group_id && tuple.grp && tuple.occ_id && tuple.occ) {
+        references.occupations.push({ id, tuple });
+      }
+    }
+  }
+  const address = ad.workplace_address || {};
+  const code = legacyCode(address.municipality_code);
+  const tuple = { muni: address.municipality || null, region: address.region || null };
+  if (code && (tuple.muni || tuple.region)) references.locations.push({ code, tuple });
+  return references;
+}
+
+const legacyAdjustStatements = new WeakMap();
+function adjustLegacyReferences(db, references, direction = 1) {
+  let statements = legacyAdjustStatements.get(db);
+  if (!statements) {
+    statements = {
+      occupation: db.prepare(`INSERT INTO legacy_occ_map(legacy_id, tuple, n) VALUES (?, ?, ?)
+        ON CONFLICT(legacy_id, tuple) DO UPDATE SET n = n + excluded.n`),
+      location: db.prepare(`INSERT INTO legacy_loc_map(municipality_code, tuple, n) VALUES (?, ?, ?)
+        ON CONFLICT(municipality_code, tuple) DO UPDATE SET n = n + excluded.n`),
+      removeOccupation: db.prepare('DELETE FROM legacy_occ_map WHERE legacy_id = ? AND tuple = ? AND n <= 0'),
+      removeLocation: db.prepare('DELETE FROM legacy_loc_map WHERE municipality_code = ? AND tuple = ? AND n <= 0'),
+    };
+    legacyAdjustStatements.set(db, statements);
+  }
+  for (const reference of references.occupations || []) {
+    const tuple = JSON.stringify(reference.tuple);
+    statements.occupation.run(reference.id, tuple, direction);
+    statements.removeOccupation.run(reference.id, tuple);
+  }
+  for (const reference of references.locations || []) {
+    const tuple = JSON.stringify(reference.tuple);
+    statements.location.run(reference.code, tuple, direction);
+    statements.removeLocation.run(reference.code, tuple);
+  }
+}
+
+function reconcileLegacyMappings(db, affected = {}, options = {}) {
+  let changed = 0;
+  const built = isBuilt(db);
+  const skippedRows = options.skipSummaryRows || new Set();
+  const summaryBefore = newAcc();
+  const summaryAfter = newAcc();
+  const occupationMaps = db.prepare('SELECT tuple FROM legacy_occ_map WHERE legacy_id = ? AND n > 0');
+  const locationMaps = db.prepare('SELECT tuple FROM legacy_loc_map WHERE municipality_code = ? AND n > 0');
+  const occupationRows = db.prepare('SELECT rowid, raw, source, field_id, field, group_id, grp, occ_id, occ FROM ads WHERE legacy_occ_id = ?');
+  const locationRows = db.prepare('SELECT rowid, raw, source, region, muni FROM ads WHERE legacy_muni_code = ?');
+  const updateTaxonomy = db.prepare('UPDATE ads SET field_id = ?, field = ?, group_id = ?, grp = ?, occ_id = ?, occ = ? WHERE rowid = ?');
+  const updateLocation = db.prepare('UPDATE ads SET region = ?, muni = ? WHERE rowid = ?');
+  for (const id of new Set(affected.occupations || [])) {
+    const mappings = occupationMaps.all(id).map(row => JSON.parse(row.tuple));
+    const mapping = mappings.length === 1 ? mappings[0] : null;
+    for (const row of occupationRows.iterate(id)) {
+      const baseline = toRow(JSON.parse(row.raw), row.source).values.slice(8, 14);
+      const next = [...baseline];
+      if (mapping) {
+        const tuple = [mapping.field_id, mapping.field, mapping.group_id, mapping.grp, mapping.occ_id, mapping.occ];
+        for (let index = 0; index < tuple.length; index++) {
+          if (next[index] === null) next[index] = tuple[index];
+        }
+      }
+      const current = [row.field_id, row.field, row.group_id, row.grp, row.occ_id, row.occ];
+      if (next.some((value, index) => value !== current[index])) {
+        const before = projectionValues(row);
+        const after = [...before];
+        for (let index = 0; index < next.length; index++) after[index + 8] = next[index];
+        updateTaxonomy.run(...next, row.rowid);
+        if (built && !skippedRows.has(row.rowid)) {
+          accAdd(summaryBefore, before);
+          accAdd(summaryAfter, after);
+        }
+        changed++;
+      }
+    }
+  }
+  for (const code of new Set(affected.locations || [])) {
+    const mappings = locationMaps.all(code).map(row => JSON.parse(row.tuple));
+    const municipalities = new Set(mappings.map(mapping => mapping.muni).filter(Boolean));
+    const regions = new Set(mappings.map(mapping => mapping.region).filter(Boolean));
+    const municipality = municipalities.size === 1 ? [...municipalities][0] : null;
+    const region = regions.size === 1 ? [...regions][0] : null;
+    for (const row of locationRows.iterate(code)) {
+      const baseline = toRow(JSON.parse(row.raw), row.source).values;
+      const nextRegion = baseline[6] === null && region ? region : baseline[6];
+      const nextMuni = baseline[7] === null && municipality ? municipality : baseline[7];
+      if (nextRegion !== row.region || nextMuni !== row.muni) {
+        const before = projectionValues(row);
+        const after = [...before];
+        after[6] = nextRegion;
+        after[7] = nextMuni;
+        updateLocation.run(nextRegion, nextMuni, row.rowid);
+        if (built && !skippedRows.has(row.rowid)) {
+          accAdd(summaryBefore, before);
+          accAdd(summaryAfter, after);
+        }
+        changed++;
+      }
+    }
+  }
+  if (built) {
+    accFlush(db, summaryBefore, -1);
+    accFlush(db, summaryAfter);
+  }
+  return { changed };
+}
 
 function ftsQuery(q) {
   const parts = [];
@@ -350,9 +494,75 @@ function migrateEmployerSummary(db) {
   }
 }
 
+function ensureLegacyEnrichment(db, onProgress) {
+  if (db.prepare("SELECT 1 FROM meta WHERE key = 'legacy_enrichment_version' AND value = '1'").get()) return;
+  onProgress({ pct: 1, text: 'Enriching legacy records (one-time)…' });
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.exec("DELETE FROM meta WHERE key IN ('legacy_enrichment_version', 'summary_version'); DELETE FROM legacy_occ_map; DELETE FROM legacy_loc_map;");
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+
+  const batch = db.prepare('SELECT rowid, raw, source, legacy_occ_id, legacy_muni_code FROM ads WHERE rowid > ? ORDER BY rowid LIMIT 500');
+  const update = db.prepare('UPDATE ads SET legacy_occ_id = ?, legacy_muni_code = ? WHERE rowid = ?');
+  const total = db.prepare('SELECT MAX(rowid) n FROM ads').get().n || 1;
+  const affected = { occupations: new Set(), locations: new Set() };
+  let last = 0;
+  for (;;) {
+    const rows = batch.all(last);
+    if (!rows.length) break;
+    db.exec('BEGIN');
+    try {
+      for (const row of rows) {
+        const ad = JSON.parse(row.raw);
+        const values = toRow(ad, row.source).values;
+        if (row.legacy_occ_id !== values[19] || row.legacy_muni_code !== values[20]) {
+          update.run(values[19], values[20], row.rowid);
+        }
+        const references = legacyReferences(ad);
+        adjustLegacyReferences(db, references);
+        for (const reference of references.occupations) affected.occupations.add(reference.id);
+        for (const reference of references.locations) affected.locations.add(reference.code);
+      }
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+    last = rows.at(-1).rowid;
+    onProgress({ pct: 1 + 75 * last / total, text: `Enriching legacy records (one-time): ${Math.round(100 * last / total)}%…` });
+  }
+
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    onProgress({ pct: 80, text: 'Enriching legacy records: reconciling mappings…' });
+    reconcileLegacyMappings(db, {
+      occupations: [...affected.occupations],
+      locations: [...affected.locations],
+    });
+    db.prepare("INSERT OR REPLACE INTO meta(key, value) VALUES ('legacy_enrichment_version', '1')").run();
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 // One pass over all ads; slow on millions of rows (minutes), so it runs once in the background.
 // Indexes for the employment and hours filters are created afterwards.
 function ensureSummary(db, onProgress = () => {}) {
+  ensureLegacyEnrichment(db, onProgress);
+  if (!db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'index' AND name = 'ix_legacy_occ_id'").get()) {
+    onProgress({ pct: 1, text: 'Indexing legacy occupation IDs…' });
+    db.exec('CREATE INDEX IF NOT EXISTS ix_legacy_occ_id ON ads(legacy_occ_id);');
+  }
+  if (!db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'index' AND name = 'ix_legacy_muni_code'").get()) {
+    onProgress({ pct: 1, text: 'Indexing legacy municipality codes…' });
+    db.exec('CREATE INDEX IF NOT EXISTS ix_legacy_muni_code ON ads(legacy_muni_code);');
+  }
   if (!db.prepare("SELECT 1 FROM meta WHERE key = 'array_tags_version' AND value = '1'").get()) {
     onProgress({ pct: 1, text: 'Repairing imported tags (one-time)…' });
     const columns = ['field_id', 'field', 'group_id', 'grp', 'occ_id', 'occ', 'emp_type', 'hours'];
@@ -458,32 +668,45 @@ function ensureSummary(db, onProgress = () => {}) {
 function reprocess(db, onProgress = () => {}) {
   const total = db.prepare('SELECT COUNT(*) n FROM ads').get().n;
   const batch = db.prepare('SELECT rowid, raw, source FROM ads WHERE rowid > ? ORDER BY rowid LIMIT 500');
-  const columns = ['headline', 'pub_date', 'year', 'deadline', 'employer', 'region', 'muni', 'field_id', 'field', 'group_id', 'grp', 'occ_id', 'occ', 'emp_type', 'hours', 'employer_id'];
+  const columns = ['headline', 'pub_date', 'year', 'deadline', 'employer', 'region', 'muni', 'field_id', 'field', 'group_id', 'grp', 'occ_id', 'occ', 'emp_type', 'hours', 'employer_id', 'legacy_occ_id', 'legacy_muni_code'];
   const update = db.prepare(`UPDATE ads SET ${columns.map(name => `${name} = ?`).join(', ')} WHERE rowid = ?`);
   const insertFts = db.prepare('INSERT INTO ads_fts(rowid, headline, employer, body) VALUES (?, ?, ?, ?)');
   const acc = newAcc();
   const sources = new Map();
+  const affected = { occupations: new Set(), locations: new Set() };
   let last = 0;
   let processed = 0;
   onProgress({ pct: 0, text: 'Reprocessing dataset: preparing…' });
   db.exec('BEGIN IMMEDIATE');
   try {
     migrateEmployerSummary(db);
+    db.prepare("DELETE FROM meta WHERE key = 'summary_version'").run();
+    db.exec('DELETE FROM legacy_occ_map; DELETE FROM legacy_loc_map;');
     db.exec("INSERT INTO ads_fts(ads_fts) VALUES ('delete-all')");
     for (;;) {
       const rows = batch.all(last);
       if (!rows.length) break;
       for (const row of rows) {
-        const mapped = toRow(JSON.parse(row.raw), row.source);
-        update.run(...mapped.values.slice(1, 16), mapped.values[18], row.rowid);
+        const ad = JSON.parse(row.raw);
+        const mapped = toRow(ad, row.source);
+        update.run(...mapped.values.slice(1, 16), mapped.values[18], mapped.values[19], mapped.values[20], row.rowid);
         insertFts.run(row.rowid, ...mapped.fts);
-        accAdd(acc, mapped.values);
+        const references = legacyReferences(ad);
+        adjustLegacyReferences(db, references);
+        for (const reference of references.occupations) affected.occupations.add(reference.id);
+        for (const reference of references.locations) affected.locations.add(reference.code);
         sources.set(row.source, (sources.get(row.source) || 0) + 1);
       }
       last = rows[rows.length - 1].rowid;
       processed += rows.length;
       onProgress({ pct: 75 * processed / Math.max(1, total), text: `Reprocessing dataset: ${processed.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} ads` });
     }
+    reconcileLegacyMappings(db, {
+      occupations: [...affected.occupations],
+      locations: [...affected.locations],
+    });
+    for (const map of Object.values(acc)) map.clear();
+    for (const row of scanRows(db, SCAN_SQL)) accAdd(acc, row);
     onProgress({ pct: 80, text: 'Reprocessing dataset: rebuilding statistics…' });
     for (const table of Object.values(SUM_TABLE)) db.exec(`DELETE FROM ${table}`);
     db.exec('DELETE FROM employer_catalog');
@@ -495,7 +718,7 @@ function reprocess(db, onProgress = () => {}) {
     db.exec('CREATE INDEX IF NOT EXISTS ix_employer ON ads(employer COLLATE BINARY, pub_date); CREATE INDEX IF NOT EXISTS ix_employer_id ON ads(employer_id, pub_date); CREATE INDEX IF NOT EXISTS ix_emp ON ads(emp_type); CREATE INDEX IF NOT EXISTS ix_hours ON ads(hours); REINDEX;');
     onProgress({ pct: 95, text: 'Reprocessing dataset: updating query planner statistics…' });
     db.exec('ANALYZE');
-    db.exec("INSERT OR REPLACE INTO meta(key, value) VALUES ('summary_version', '2'), ('array_tags_version', '1'), ('employer_identity_version', '1'); COMMIT;");
+    db.exec("INSERT OR REPLACE INTO meta(key, value) VALUES ('summary_version', '2'), ('array_tags_version', '1'), ('employer_identity_version', '1'), ('legacy_enrichment_version', '1'); COMMIT;");
   } catch (error) {
     db.exec('ROLLBACK');
     stmtCache.delete(db);
@@ -688,14 +911,26 @@ function removeSource(db, name) {
   const built = isBuilt(db);
   db.exec('BEGIN');
   try {
+    const affected = { occupations: new Set(), locations: new Set() };
     if (built) {
       const acc = newAcc();
       for (const row of scanRows(db, `${SCAN_SQL} WHERE source = ?`, name)) accAdd(acc, row);
       accFlush(db, acc, -1);
     }
+    const references = db.prepare('SELECT raw FROM ads WHERE source = ?');
+    for (const row of references.iterate(name)) {
+      const refs = legacyReferences(JSON.parse(row.raw));
+      adjustLegacyReferences(db, refs, -1);
+      for (const reference of refs.occupations) affected.occupations.add(reference.id);
+      for (const reference of refs.locations) affected.locations.add(reference.code);
+    }
     db.prepare('DELETE FROM ads_fts WHERE rowid IN (SELECT rowid FROM ads WHERE source = ?)').run(name);
     db.prepare('DELETE FROM ads WHERE source = ?').run(name);
     db.prepare('DELETE FROM sources WHERE name = ?').run(name);
+    reconcileLegacyMappings(db, {
+      occupations: [...affected.occupations],
+      locations: [...affected.locations],
+    });
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
@@ -705,6 +940,7 @@ function removeSource(db, name) {
 
 module.exports = {
   reprocess,
-  open, toRow, INSERT_SQL, search, count, facets, timeline, getAd, info, datasetStats, removeSource,
+  open, toRow, projectionValues, INSERT_SQL, legacyReferences, adjustLegacyReferences, reconcileLegacyMappings,
+  search, count, facets, timeline, getAd, info, datasetStats, removeSource,
   isBuilt, ensureSummary, newAcc, accAdd, accFlush,
 };

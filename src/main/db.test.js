@@ -1,10 +1,215 @@
 'use strict';
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { mkdtempSync, rmSync } = require('node:fs');
+const { mkdtempSync, rmSync, writeFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
+const { Worker } = require('node:worker_threads');
 const dbm = require('./db');
+
+function runImport(dbPath, files) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(path.join(__dirname, 'import-worker.js'), { workerData: { dbPath, files } });
+    worker.on('message', message => {
+      if (message.type === 'error') reject(new Error(`${path.basename(files[0])}: ${message.message}`));
+      if (message.type === 'done') resolve();
+    });
+    worker.on('error', reject);
+    worker.on('exit', code => { if (code && code !== 0) reject(new Error(`Import worker exited ${code}`)); });
+  });
+}
+
+test('opening an existing database adds indexed legacy-key columns', () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'ams-legacy-schema-'));
+  const file = path.join(directory, 'ads.db');
+  let db = dbm.open(file);
+  try {
+    db.exec('ALTER TABLE ads DROP COLUMN legacy_occ_id; ALTER TABLE ads DROP COLUMN legacy_muni_code;');
+    db.close();
+    db = dbm.open(file);
+    const columns = new Set(db.prepare('PRAGMA table_info(ads)').all().map(row => row.name));
+    assert.ok(columns.has('legacy_occ_id'));
+    assert.ok(columns.has('legacy_muni_code'));
+    dbm.ensureSummary(db);
+    const indexes = new Set(db.prepare("SELECT name FROM sqlite_schema WHERE type = 'index'").all().map(row => row.name));
+    assert.ok(indexes.has('ix_legacy_occ_id'));
+    assert.ok(indexes.has('ix_legacy_muni_code'));
+  } finally {
+    db.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('legacy enrichment backfills existing ads and follows imports, conflicts and source removal', async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'ams-legacy-enrichment-'));
+  const file = path.join(directory, 'ads.db');
+  const olderFile = path.join(directory, 'older.jsonl');
+  const referenceFile = path.join(directory, 'reference.jsonl');
+  const conflictFile = path.join(directory, 'conflict.jsonl');
+  const reverseFile = path.join(directory, 'reverse.db');
+  const older = {
+    id: 'older',
+    occupation: { legacy_ams_taxonomy_id: '7788' },
+    workplace_address: { municipality_code: '0180' },
+  };
+  const reference = {
+    id: 'reference',
+    occupation: { concept_id: 'occ-1', label: 'Engineer', legacy_ams_taxonomy_id: '7788' },
+    occupation_group: { concept_id: 'group-1', label: 'Engineering' },
+    occupation_field: { concept_id: 'field-1', label: 'Technology' },
+    workplace_address: { municipality_code: '0180', municipality: 'Stockholm', region: 'Stockholms län' },
+  };
+  const conflict = {
+    ...reference,
+    id: 'conflict',
+    occupation: { concept_id: 'occ-2', label: 'Technician', legacy_ams_taxonomy_id: '7788' },
+    occupation_group: { concept_id: 'group-2', label: 'Technicians' },
+    workplace_address: { municipality_code: '0180', municipality: 'Stockholm', region: 'Uppsala län' },
+  };
+  const stockholmCount = db => dbm.facets(db, {}).loc
+    .filter(item => item.m === 'Stockholm')
+    .reduce((sum, item) => sum + item.n, 0);
+  writeFileSync(olderFile, `${JSON.stringify(older)}\n`);
+  writeFileSync(referenceFile, `${JSON.stringify(reference)}\n`);
+  writeFileSync(conflictFile, `${JSON.stringify(conflict)}\n`);
+  try {
+    await runImport(file, [olderFile]);
+    let db = dbm.open(file);
+    try {
+      db.exec('UPDATE ads SET legacy_occ_id = NULL, legacy_muni_code = NULL');
+      const prepare = db.prepare.bind(db);
+      let interrupted = false;
+      db.prepare = sql => {
+        const statement = prepare(sql);
+        if (sql.startsWith('UPDATE ads SET legacy_occ_id')) return {
+          run: (...values) => {
+            if (!interrupted) { interrupted = true; throw new Error('Interrupted legacy backfill'); }
+            return statement.run(...values);
+          },
+        };
+        return statement;
+      };
+      assert.throws(() => dbm.ensureSummary(db), /Interrupted legacy backfill/);
+      db.prepare = prepare;
+      assert.equal(db.prepare("SELECT value FROM meta WHERE key = 'legacy_enrichment_version'").get(), undefined);
+      dbm.ensureSummary(db);
+    } finally { db.close(); }
+
+    await runImport(file, [referenceFile]);
+    db = dbm.open(file);
+    try {
+      let row = db.prepare("SELECT field_id, field, group_id, grp, occ_id, occ, region, muni FROM ads WHERE ad_id = 'older'").get();
+      assert.deepEqual({ ...row }, {
+        field_id: 'field-1', field: 'Technology', group_id: 'group-1', grp: 'Engineering',
+        occ_id: 'occ-1', occ: 'Engineer', region: 'Stockholms län', muni: 'Stockholm',
+      });
+      assert.equal(db.prepare('SELECT n FROM legacy_occ_map WHERE legacy_id = ?').get('7788').n, 1);
+      assert.equal(dbm.facets(db, {}).occ[0].n, 2);
+      assert.equal(stockholmCount(db), 2);
+      await runImport(file, [referenceFile]);
+      assert.equal(db.prepare('SELECT n FROM legacy_occ_map WHERE legacy_id = ?').get('7788').n, 1);
+    } finally { db.close(); }
+
+    await runImport(reverseFile, [referenceFile]);
+    await runImport(reverseFile, [olderFile]);
+    db = dbm.open(reverseFile);
+    try {
+      dbm.ensureSummary(db);
+      const reverse = db.prepare("SELECT field_id, occ, region, muni FROM ads WHERE ad_id = 'older'").get();
+      assert.deepEqual({ ...reverse }, { field_id: 'field-1', occ: 'Engineer', region: 'Stockholms län', muni: 'Stockholm' });
+    } finally { db.close(); }
+
+    const originalRaw = older;
+    await runImport(file, [conflictFile]);
+    db = dbm.open(file);
+    try {
+      const row = db.prepare("SELECT field_id, occ, region, muni FROM ads WHERE ad_id = 'older'").get();
+      assert.deepEqual({ ...row }, { field_id: null, occ: null, region: null, muni: 'Stockholm' });
+      assert.deepEqual(dbm.getAd(db, 'older'), originalRaw);
+      assert.equal(stockholmCount(db), 3);
+      dbm.removeSource(db, 'conflict.jsonl');
+      const restored = db.prepare("SELECT field_id, occ, region, muni FROM ads WHERE ad_id = 'older'").get();
+      assert.deepEqual({ ...restored }, { field_id: 'field-1', occ: 'Engineer', region: 'Stockholms län', muni: 'Stockholm' });
+      assert.equal(dbm.facets(db, {}).occ[0].n, 2);
+      assert.equal(stockholmCount(db), 2);
+      dbm.reprocess(db);
+      const rebuilt = db.prepare("SELECT field_id, occ, region, muni FROM ads WHERE ad_id = 'older'").get();
+      assert.deepEqual({ ...rebuilt }, { field_id: 'field-1', occ: 'Engineer', region: 'Stockholms län', muni: 'Stockholm' });
+      assert.equal(db.prepare('SELECT n FROM legacy_occ_map WHERE legacy_id = ?').get('7788').n, 1);
+      assert.equal(dbm.facets(db, {}).occ[0].n, 2);
+    } finally { db.close(); }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('legacy enrichment applies only consensus mappings and restores source values when consensus changes', () => {
+  const db = dbm.open(':memory:');
+  try {
+    const older = {
+      id: 'older',
+      occupation: { legacy_ams_taxonomy_id: '7788' },
+      workplace_address: { municipality_code: '0180' },
+    };
+    const partial = {
+      id: 'partial',
+      occupation: { legacy_ams_taxonomy_id: '7788' },
+      occupation_field: { concept_id: 'source-field', label: 'Source field' },
+      workplace_address: { municipality_code: '0180', region: 'Source region' },
+    };
+    const reference = {
+      id: 'reference',
+      occupation: { concept_id: 'occ-1', label: 'Engineer', legacy_ams_taxonomy_id: '7788' },
+      occupation_group: { concept_id: 'group-1', label: 'Engineering' },
+      occupation_field: { concept_id: 'field-1', label: 'Technology' },
+      workplace_address: { municipality_code: '0180', municipality: 'Stockholm', region: 'Stockholms län' },
+    };
+    const conflict = {
+      ...reference,
+      id: 'conflict',
+      occupation: { concept_id: 'occ-2', label: 'Technician', legacy_ams_taxonomy_id: '7788' },
+      occupation_group: { concept_id: 'group-2', label: 'Technicians' },
+      workplace_address: { municipality_code: '0180', municipality: 'Stockholm', region: 'Uppsala län' },
+    };
+    for (const ad of [older, partial, reference]) db.prepare(dbm.INSERT_SQL).run(...dbm.toRow(ad, `${ad.id}.jsonl`).values);
+    dbm.adjustLegacyReferences(db, dbm.legacyReferences(reference));
+    dbm.reconcileLegacyMappings(db, { occupations: ['7788'], locations: ['0180'] });
+    let row = db.prepare("SELECT field_id, field, group_id, grp, occ_id, occ, region, muni FROM ads WHERE ad_id = 'older'").get();
+    assert.deepEqual({ ...row }, {
+      field_id: 'field-1', field: 'Technology', group_id: 'group-1', grp: 'Engineering',
+      occ_id: 'occ-1', occ: 'Engineer', region: 'Stockholms län', muni: 'Stockholm',
+    });
+    row = db.prepare("SELECT field_id, field, group_id, grp, occ_id, occ, region, muni FROM ads WHERE ad_id = 'partial'").get();
+    assert.deepEqual({ ...row }, {
+      field_id: 'source-field', field: 'Source field', group_id: 'group-1', grp: 'Engineering',
+      occ_id: 'occ-1', occ: 'Engineer', region: 'Source region', muni: 'Stockholm',
+    });
+    const originalRaw = dbm.getAd(db, 'older');
+    const partialRaw = dbm.getAd(db, 'partial');
+    db.prepare(dbm.INSERT_SQL).run(...dbm.toRow(conflict, 'conflict.jsonl').values);
+    dbm.adjustLegacyReferences(db, dbm.legacyReferences(conflict));
+    dbm.reconcileLegacyMappings(db, { occupations: ['7788'], locations: ['0180'] });
+    row = db.prepare("SELECT field_id, field, group_id, grp, occ_id, occ, region, muni FROM ads WHERE ad_id = 'older'").get();
+    assert.deepEqual({ ...row }, {
+      field_id: null, field: null, group_id: null, grp: null, occ_id: null, occ: null,
+      region: null, muni: 'Stockholm',
+    });
+    row = db.prepare("SELECT field_id, field, group_id, grp, occ_id, occ, region, muni FROM ads WHERE ad_id = 'partial'").get();
+    assert.deepEqual({ ...row }, {
+      field_id: 'source-field', field: 'Source field', group_id: null, grp: null,
+      occ_id: null, occ: null, region: 'Source region', muni: 'Stockholm',
+    });
+    assert.deepEqual(dbm.getAd(db, 'older'), originalRaw);
+    assert.deepEqual(dbm.getAd(db, 'partial'), partialRaw);
+    dbm.adjustLegacyReferences(db, dbm.legacyReferences(conflict), -1);
+    dbm.reconcileLegacyMappings(db, { occupations: ['7788'], locations: ['0180'] });
+    row = db.prepare("SELECT field_id, field, group_id, grp, occ_id, occ, region, muni FROM ads WHERE ad_id = 'older'").get();
+    assert.equal(row.occ, 'Engineer');
+    assert.equal(row.region, 'Stockholms län');
+  } finally {
+    db.close();
+  }
+});
 
 test('organization identities consolidate employer variants across all queries and summary updates', () => {
   const db = dbm.open(':memory:');
