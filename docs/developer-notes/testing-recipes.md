@@ -5,6 +5,10 @@ Count logic has headless regression tests; visual layout still needs manual revi
 ## Legacy taxonomy and location enrichment (DAT-015/016, D58)
 `node --check src/main/db.js && node --check src/main/import-worker.js && node --test src/main/db.test.js` covers retryable key/map backfill, reference-first and legacy-first import, duplicate-safe contributions, preserved source values/raw JSON, taxonomy and independent location consensus, conflict removal, reprocessing, and summary/facet consistency. Worker fixtures use temporary databases and files only. Do not validate the one-time migration against the live 11.25M-ad database without explicitly planning its write cost; full-scale time/disk use is not measured.
 
+D59 detail regression: `node --test --test-name-pattern='legacy enrichment|ad details enrich' src/main/db.test.js` covers detail/list consistency, preserved source fields and taxonomy shapes, immutable stored JSON, and detail rollback after reference conflicts/removal. `getAd()` returns a presentation projection, not an exact raw-record snapshot; read `ads.raw` directly when asserting source immutability.
+
+2026-10-31 D59: `node --check src/main/db.js && node --check src/main/db.test.js && node --test src/main/db.test.js src/renderer/app.test.js` passes 77 tests. Disposable worker import of `devdata/2006-min.jsonl` and `devdata/2026-Q3-min.jsonl` stores 1,991 ads. The "Jobba i Norge med Manpower Helse!" example matches its listing/filter taxonomy and renders all three hierarchy labels in tags and breadcrumbs using the real `renderAd()` headlessly. VM fixtures must include the `fmtText`/`fact`/`labels` helper block, not only `renderAd`. Native visual layout was not inspected.
+
 Disposable startup smoke test (Linux):
 ```bash
 temp_config=$(mktemp -d)

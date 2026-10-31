@@ -92,6 +92,8 @@ legacy_loc_map(municipality_code, tuple, n) -- municipality/region candidates an
 
 On import, only newly inserted ads contribute candidates. The worker reconciles both their reference keys and their own legacy keys before committing each batch, so import order does not matter. Existing rows are restored from their source projection in `raw`, then missing taxonomy fields are filled only when one complete tuple remains; municipality and region are resolved independently when each has one candidate. Summary deltas for changed existing rows and final projections for new rows are committed with the batch. Source removal subtracts that source's candidates, deletes its ads, reconciles survivors and updates summaries in the same build-worker transaction. Manual reprocessing rebuilds keys, candidate maps, enriched projections, FTS and summaries from `raw`.
 
+`getAd()` overlays missing taxonomy concept IDs/labels and municipality/region labels from promoted columns onto the parsed source response (D59). Existing source fields, taxonomy arrays and legacy metadata are preserved; stored `raw` is never changed. Ad tags, breadcrumbs and workplace facts therefore match the enrichment used by listings and filters. Geographic codes/concept IDs are not invented.
+
 No live dataset was migrated during T12 verification. Full-scale migration time, disk use and import/removal cost on the 11.25M-ad dataset remain unmeasured.
 
 ### Employer identity backfill and catalog (D55)

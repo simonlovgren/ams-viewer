@@ -106,6 +106,12 @@ test('legacy enrichment backfills existing ads and follows imports, conflicts an
       assert.equal(db.prepare('SELECT n FROM legacy_occ_map WHERE legacy_id = ?').get('7788').n, 1);
       assert.equal(dbm.facets(db, {}).occ[0].n, 2);
       assert.equal(stockholmCount(db), 2);
+      const detail = dbm.getAd(db, 'older');
+      assert.deepEqual(detail.occupation, reference.occupation);
+      assert.deepEqual(detail.occupation_group, reference.occupation_group);
+      assert.deepEqual(detail.occupation_field, reference.occupation_field);
+      assert.deepEqual(detail.workplace_address, reference.workplace_address);
+      assert.deepEqual(JSON.parse(db.prepare("SELECT raw FROM ads WHERE ad_id = 'older'").get().raw), older);
       await runImport(file, [referenceFile]);
       assert.equal(db.prepare('SELECT n FROM legacy_occ_map WHERE legacy_id = ?').get('7788').n, 1);
     } finally { db.close(); }
@@ -125,7 +131,9 @@ test('legacy enrichment backfills existing ads and follows imports, conflicts an
     try {
       const row = db.prepare("SELECT field_id, occ, region, muni FROM ads WHERE ad_id = 'older'").get();
       assert.deepEqual({ ...row }, { field_id: null, occ: null, region: null, muni: 'Stockholm' });
-      assert.deepEqual(dbm.getAd(db, 'older'), originalRaw);
+      assert.deepEqual(dbm.getAd(db, 'older'), {
+        ...originalRaw, workplace_address: { ...originalRaw.workplace_address, municipality: 'Stockholm' },
+      });
       assert.equal(stockholmCount(db), 3);
       dbm.removeSource(db, 'conflict.jsonl');
       const restored = db.prepare("SELECT field_id, occ, region, muni FROM ads WHERE ad_id = 'older'").get();
@@ -137,6 +145,9 @@ test('legacy enrichment backfills existing ads and follows imports, conflicts an
       assert.deepEqual({ ...rebuilt }, { field_id: 'field-1', occ: 'Engineer', region: 'Stockholms län', muni: 'Stockholm' });
       assert.equal(db.prepare('SELECT n FROM legacy_occ_map WHERE legacy_id = ?').get('7788').n, 1);
       assert.equal(dbm.facets(db, {}).occ[0].n, 2);
+      assert.equal(dbm.getAd(db, 'older').occupation.label, 'Engineer');
+      dbm.removeSource(db, 'reference.jsonl');
+      assert.deepEqual(dbm.getAd(db, 'older'), older);
     } finally { db.close(); }
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -184,8 +195,8 @@ test('legacy enrichment applies only consensus mappings and restores source valu
       field_id: 'source-field', field: 'Source field', group_id: 'group-1', grp: 'Engineering',
       occ_id: 'occ-1', occ: 'Engineer', region: 'Source region', muni: 'Stockholm',
     });
-    const originalRaw = dbm.getAd(db, 'older');
-    const partialRaw = dbm.getAd(db, 'partial');
+    assert.deepEqual(dbm.getAd(db, 'partial').occupation_field, partial.occupation_field);
+    assert.equal(dbm.getAd(db, 'partial').workplace_address.region, 'Source region');
     db.prepare(dbm.INSERT_SQL).run(...dbm.toRow(conflict, 'conflict.jsonl').values);
     dbm.adjustLegacyReferences(db, dbm.legacyReferences(conflict));
     dbm.reconcileLegacyMappings(db, { occupations: ['7788'], locations: ['0180'] });
@@ -199,13 +210,58 @@ test('legacy enrichment applies only consensus mappings and restores source valu
       field_id: 'source-field', field: 'Source field', group_id: null, grp: null,
       occ_id: null, occ: null, region: 'Source region', muni: 'Stockholm',
     });
-    assert.deepEqual(dbm.getAd(db, 'older'), originalRaw);
-    assert.deepEqual(dbm.getAd(db, 'partial'), partialRaw);
+    assert.deepEqual(dbm.getAd(db, 'older'), {
+      ...older, workplace_address: { ...older.workplace_address, municipality: 'Stockholm' },
+    });
+    assert.deepEqual(dbm.getAd(db, 'partial'), {
+      ...partial, workplace_address: { ...partial.workplace_address, municipality: 'Stockholm' },
+    });
     dbm.adjustLegacyReferences(db, dbm.legacyReferences(conflict), -1);
     dbm.reconcileLegacyMappings(db, { occupations: ['7788'], locations: ['0180'] });
     row = db.prepare("SELECT field_id, field, group_id, grp, occ_id, occ, region, muni FROM ads WHERE ad_id = 'older'").get();
     assert.equal(row.occ, 'Engineer');
     assert.equal(row.region, 'Stockholms län');
+    assert.equal(dbm.getAd(db, 'older').occupation.concept_id, 'occ-1');
+    assert.equal(dbm.getAd(db, 'older').workplace_address.region, 'Stockholms län');
+    assert.equal(dbm.getAd(db, 'missing'), null);
+  } finally {
+    db.close();
+  }
+});
+
+test('ad details enrich missing taxonomy while preserving arrays, metadata and source-only values', () => {
+  const db = dbm.open(':memory:');
+  try {
+    const ad = {
+      id: 'array-detail', headline: 'Original headline',
+      occupation: [null, { concept_id: null, label: '', legacy_ams_taxonomy_id: '7788', extra: 'keep' }, { concept_id: 'other', label: 'Other' }],
+      occupation_group: [], occupation_field: null,
+      workplace_address: { city: 'STOCKHOLM', municipality_code: '0180', region: 'Source region' },
+      employment_type: { label: 'Source employment' },
+    };
+    const mapped = dbm.toRow(ad, 'older.jsonl');
+    db.prepare(dbm.INSERT_SQL).run(...mapped.values);
+    const raw = db.prepare('SELECT raw FROM ads').get().raw;
+    db.exec(`UPDATE ads SET field_id = 'field-1', field = 'Technology', group_id = 'group-1', grp = 'Engineering',
+      occ_id = 'occ-1', occ = 'Engineer', muni = 'Stockholm'`);
+    const detail = dbm.getAd(db, ad.id);
+    assert.deepEqual(detail.occupation, [
+      { concept_id: 'occ-1', label: 'Engineer', legacy_ams_taxonomy_id: '7788', extra: 'keep' },
+      { concept_id: 'other', label: 'Other' },
+    ]);
+    assert.deepEqual(detail.occupation_group, { concept_id: 'group-1', label: 'Engineering' });
+    assert.deepEqual(detail.occupation_field, { concept_id: 'field-1', label: 'Technology' });
+    assert.deepEqual(detail.workplace_address, { ...ad.workplace_address, municipality: 'Stockholm' });
+    assert.deepEqual(detail.employment_type, ad.employment_type);
+    assert.equal(detail.headline, ad.headline);
+    assert.equal(db.prepare('SELECT raw FROM ads').get().raw, raw);
+    db.prepare('UPDATE ads SET raw = ?').run(JSON.stringify(ad));
+    assert.deepEqual(dbm.getAd(db, ad.id).occupation_group, [{ concept_id: 'group-1', label: 'Engineering' }]);
+    assert.equal(dbm.getAd(db, ad.id).occupation[0], null);
+
+    const labelOnly = { id: 'label-only', occupation: { label: 'Source label' } };
+    db.prepare(dbm.INSERT_SQL).run(...dbm.toRow(labelOnly, 'source.jsonl').values);
+    assert.deepEqual(dbm.getAd(db, labelOnly.id), labelOnly);
   } finally {
     db.close();
   }

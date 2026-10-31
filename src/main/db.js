@@ -891,8 +891,30 @@ function timeline(db, f) {
 }
 
 function getAd(db, id) {
-  const r = db.prepare('SELECT raw FROM ads WHERE ad_id = ?').get(String(id));
-  return r ? JSON.parse(r.raw) : null;
+  const row = db.prepare('SELECT raw, field_id, field, group_id, grp, occ_id, occ, region, muni FROM ads WHERE ad_id = ?').get(String(id));
+  if (!row) return null;
+  const ad = JSON.parse(row.raw);
+  for (const [key, idColumn, labelColumn] of [
+    ['occupation_field', 'field_id', 'field'],
+    ['occupation_group', 'group_id', 'grp'],
+    ['occupation', 'occ_id', 'occ'],
+  ]) {
+    const tag = one(ad[key]);
+    const additions = {};
+    if (!tag?.concept_id && row[idColumn] && row[idColumn] !== cid(tag)) additions.concept_id = row[idColumn];
+    if (!tag?.label && row[labelColumn]) additions.label = row[labelColumn];
+    if (!Object.keys(additions).length) continue;
+    if (tag) Object.assign(tag, additions);
+    else if (Array.isArray(ad[key])) ad[key].push(additions);
+    else ad[key] = additions;
+  }
+  for (const [key, column] of [['municipality', 'muni'], ['region', 'region']]) {
+    if (!ad.workplace_address?.[key] && row[column]) {
+      ad.workplace_address ||= {};
+      ad.workplace_address[key] = row[column];
+    }
+  }
+  return ad;
 }
 
 function info(db) {
