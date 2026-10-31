@@ -1,6 +1,6 @@
 # Tasks (planned and active)
 
-Planned work that is specified but not started, plus active tasks. Each task links to its requirements; when work starts, set the requirement to `In progress` and record decisions in [design-decisions.md](design-decisions.md). Last updated 2026-10-29.
+Planned work that is specified but not started, plus active tasks. Each task links to its requirements; when work starts, set the requirement to `In progress` and record decisions in [design-decisions.md](design-decisions.md). Last updated 2026-10-31.
 
 | # | Task | Requirements | Size |
 |---|---|---|---|
@@ -81,10 +81,11 @@ T15–T17 completed 2026-10-18 (D39–D42). T7, T2, T13, T14, T1, T8 and T9 are 
 
 ## T9. Top-30 employers widget (SRC-020, SRC-022)
 - Completed 2026-10-18; D43–D44. `facets()` groups exact stored employer text under all active filters and returns the 30 most frequent; unfiltered totals come from `sum_employer`. Labels show counts and full-name tooltips and collapse like other widgets.
-- Names differing in spelling or case remain distinct; organization numbers are not used. D45 adds exact-name native toggle buttons and removable "Employer: …" chips, OR within employer selections and AND with other filters. Existing filters, committed keywords and draft text remain unchanged. Session/ad navigation retains selections; Clear all and dataset switch reset them. Statistics retain SRC-020's filtered Top-30 behavior, not an own-filter-excluded employer option list.
+- D55 (2026-10-31) consolidates spelling/case variants by organization ID; missing IDs retain exact-name grouping. IDs, dataset-wide representative names and unfiltered totals are precomputed on writes, not rebuilt during filtering. D45's native toggles and removable "Employer: …" chips now select organization IDs (or missing-ID exact names), OR within employers and AND with other filters. Existing filters, committed keywords and draft text remain unchanged. Session/ad navigation retains selections; Clear all and dataset switch reset them. Statistics retain SRC-020's filtered Top-30 behavior, not an own-filter-excluded employer option list.
 - Summary version 2 rebuilds derived tables once in the background; source ads need no re-import. Filtered results use the existing bounded per-worker facet cache. D45 adds no schema/index or migration.
 - Before summary precomputation, an unfiltered group-by took 167,837 ms on 11.25M ads. Filtered full-scale latency and the version-2 rebuild have not been verified; track remaining query cost under T6.
 - `node --test src/main/db.test.js src/renderer/app.test.js` passes 46 tests, covering exact case/spacing, multi-employer OR, combined filters, all query paths, toggles, chips, Clear all, dataset reset and session state. Browser fixture verifies native Enter/Space, focus retention, request propagation, draft preservation and ad/reload retention; native Electron interaction and full-scale latency remain unverified.
+- D55 verification: all 102 tests and syntax/editor checks pass, including precomputed read-only catalog queries, shared-ID consolidation, same-name/different-ID separation, missing-ID fallback, incremental removal/reprocessing, resumable legacy backfill and renderer identity/session workflows. Disposable native launch verifies one Kils entry, ID-backed chip and both spelling variants returned, then quits normally (574 ms startup). Live data untouched; full-scale backfill/disk cost, filtered latency and physical native keyboard remain unverified.
 
 ## T10. Employer logo cache (AD-010)
 - Today the ad view loads `logo_url` directly in an `<img>` (CSP `img-src` allows any `https:`); nothing is stored, so every view hits the remote host and fails offline.

@@ -713,7 +713,7 @@
     });
     document.querySelectorAll('#filters .zero').forEach((el) => el.classList.remove('zero'));
     document.querySelectorAll('[data-employer]').forEach((button) => {
-      const selected = F.employers.includes(button.dataset.employer);
+      const selected = F.employers.some(value => typeof value === 'string' ? value === button.dataset.employer : value.id === (button.dataset.employerId || null) && (value.id || value.label === button.dataset.employer));
       button.classList.toggle('on', selected);
       button.setAttribute('aria-pressed', String(selected));
     });
@@ -825,12 +825,16 @@
   }
 
   function renderEmployers(rows) {
-    const focused = document.activeElement?.closest?.('[data-employer]')?.dataset.employer;
+    const focusedButton = document.activeElement?.closest?.('[data-employer]');
+    const focused = focusedButton && (focusedButton.dataset.employerId || focusedButton.dataset.employer);
     $('#widget-employers').innerHTML = rows.length
-      ? `<div class="employer-list">${rows.map((r) => `<button type="button" class="chip employer-chip${F.employers.includes(r.v) ? ' on' : ''}" data-employer="${esc(r.v)}" aria-pressed="${F.employers.includes(r.v)}" title="${esc(r.v)}"><span class="employer-name">${esc(r.v)}</span><small title="${fmtNum(r.n)}">${fmtCount(r.n)}</small></button>`).join('')}</div>`
+      ? `<div class="employer-list">${rows.map((r) => {
+        const selected = F.employers.some(value => typeof value === 'string' ? value === r.v : value.id === (r.id || null) && (value.id || value.label === r.v));
+        return `<button type="button" class="chip employer-chip${selected ? ' on' : ''}" data-employer="${esc(r.v)}" aria-pressed="${selected}" data-employer-id="${esc(r.id || '')}" title="${esc(r.v)}"><span class="employer-name">${esc(r.v)}</span><small title="${fmtNum(r.n)}">${fmtCount(r.n)}</small></button>`;
+      }).join('')}</div>`
       : '<div class="empty-mini">No employer data</div>';
     if (focused !== undefined) {
-      [...$('#widget-employers').querySelectorAll('[data-employer]')].find(button => button.dataset.employer === focused)?.focus();
+      [...$('#widget-employers').querySelectorAll('[data-employer]')].find(button => (button.dataset.employerId || button.dataset.employer) === focused)?.focus();
     }
   }
 
@@ -1004,7 +1008,9 @@
     const button = e.target.closest('[data-employer]');
     if (!button) return;
     const name = button.dataset.employer;
-    setF({ employers: F.employers.includes(name) ? F.employers.filter(value => value !== name) : [...F.employers, name] });
+    const selection = button.dataset.employerId === undefined ? name : { id: button.dataset.employerId || null, label: name };
+    const matches = value => typeof value === 'string' ? value === name : value.id === (button.dataset.employerId || null) && (value.id || value.label === name);
+    setF({ employers: F.employers.some(matches) ? F.employers.filter(value => !matches(value)) : [...F.employers, selection] });
   });
 
   $('#f-from').addEventListener('change', (e) => setF({ from: e.target.value }));
@@ -1053,7 +1059,7 @@
     if (F.from || F.to) items.push(['date', 'calendar', `${F.from || '…'} → ${F.to || '…'}`, ['from', 'to']]);
     if (F.emp) items.push(['emp', 'briefcase', F.emp, ['emp']]);
     if (F.hours) items.push(['hours', 'clock', F.hours, ['hours']]);
-    F.employers.forEach((name, i) => items.push(['employer', 'building', `Employer: ${name}`, ['employers#' + i]]));
+    F.employers.forEach((value, i) => items.push(['employer', 'building', `Employer: ${typeof value === 'string' ? value : value.label}`, ['employers#' + i]]));
     $('#active').innerHTML = items
       .map(([k, ic, text], i) => k === 'employer'
         ? `<button type="button" class="chip fl on" data-i="${i}" aria-label="Remove ${esc(text)}">${icon(ic)}${esc(text)}<span class="x">${icon('x')}</span></button>`

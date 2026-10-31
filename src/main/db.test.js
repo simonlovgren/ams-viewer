@@ -6,6 +6,134 @@ const { tmpdir } = require('node:os');
 const path = require('node:path');
 const dbm = require('./db');
 
+test('organization identities consolidate employer variants across all queries and summary updates', () => {
+  const db = dbm.open(':memory:');
+  try {
+    dbm.ensureSummary(db);
+    const acc = dbm.newAcc();
+    const employers = [
+      { name: 'Kils Kommun', organization_number: '2120001751' },
+      { name: 'KILS KOMMUN', organization_number: 2120001751 },
+      { name: 'Kils Kommun', organization_number: 'other-id' },
+      { name: 'Kils Kommun' }, { name: 'KILS KOMMUN', organization_number: ' ' },
+      { name: 'Other employer', organization_number: 'other-id' },
+    ];
+    employers.forEach((employer, index) => {
+      const row = dbm.toRow({
+        id: String(index), headline: 'Engineer', employer,
+        publication_date: index === 1 ? '2026-02-02' : '2026-01-01',
+        workplace_address: { region: index === 1 ? 'South' : 'North' },
+        employment_type: { label: 'Permanent' }, working_hours_type: { label: 'Full time' },
+      }, index === 1 ? 'upper' : 'mixed');
+      const inserted = db.prepare(dbm.INSERT_SQL).run(...row.values);
+      db.prepare('INSERT INTO ads_fts(rowid,headline,employer,body) VALUES (?,?,?,?)').run(inserted.lastInsertRowid, ...row.fts);
+      dbm.accAdd(acc, row.values);
+    });
+    dbm.accFlush(db, acc);
+    const selection = { id: '2120001751', label: 'KILS KOMMUN' };
+    const filter = { employers: [selection] };
+    const ids = filters => dbm.search(db, filters, 0, 60, true).rows.map(row => row.ad_id).sort();
+    assert.deepEqual(ids(filter), ['0', '1']);
+    assert.equal(dbm.count(db, filter), 2);
+    assert.equal(dbm.timeline(db, filter).points.reduce((sum, row) => sum + row.n, 0), 2);
+    assert.deepEqual(dbm.facets(db, filter).employers, [{ id: '2120001751', v: 'KILS KOMMUN', n: 2 }]);
+    assert.deepEqual(dbm.facets(db, {}).employers, dbm.facets(db, { emp: 'Permanent' }).employers);
+    assert.equal(dbm.facets(db, {}).employers.length, 4);
+    assert.deepEqual(ids({ employers: [selection, { id: 'other-id', label: 'Other' }] }), ['0', '1', '2', '5']);
+    assert.deepEqual(ids({ employers: [{ id: null, label: 'Kils Kommun' }] }), ['3']);
+    assert.deepEqual(ids({ employers: [{ id: null, label: 'KILS KOMMUN' }] }), ['4']);
+    assert.deepEqual(ids({ employers: ["Kils Kommun"] }), ['0', '2', '3']);
+    assert.deepEqual(ids({ employers: [{ id: "' OR 1=1 --", label: 'Unsafe' }] }), []);
+    const combined = { ...filter, terms: ['Engineer'], emp: 'Permanent', hours: 'Full time', loc: [{ k: 'region', id: 'North' }], from: '2026-01-01', to: '2026-01-31' };
+    assert.deepEqual(ids({ ...combined, sort: 'relevance' }), ['0']);
+    assert.equal(dbm.count(db, combined), 1);
+    assert.equal(dbm.facets(db, combined).employers[0].n, 1);
+    assert.equal(dbm.timeline(db, combined).points.reduce((sum, row) => sum + row.n, 0), 1);
+    const plan = db.prepare('EXPLAIN QUERY PLAN SELECT pub_date FROM ads a WHERE a.employer_id IN (?)').all(selection.id);
+    assert.ok(plan.some(row => /COVERING INDEX ix_employer_id/.test(row.detail)), JSON.stringify(plan));
+    dbm.removeSource(db, 'upper');
+    assert.deepEqual(dbm.facets(db, filter).employers, [{ id: '2120001751', v: 'Kils Kommun', n: 1 }]);
+    const snapshot = dbm.facets(db, {}).employers;
+    db.exec("DELETE FROM meta WHERE key = 'summary_version'");
+    dbm.ensureSummary(db);
+    assert.deepEqual(dbm.facets(db, {}).employers, snapshot);
+    dbm.reprocess(db);
+    assert.deepEqual(dbm.facets(db, {}).employers, snapshot);
+  } finally {
+    db.close();
+  }
+});
+
+test('employer names and totals are precomputed, never rebuilt by filtering', () => {
+  const db = dbm.open(':memory:');
+  try {
+    for (const [id, name, region] of [['one', 'KILS KOMMUN', 'North'], ['two', 'Kils Kommun', 'South']]) {
+      db.prepare(dbm.INSERT_SQL).run(...dbm.toRow({ id, employer: { name, organization_number: '2120001751' }, workplace_address: { region } }, 'test').values);
+    }
+    dbm.ensureSummary(db);
+    const before = db.prepare('SELECT * FROM employer_catalog').all();
+    assert.deepEqual(before.map(row => ({ ...row })), [{ org_id: '2120001751', name_key: '', v: 'KILS KOMMUN', n: 2 }]);
+    const writes = db.prepare('SELECT total_changes() n').get().n;
+    const prepare = db.prepare.bind(db);
+    const queries = [];
+    db.prepare = sql => { queries.push(sql); return prepare(sql); };
+    assert.deepEqual(dbm.facets(db, {}).employers, [{ id: '2120001751', v: 'KILS KOMMUN', n: 2 }]);
+    const filter = { loc: [{ k: 'region', id: 'South' }] };
+    assert.deepEqual(dbm.facets(db, filter).employers, [{ id: '2120001751', v: 'KILS KOMMUN', n: 1 }]);
+    assert.deepEqual(dbm.facets(db, filter).employers, [{ id: '2120001751', v: 'KILS KOMMUN', n: 1 }]);
+    assert.ok(queries.some(sql => sql.includes('JOIN employer_catalog')));
+    assert.ok(queries.every(sql => !/json_extract|json_type|MIN\(.*employer|MIN\(v|INSERT|UPDATE|DELETE/i.test(sql)), queries.join('\n'));
+    assert.equal(db.prepare('SELECT total_changes() n').get().n, writes);
+    assert.deepEqual(db.prepare('SELECT * FROM employer_catalog').all(), before);
+    const plan = db.prepare('EXPLAIN QUERY PLAN SELECT org_id, v, n FROM employer_catalog ORDER BY n DESC, v COLLATE NOCASE, v COLLATE BINARY, org_id LIMIT 30').all();
+    assert.ok(plan.some(row => row.detail.includes('ix_employer_rank')), JSON.stringify(plan));
+  } finally {
+    db.close();
+  }
+});
+
+test('legacy employer migration backfills IDs without changing raw ads and resumes failed batches', () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'ams-employer-migration-'));
+  const file = path.join(directory, 'ads.db');
+  let db = dbm.open(file);
+  try {
+    for (let index = 0; index < 501; index++) {
+      db.prepare(dbm.INSERT_SQL).run(...dbm.toRow({ id: String(index), employer: { name: index % 2 ? 'KILS KOMMUN' : 'Kils Kommun', organization_number: '2120001751' } }, 'test').values);
+    }
+    const before = db.prepare('SELECT rowid, ad_id, employer, raw, source FROM ads').all();
+    db.exec(`ALTER TABLE ads DROP COLUMN employer_id;
+      DROP TABLE sum_employer; CREATE TABLE sum_employer(v TEXT PRIMARY KEY, n INTEGER NOT NULL);
+      INSERT INTO meta(key, value) VALUES ('summary_version', '2'), ('array_tags_version', '1');`);
+    db.close();
+    db = dbm.open(file);
+    const prepare = db.prepare.bind(db);
+    let updates = 0;
+    db.prepare = sql => {
+      const statement = prepare(sql);
+      return sql.startsWith('UPDATE ads SET employer_id') ? {
+        run: (...params) => {
+          if (++updates === 501) throw new Error('Interrupted identity backfill');
+          return statement.run(...params);
+        },
+      } : statement;
+    };
+    assert.throws(() => dbm.ensureSummary(db), /Interrupted identity backfill/);
+    db.prepare = prepare;
+    assert.equal(dbm.isBuilt(db), false);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM ads WHERE employer_id IS NULL').get().n, 1);
+    assert.equal(db.prepare("SELECT value FROM meta WHERE key = 'employer_identity_version'").get(), undefined);
+    const events = [];
+    dbm.ensureSummary(db, event => events.push(event));
+    assert.ok(events.some(event => /Consolidating employers/.test(event.text)));
+    assert.deepEqual(db.prepare('SELECT rowid, ad_id, employer, raw, source FROM ads').all(), before);
+    assert.deepEqual(dbm.facets(db, {}).employers, [{ id: '2120001751', v: 'KILS KOMMUN', n: 501 }]);
+    dbm.ensureSummary(db, () => assert.fail('Migration must not repeat'));
+  } finally {
+    db.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('manual reprocessing restores all projections, FTS, summaries, source counts and indexes', () => {
   const db = dbm.open(':memory:');
   try {

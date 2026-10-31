@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS ads (
   emp_type TEXT,
   hours TEXT,
   source TEXT,
-  raw TEXT
+  raw TEXT,
+  employer_id TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_pub ON ads(pub_date);
 CREATE INDEX IF NOT EXISTS ix_year ON ads(year);
@@ -49,7 +50,9 @@ CREATE TABLE IF NOT EXISTS sum_year (year INTEGER NOT NULL PRIMARY KEY, n INTEGE
 CREATE TABLE IF NOT EXISTS sum_emp (v TEXT NOT NULL PRIMARY KEY, n INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS sum_hours (v TEXT NOT NULL PRIMARY KEY, n INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS sum_day (day TEXT NOT NULL PRIMARY KEY, n INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS sum_employer (v TEXT NOT NULL PRIMARY KEY, n INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS sum_employer (org_id TEXT NOT NULL, v TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (org_id, v));
+CREATE TABLE IF NOT EXISTS employer_catalog (org_id TEXT NOT NULL, name_key TEXT NOT NULL, v TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (org_id, name_key));
+CREATE INDEX IF NOT EXISTS ix_employer_rank ON employer_catalog(n DESC, v COLLATE NOCASE, v COLLATE BINARY, org_id);
 `;
 
 function open(path) {
@@ -57,6 +60,17 @@ function open(path) {
   // busy_timeout first: opening several connections at once on a WAL database that needs recovery otherwise fails with SQLITE_BUSY.
   db.exec('PRAGMA busy_timeout=30000; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;');
   db.exec(SCHEMA);
+  if (!db.prepare('PRAGMA table_info(ads)').all().some(column => column.name === 'employer_id')) {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      if (!db.prepare('PRAGMA table_info(ads)').all().some(column => column.name === 'employer_id')) db.exec('ALTER TABLE ads ADD COLUMN employer_id TEXT');
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      db.close();
+      throw error;
+    }
+  }
   return db;
 }
 
@@ -80,6 +94,7 @@ const lbl = (o) => (o && o.label) || null;
 const cid = (o) => (o && (o.concept_id || o.label)) || null;
 // From 2023 the source holds arrays for occupation and employment type; the first entry is used.
 const one = (x) => (Array.isArray(x) ? x.find(Boolean) || null : x);
+const employerId = (value) => typeof value === 'string' || typeof value === 'number' ? String(value).trim() || null : null;
 
 // 2006-2016 ads have no id; derive a stable one from their content so re-imports are skipped.
 const contentId = (d) =>
@@ -111,14 +126,15 @@ function toRow(d, source) {
       lbl(one(d.working_hours_type)),
       source,
       JSON.stringify(prune(d) || {}),
+      employerId(d.employer?.organization_number),
     ],
     fts: [d.headline || '', (d.employer && d.employer.name) || '', (d.description && d.description.text) || ''],
   };
 }
 
 const INSERT_SQL = `INSERT OR IGNORE INTO ads
- (ad_id,headline,pub_date,year,deadline,employer,region,muni,field_id,field,group_id,grp,occ_id,occ,emp_type,hours,source,raw)
- VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+ (ad_id,headline,pub_date,year,deadline,employer,region,muni,field_id,field,group_id,grp,occ_id,occ,emp_type,hours,source,raw,employer_id)
+ VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
 
 function ftsQuery(q) {
   const parts = [];
@@ -174,8 +190,14 @@ function where(f, skip = []) {
   if (has('emp') && f.emp) { w.push('a.emp_type = ?'); p.push(f.emp); }
   if (has('hours') && f.hours) { w.push('a.hours = ?'); p.push(f.hours); }
   if (has('employers') && Array.isArray(f.employers) && f.employers.length) {
-    w.push(`a.employer COLLATE BINARY IN (${f.employers.map(() => '?').join(',')})`);
-    p.push(...f.employers);
+    const parts = [];
+    const legacy = f.employers.filter(value => typeof value === 'string');
+    const organizations = f.employers.filter(value => value && typeof value.id === 'string').map(value => value.id);
+    const names = f.employers.filter(value => value && value.id === null && typeof value.label === 'string').map(value => value.label);
+    if (legacy.length) { parts.push(`a.employer COLLATE BINARY IN (${legacy.map(() => '?').join(',')})`); p.push(...legacy); }
+    if (organizations.length) { parts.push(`a.employer_id IN (${organizations.map(() => '?').join(',')})`); p.push(...organizations); }
+    if (names.length) { parts.push(`(a.employer_id IS NULL AND a.employer COLLATE BINARY IN (${names.map(() => '?').join(',')}))`); p.push(...names); }
+    w.push(parts.length ? `(${parts.join(' OR ')})` : '0');
   }
   return { sql: w.length ? w.join(' AND ') : '1', params: p };
 }
@@ -251,7 +273,7 @@ const keyOf = (spec, r) => JSON.stringify(spec.key.map((k) => r[k] ?? (k === 'y'
 
 const isBuilt = (db) => {
   const r = db.prepare("SELECT value FROM meta WHERE key = 'summary_version'").get();
-  return !!r && r.value === '2';
+  return !!r && r.value === '2' && !!db.prepare("SELECT 1 FROM meta WHERE key = 'employer_identity_version' AND value = '1'").get();
 };
 
 const nz = (v) => (v === null || v === undefined ? '' : v);
@@ -272,7 +294,7 @@ function accAdd(acc, v) {
   bump(acc.emp, nz(v[14]), [nz(v[14])]);
   bump(acc.hours, nz(v[15]), [nz(v[15])]);
   if (v[2]) bump(acc.day, v[2], [v[2]]);
-  if (v[5]) bump(acc.employers, v[5], [v[5]]);
+  if (v[5]) bump(acc.employers, JSON.stringify([nz(v[18]), v[5]]), [nz(v[18]), v[5]]);
 }
 
 const UPSERT = {
@@ -282,13 +304,17 @@ const UPSERT = {
   emp: 'INSERT INTO sum_emp(v,n) VALUES (?,?) ON CONFLICT(v) DO UPDATE SET n = n + excluded.n',
   hours: 'INSERT INTO sum_hours(v,n) VALUES (?,?) ON CONFLICT(v) DO UPDATE SET n = n + excluded.n',
   day: 'INSERT INTO sum_day(day,n) VALUES (?,?) ON CONFLICT(day) DO UPDATE SET n = n + excluded.n',
-  employers: 'INSERT INTO sum_employer(v,n) VALUES (?,?) ON CONFLICT(v) DO UPDATE SET n = n + excluded.n',
+  employers: 'INSERT INTO sum_employer(org_id,v,n) VALUES (?,?,?) ON CONFLICT(org_id,v) DO UPDATE SET n = n + excluded.n',
 };
 const SUM_TABLE = { occ: 'sum_occ', loc: 'sum_loc', year: 'sum_year', emp: 'sum_emp', hours: 'sum_hours', day: 'sum_day', employers: 'sum_employer' };
 const stmtCache = new WeakMap();
 
 // Adds (sign 1) or subtracts (sign -1) the accumulated counts; call it inside the same transaction as the ads change.
 function accFlush(db, acc, sign = 1) {
+  const employers = new Map([...acc.employers.values()].map(entry => {
+    const [id, name] = entry.row;
+    return [JSON.stringify([id, id ? '' : name]), [id, id ? '' : name]];
+  }));
   let st = stmtCache.get(db);
   if (!st) {
     st = {};
@@ -300,13 +326,28 @@ function accFlush(db, acc, sign = 1) {
     acc[k].clear();
     if (sign < 0) db.exec(`DELETE FROM ${SUM_TABLE[k]} WHERE n <= 0`);
   }
+  const removeEmployer = db.prepare('DELETE FROM employer_catalog WHERE org_id = ? AND name_key = ?');
+  const updateEmployer = db.prepare(`INSERT INTO employer_catalog(org_id, name_key, v, n)
+    SELECT org_id, ?, MIN(v COLLATE BINARY), SUM(n) FROM sum_employer
+    WHERE org_id = ? AND (? <> '' OR v = ?) GROUP BY org_id HAVING SUM(n) > 0`);
+  for (const [id, name] of employers.values()) {
+    removeEmployer.run(id, name);
+    updateEmployer.run(name, id, id, name);
+  }
 }
 
-const SCAN_SQL = 'SELECT NULL, NULL, pub_date, year, NULL, employer, region, muni, field_id, field, group_id, grp, occ_id, occ, emp_type, hours, rowid FROM ads';
+const SCAN_SQL = 'SELECT NULL, NULL, pub_date, year, NULL, employer, region, muni, field_id, field, group_id, grp, occ_id, occ, emp_type, hours, rowid, NULL, employer_id FROM ads';
 function scanRows(db, sql, ...params) {
   const st = db.prepare(sql);
   st.setReturnArrays(true);
   return st.iterate(...params);
+}
+
+function migrateEmployerSummary(db) {
+  if (!db.prepare('PRAGMA table_info(sum_employer)').all().some(column => column.name === 'org_id')) {
+    db.exec('DROP TABLE sum_employer; CREATE TABLE sum_employer (org_id TEXT NOT NULL, v TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (org_id, v));');
+    stmtCache.delete(db);
+  }
 }
 
 // One pass over all ads; slow on millions of rows (minutes), so it runs once in the background.
@@ -347,6 +388,44 @@ function ensureSummary(db, onProgress = () => {}) {
     }
     db.prepare("INSERT OR REPLACE INTO meta(key, value) VALUES ('array_tags_version', '1')").run();
   }
+  if (!db.prepare("SELECT 1 FROM meta WHERE key = 'employer_identity_version' AND value = '1'").get()) {
+    onProgress({ pct: 1, text: 'Consolidating employers (one-time)…' });
+    db.exec('BEGIN');
+    try {
+      db.prepare("DELETE FROM meta WHERE key = 'summary_version'").run();
+      migrateEmployerSummary(db);
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+    const batch = db.prepare('SELECT rowid, raw FROM ads WHERE rowid > ? ORDER BY rowid LIMIT 500');
+    const update = db.prepare('UPDATE ads SET employer_id = ? WHERE rowid = ? AND employer_id IS NOT ?');
+    const total = db.prepare('SELECT MAX(rowid) n FROM ads').get().n || 1;
+    let last = 0;
+    for (;;) {
+      const rows = batch.all(last);
+      if (!rows.length) break;
+      db.exec('BEGIN');
+      try {
+        for (const row of rows) {
+          const id = employerId(JSON.parse(row.raw).employer?.organization_number);
+          update.run(id, row.rowid, id);
+        }
+        db.exec('COMMIT');
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
+      last = rows.at(-1).rowid;
+      onProgress({ pct: 88 * last / total, text: `Consolidating employers (one-time): ${Math.round(100 * last / total)}%…` });
+    }
+    db.prepare("INSERT OR REPLACE INTO meta(key, value) VALUES ('employer_identity_version', '1')").run();
+  }
+  if (!db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'index' AND name = 'ix_employer_id'").get()) {
+    onProgress({ pct: 1, text: 'Indexing employer identities (one-time)…' });
+    db.exec('CREATE INDEX IF NOT EXISTS ix_employer_id ON ads(employer_id, pub_date);');
+  }
   if (!db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'index' AND name = 'ix_employer'").get()) {
     onProgress({ pct: 1, text: 'Indexing employers (one-time)…' });
     db.exec('CREATE INDEX IF NOT EXISTS ix_employer ON ads(employer COLLATE BINARY, pub_date);');
@@ -363,6 +442,7 @@ function ensureSummary(db, onProgress = () => {}) {
   db.exec('BEGIN');
   try {
     for (const t of Object.values(SUM_TABLE)) db.exec(`DELETE FROM ${t}`);
+    db.exec('DELETE FROM employer_catalog');
     accFlush(db, acc, 1);
     db.prepare("INSERT OR REPLACE INTO meta(key, value) VALUES ('summary_version', '2')").run();
     db.exec('COMMIT');
@@ -378,7 +458,7 @@ function ensureSummary(db, onProgress = () => {}) {
 function reprocess(db, onProgress = () => {}) {
   const total = db.prepare('SELECT COUNT(*) n FROM ads').get().n;
   const batch = db.prepare('SELECT rowid, raw, source FROM ads WHERE rowid > ? ORDER BY rowid LIMIT 500');
-  const columns = ['headline', 'pub_date', 'year', 'deadline', 'employer', 'region', 'muni', 'field_id', 'field', 'group_id', 'grp', 'occ_id', 'occ', 'emp_type', 'hours'];
+  const columns = ['headline', 'pub_date', 'year', 'deadline', 'employer', 'region', 'muni', 'field_id', 'field', 'group_id', 'grp', 'occ_id', 'occ', 'emp_type', 'hours', 'employer_id'];
   const update = db.prepare(`UPDATE ads SET ${columns.map(name => `${name} = ?`).join(', ')} WHERE rowid = ?`);
   const insertFts = db.prepare('INSERT INTO ads_fts(rowid, headline, employer, body) VALUES (?, ?, ?, ?)');
   const acc = newAcc();
@@ -388,13 +468,14 @@ function reprocess(db, onProgress = () => {}) {
   onProgress({ pct: 0, text: 'Reprocessing dataset: preparing…' });
   db.exec('BEGIN IMMEDIATE');
   try {
+    migrateEmployerSummary(db);
     db.exec("INSERT INTO ads_fts(ads_fts) VALUES ('delete-all')");
     for (;;) {
       const rows = batch.all(last);
       if (!rows.length) break;
       for (const row of rows) {
         const mapped = toRow(JSON.parse(row.raw), row.source);
-        update.run(...mapped.values.slice(1, 16), row.rowid);
+        update.run(...mapped.values.slice(1, 16), mapped.values[18], row.rowid);
         insertFts.run(row.rowid, ...mapped.fts);
         accAdd(acc, mapped.values);
         sources.set(row.source, (sources.get(row.source) || 0) + 1);
@@ -405,22 +486,26 @@ function reprocess(db, onProgress = () => {}) {
     }
     onProgress({ pct: 80, text: 'Reprocessing dataset: rebuilding statistics…' });
     for (const table of Object.values(SUM_TABLE)) db.exec(`DELETE FROM ${table}`);
+    db.exec('DELETE FROM employer_catalog');
     accFlush(db, acc);
     db.exec('UPDATE sources SET ads = 0');
     const updateSource = db.prepare('UPDATE sources SET ads = ? WHERE name = ?');
     for (const [source, count] of sources) updateSource.run(count, source);
     onProgress({ pct: 85, text: 'Reprocessing dataset: rebuilding indexes…' });
-    db.exec('CREATE INDEX IF NOT EXISTS ix_employer ON ads(employer COLLATE BINARY, pub_date); CREATE INDEX IF NOT EXISTS ix_emp ON ads(emp_type); CREATE INDEX IF NOT EXISTS ix_hours ON ads(hours); REINDEX;');
+    db.exec('CREATE INDEX IF NOT EXISTS ix_employer ON ads(employer COLLATE BINARY, pub_date); CREATE INDEX IF NOT EXISTS ix_employer_id ON ads(employer_id, pub_date); CREATE INDEX IF NOT EXISTS ix_emp ON ads(emp_type); CREATE INDEX IF NOT EXISTS ix_hours ON ads(hours); REINDEX;');
     onProgress({ pct: 95, text: 'Reprocessing dataset: updating query planner statistics…' });
     db.exec('ANALYZE');
-    db.exec("INSERT OR REPLACE INTO meta(key, value) VALUES ('summary_version', '2'), ('array_tags_version', '1'); COMMIT;");
+    db.exec("INSERT OR REPLACE INTO meta(key, value) VALUES ('summary_version', '2'), ('array_tags_version', '1'), ('employer_identity_version', '1'); COMMIT;");
   } catch (error) {
     db.exec('ROLLBACK');
+    stmtCache.delete(db);
     throw error;
   }
   onProgress({ pct: 100, text: 'Dataset reprocessing complete', ready: true });
   return { built: true, processed };
 }
+
+const employerFacet = (row) => row.id ? { id: row.id, v: row.v, n: row.n } : { v: row.v, n: row.n };
 
 function summaryFacets(db) {
   return {
@@ -430,8 +515,8 @@ function summaryFacets(db) {
     year: db.prepare('SELECT year y, n FROM sum_year ORDER BY year DESC').all().map((r) => ({ y: r.y, n: r.n })),
     emp: db.prepare('SELECT v, n FROM sum_emp ORDER BY n DESC').all().map((r) => ({ v: nul(r.v), n: r.n })),
     hours: db.prepare('SELECT v, n FROM sum_hours ORDER BY n DESC').all().map((r) => ({ v: nul(r.v), n: r.n })),
-    employers: db.prepare('SELECT v, n FROM sum_employer ORDER BY n DESC, v COLLATE NOCASE LIMIT 30').all()
-      .map((r) => ({ v: r.v, n: r.n })),
+    employers: db.prepare('SELECT org_id id, v, n FROM employer_catalog ORDER BY n DESC, v COLLATE NOCASE, v COLLATE BINARY, org_id LIMIT 30').all()
+      .map(employerFacet),
   };
 }
 
@@ -504,10 +589,13 @@ function facets(db, f) {
   }
   try {
     if (!employers) {
-      employers = db.prepare(`SELECT a.employer v, COUNT(*) n FROM ads a
+      employers = db.prepare(`SELECT matched.id, catalog.v, matched.n FROM (
+        SELECT COALESCE(a.employer_id, '') id, CASE WHEN a.employer_id IS NULL THEN a.employer ELSE '' END name_key, COUNT(*) n FROM ads a
         WHERE ${employerFilter.sql} AND a.employer IS NOT NULL AND a.employer <> ''
-        GROUP BY a.employer ORDER BY n DESC, a.employer COLLATE NOCASE LIMIT 30`).all(...employerFilter.params)
-        .map((r) => ({ v: r.v, n: r.n }));
+        GROUP BY a.employer_id, name_key
+      ) matched JOIN employer_catalog catalog ON catalog.org_id = matched.id AND catalog.name_key = matched.name_key
+        ORDER BY matched.n DESC, catalog.v COLLATE NOCASE, catalog.v COLLATE BINARY, matched.id LIMIT 30`).all(...employerFilter.params)
+        .map(employerFacet);
       cache.counts.set(employerSignature, employers);
       if (cache.counts.size > 32) cache.counts.delete(cache.counts.keys().next().value);
     }

@@ -241,6 +241,23 @@ test('top employers render escaped names, compact counts and full-name tooltips'
   assert.match(employerWidget.innerHTML, /aria-pressed="true"/);
 });
 
+test('organization employer rendering retains identity selection and focus across name changes', () => {
+  let focused = false;
+  const oldButton = { dataset: { employer: 'Kils Kommun', employerId: '2120001751' } };
+  const newButton = { dataset: { employer: 'KILS KOMMUN', employerId: '2120001751' }, focus() { focused = true; } };
+  const widget = { innerHTML: '', querySelectorAll: () => [newButton] };
+  const evaluate = rendererContext({ activeElement: { closest: () => oldButton }, querySelectorAll: () => [] }, { $: () => widget });
+  evaluate(`F.employers = [{id:'2120001751',label:'Kils Kommun'}]; renderEmployers([{id:'2120001751',v:'KILS KOMMUN',n:2}])`);
+  assert.match(widget.innerHTML, /aria-pressed="true" data-employer-id="2120001751"/);
+  assert.equal(focused, true);
+  evaluate(`renderEmployers([{id:'different',v:'Kils Kommun',n:1},{v:'Kils Kommun',n:1}])`);
+  assert.doesNotMatch(widget.innerHTML, /aria-pressed="true"/);
+  evaluate(`F.employers = [{id:null,label:'Kils Kommun'}]; renderEmployers([{id:'2120001751',v:'Kils Kommun',n:2},{v:'Kils Kommun',n:1}])`);
+  assert.equal((widget.innerHTML.match(/aria-pressed="true"/g) || []).length, 1);
+  evaluate(`renderEmployers([{id:'<id&>',v:'<Name&>',n:2}])`);
+  assert.match(widget.innerHTML, /data-employer-id="&lt;id&amp;&gt;"/);
+});
+
 test('employer toggles, chips and Clear all preserve unrelated state and persist session filters', () => {
   const source = readFileSync(require.resolve('./app.js'), 'utf8');
   const stored = new Map();
@@ -295,6 +312,24 @@ test('employer toggles, chips and Clear all preserve unrelated state and persist
   assert.equal(snapshot().sort, 'oldest');
   assert.equal(element('#q').value, '');
   assert.doesNotMatch(element('#active').innerHTML, /Employer:/);
+  element('#q').value = 'new draft';
+  const toggleIdentity = (name, id) => element('#widget-employers').click({ target: { closest: () => ({ dataset: { employer: name, employerId: id } }) } });
+  toggleIdentity('Kils Kommun', '2120001751');
+  assert.deepEqual(snapshot().employers, [{ id: '2120001751', label: 'Kils Kommun' }]);
+  assert.match(element('#active').innerHTML, /Employer: Kils Kommun/);
+  toggleIdentity('KILS KOMMUN', '2120001751');
+  assert.deepEqual(snapshot().employers, []);
+  toggleIdentity('KILS KOMMUN', '2120001751');
+  toggleIdentity('Kils Kommun', '');
+  assert.deepEqual(snapshot().employers, [{ id: '2120001751', label: 'KILS KOMMUN' }, { id: null, label: 'Kils Kommun' }]);
+  const identityRestored = vm.createContext({ sessionStorage: { getItem: key => stored.get(key) }, localStorage: { removeItem() {}, getItem() { return null; } } });
+  vm.runInContext(state, identityRestored);
+  assert.deepEqual(JSON.parse(vm.runInContext('JSON.stringify(F)', identityRestored)), snapshot());
+  element('#active').onclick({ target: { closest: () => ({ dataset: { i: '0' } }) } });
+  assert.deepEqual(snapshot().employers, [{ id: null, label: 'Kils Kommun' }]);
+  assert.equal(element('#q').value, 'new draft');
+  element('#clear-all').click();
+  assert.deepEqual(snapshot().employers, []);
 });
 
 test('ad-view find matches case-insensitively and ignores empty queries', () => {

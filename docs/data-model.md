@@ -47,7 +47,8 @@ ads(
   field_id, field, group_id, grp, occ_id, occ,
   emp_type TEXT, hours TEXT,
   source TEXT,           -- import file name
-  raw TEXT               -- pruned JSON of the full record
+  raw TEXT,              -- pruned JSON of the full record
+  employer_id TEXT       -- trimmed organization_number; NULL when absent
 )
 
 ads_fts USING fts5(headline, employer, body,
@@ -55,10 +56,11 @@ ads_fts USING fts5(headline, employer, body,
   tokenize='unicode61 remove_diacritics 2')   -- rowid = ads.rowid
 
 sources(name TEXT PRIMARY KEY, path TEXT, ads INTEGER, imported_at TEXT)
-meta(key PRIMARY KEY, value)                    -- summary_version = '2' once summary tables are built
+meta(key PRIMARY KEY, value)                    -- summary_version = '2', employer_identity_version = '1' once ready
 sum_occ(field_id, field, group_id, grp, occ_id, occ, n)  -- PK (field_id, group_id, occ_id)
 sum_loc(region, muni, n)   sum_year(year, n)   sum_emp(v, n)   sum_hours(v, n)   sum_day(day, n)
-sum_employer(v, n)         -- exact employer text and total count; included in summary version 2
+sum_employer(org_id, v, n) -- PK (org_id,v): organization/name variant counts; missing ID stored as ''
+employer_catalog(org_id, name_key, v, n) -- PK (org_id,name_key): precomputed representative name and total
 ```
 
 ### Indexes
@@ -71,8 +73,16 @@ sum_employer(v, n)         -- exact employer text and total count; included in s
 | `ix_loc_cov (region, muni)` | Location filter + facet scan |
 | `ix_source (source)` | Removing a source |
 | `ix_employer (employer COLLATE BINARY, pub_date)` | Exact employer filters; covering counts and timeline date reads (D46) |
+| `ix_employer_id (employer_id, pub_date)` | Organization filters; covering counts and timeline date reads (D55) |
+| `ix_employer_rank (n DESC, v COLLATE NOCASE, v COLLATE BINARY, org_id)` on `employer_catalog` | Indexed unfiltered Top-30 without grouping (D55) |
 
-`ix_employer` is created once by `ensureSummary()` in the build worker, including on databases whose summary version is already 2. It is not built when opening read connections. Startup/activation reports indexing progress; no re-import or summary rebuild is needed. SQLite maintains the index on subsequent imports/removals.
+`ix_employer` and `ix_employer_id` are created once by `ensureSummary()` in the build worker. They are not built when opening read connections. Startup/activation reports indexing progress; SQLite maintains them on subsequent imports/removals. D55 adds the organization-ID backfill and catalog rebuild below, without re-import.
+
+### Employer identity backfill and catalog (D55)
+
+`open()` adds nullable `employer_id` to legacy databases under a serialized schema lock. Before readiness, `ensureSummary()` migrates `sum_employer` to its composite key and invalidates old summaries; it scans stored JSON in 500-row transactions to fill IDs using current normalization (string/number to trimmed string; blank/other types to NULL). Raw JSON, original employer names, source records, rowids and FTS stay unchanged. Interrupted batches roll back and retry; `employer_identity_version = '1'` is written only after the scan. Summary version 2 is restored after the catalog and all summaries rebuild. This is worker-only background work with existing progress/error notices; no source re-import is needed.
+
+`sum_employer` retains variant counts so deleting a source can remove obsolete labels accurately. `employer_catalog` stores one row per non-empty `org_id` with `name_key = ''`; for missing IDs, `org_id = ''` and `name_key` is the exact employer name. `v` is the binary-minimum remaining variant and `n` is the combined total. Import/removal transactions refresh only affected identities; full rebuild/reprocessing resets and regenerates the catalog. Unfiltered Top-30 reads the ranked catalog directly. Filtered Top-30 counts stored IDs (or exact missing-ID names) and joins catalog labels: no raw-JSON extraction, organization/name mapping build or representative-name aggregation occurs during queries.
 
 ### Promoted array-tag repair (D48)
 
@@ -91,14 +101,14 @@ Manual reprocessing (DAT-026, D49) reads stored `raw` in 500-row batches within 
 `terms` is an array of committed free-text entries (added with Enter; text still being typed is not part of the filter; the backend still accepts a legacy `q`); `termMode` (`and` | `or`) selects how entries are combined; each entry is an AND of its own words (see `ftsMatch()` in `db.js`). `sel` is an array of `{ k: 'field'|'group'|'occ', id, label, fi, gi }` (occupation selections) and `loc` an array of `{ k: 'region'|'muni', id, label, ri }` (location selections); each list is OR-combined.
 Dates are `YYYY-MM-DD` strings compared lexicographically. `sort` is `newest | oldest | relevance`.
 
-`employers` is an array of exact stored employer-name strings, default `[]`. Values are OR-combined by parameterized `ads.employer COLLATE BINARY IN (...)`; all other dimensions are AND-combined with this predicate. Names are not trimmed, normalized or folded; case and spelling variants remain distinct. Every shared query, including employer statistics, applies this filter. Unlike regular facet options, Top-30 employers remain statistics over all active filters, not an own-filter-excluded option universe (D45/SRC-020/SRC-022). Session persistence, ad return, Clear all and dataset reset use the existing renderer filter lifecycle.
+`employers` defaults to `[]`; new entries are `{id, label}`. String IDs select `ads.employer_id IN (...)`, merging all organization-name variants; `id:null` selects exact names only where `employer_id IS NULL`. Different organization IDs never merge by name. Legacy session strings retain `ads.employer COLLATE BINARY IN (...)` behavior. All predicates are parameterized, OR within employers and AND with other dimensions. Every shared query applies this filter. Top-30 remains statistics over all active filters, not an own-filter-excluded option universe (D55/SRC-020/SRC-022). Session persistence, ad return, Clear all and dataset reset use the existing renderer lifecycle; chips show saved labels and refreshed buttons retain focus by identity.
 
 ## Adding a new filter dimension
 
 1. Reuse a suitable stored column when available; otherwise add a column (and index) in `db.js` `SCHEMA` and populate it in `toRow()`/`INSERT_SQL`.
 2. Handle it in `where()`. For a regular own-filter-excluded facet, add its definition to `FACETS` and keys to the materialized facet projection (D37). A statistics-driven filter such as `employers` reuses its existing filtered statistics query instead.
 3. Add UI in `index.html`/`app.js` and include it in `DEF`, `renderActive()`.
-4. If stored columns changed, migrate/backfill or re-import the data (existing rows are skipped by id, so remove the source first). Employer filtering needs only the automatic background index migration (D46), not re-import.
+4. If stored columns changed, migrate/backfill or re-import the data (existing rows are skipped by id, so remove the source first). Organization-based employer filtering uses D55's automatic background backfill/catalog migration, not re-import.
 
 ## Source data generations (files in `~/storage/ams_data`, checked 2026-10-15)
 
