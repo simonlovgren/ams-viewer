@@ -324,6 +324,9 @@ test('datasets table and live import progress show stored and current metrics', 
   assert.match(progress.innerHTML, /1m 05s/);
   assert.match(progress.innerHTML, /2<\/span> added/);
   assert.doesNotMatch(progress.innerHTML, /enriched/);
+  assert.match(progress.innerHTML, /Importing data/);
+  vm.runInContext("importState.phase = 'enrichment'; renderProgress()", context);
+  assert.match(progress.innerHTML, /Enriching data/);
 });
 
 test('import completion and source removal refresh datasets in place', async () => {
@@ -390,6 +393,14 @@ test('import completion and source removal refresh datasets in place', async () 
   assert.equal(counters.get('#dataset-total'), 11);
   assert.equal(counters.get('#dataset-source-count'), 1);
   assert.equal(element('#dataset-years').textContent, '2021 – 2025');
+  assert.equal(data.innerHTML, 'mounted Datasets view');
+  assert.equal(progress.innerHTML, 'current progress');
+  assert.equal(progressRenders, 0);
+  assert.equal(reloads, 0);
+
+  info.sources[0].enriched = 7;
+  await importListener({ type: 'sources-updated' });
+  assert.match(sourceList.innerHTML, /<span>7<\/span>/);
   assert.equal(data.innerHTML, 'mounted Datasets view');
   assert.equal(progress.innerHTML, 'current progress');
   assert.equal(progressRenders, 0);

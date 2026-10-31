@@ -7,12 +7,13 @@ const path = require('node:path');
 const { Worker } = require('node:worker_threads');
 const dbm = require('./db');
 
-function runImport(dbPath, files) {
+function runImport(dbPath, files, onMessage = () => {}) {
   return new Promise((resolve, reject) => {
     const messages = [];
     const worker = new Worker(path.join(__dirname, 'import-worker.js'), { workerData: { dbPath, files } });
     worker.on('message', message => {
       messages.push(message);
+      try { onMessage(message); } catch (error) { worker.terminate(); reject(error); return; }
       if (message.type === 'error') reject(new Error(`${path.basename(files[0])}: ${message.message}`));
       if (message.type === 'done') resolve(messages);
     });
@@ -123,6 +124,66 @@ test('import metrics include enrichment effects without backfilling older source
       assert.equal(listed.enriched, 0);
     } finally { db.close(); }
   } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('file insertion precedes enrichment and committed batches expose consistent older source counts', async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'ams-import-phases-'));
+  const file = path.join(directory, 'ads.db');
+  const olderFile = path.join(directory, 'older.jsonl');
+  const referenceFile = path.join(directory, 'reference.jsonl');
+  const olderCount = 4001;
+  const referenceCount = 2001;
+  const reference = {
+    occupation: { concept_id: 'occ-1', label: 'Engineer', legacy_ams_taxonomy_id: '7788' },
+    occupation_group: { concept_id: 'group-1', label: 'Engineering' },
+    occupation_field: { concept_id: 'field-1', label: 'Technology' },
+    workplace_address: { municipality_code: '0180', municipality: 'Stockholm', region: 'Stockholms län' },
+  };
+  writeFileSync(olderFile, Array.from({ length: olderCount }, (_, index) => JSON.stringify({
+    id: `older-${index}`, occupation: { legacy_ams_taxonomy_id: '7788' }, workplace_address: { municipality_code: '0180' },
+  })).join('\n'));
+  writeFileSync(referenceFile, Array.from({ length: referenceCount }, (_, index) => JSON.stringify({ ...reference, id: `reference-${index}` })).join('\n'));
+  let db;
+  try {
+    await runImport(file, [olderFile]);
+    db = dbm.open(file);
+    dbm.ensureSummary(db);
+    let enrichmentStarted = false;
+    let liveRefreshes = 0;
+    const messages = await runImport(file, [referenceFile], message => {
+      if (message.phase === 'enrichment') {
+        enrichmentStarted = true;
+        assert.equal(message.inserted, referenceCount);
+        assert.equal(message.pct, 1);
+      }
+      if (message.type !== 'sources-updated' || !enrichmentStarted) return;
+      db.exec('BEGIN');
+      try {
+        const stored = db.prepare("SELECT enriched FROM sources WHERE name = 'older.jsonl'").get().enriched;
+        const actual = db.prepare("SELECT COUNT(*) n FROM ads WHERE source = 'older.jsonl' AND (occ_id IS NOT NULL OR muni IS NOT NULL)").get().n;
+        assert.equal(stored, actual);
+        assert.ok(stored > 0);
+        assert.equal(db.prepare("SELECT COALESCE(SUM(n), 0) n FROM sum_occ WHERE occ_id = 'occ-1'").get().n,
+          db.prepare("SELECT COUNT(*) n FROM ads WHERE occ_id = 'occ-1'").get().n);
+        assert.equal(db.prepare("SELECT COALESCE(SUM(n), 0) n FROM sum_loc WHERE muni = 'Stockholm'").get().n,
+          db.prepare("SELECT COUNT(*) n FROM ads WHERE muni = 'Stockholm'").get().n);
+        liveRefreshes++;
+      } finally { db.exec('COMMIT'); }
+    });
+    assert.ok(liveRefreshes >= 2);
+    assert.equal(db.prepare("SELECT enriched FROM sources WHERE name = 'older.jsonl'").get().enriched, olderCount);
+    const firstEnrichment = messages.findIndex(message => message.phase === 'enrichment');
+    assert.ok(firstEnrichment > messages.findIndex(message => message.pct === 1 && message.type === 'progress'));
+    assert.ok(messages.slice(firstEnrichment, messages.findIndex(message => message.type === 'file-done')).some(message => message.type === 'sources-updated'));
+    const retry = await runImport(file, [referenceFile]);
+    assert.ok(retry.some(message => message.phase === 'enrichment'));
+    assert.equal(retry.find(message => message.type === 'file-done').inserted, 0);
+    assert.equal(retry.find(message => message.type === 'file-done').skipped, referenceCount);
+    assert.equal(db.prepare("SELECT enriched FROM sources WHERE name = 'older.jsonl'").get().enriched, olderCount);
+  } finally {
+    db?.close();
     rmSync(directory, { recursive: true, force: true });
   }
 });

@@ -262,6 +262,25 @@ function reconcileLegacyMappings(db, affected = {}, options = {}) {
   const summaryBefore = newAcc();
   const summaryAfter = newAcc();
   const summaryOriginals = new Map();
+  const flushSummaries = () => {
+    if (!built) return;
+    const selectCurrent = db.prepare('SELECT rowid, raw, source, region, muni, field_id, field, group_id, grp, occ_id, occ FROM ads WHERE rowid = ?');
+    for (const [rowid, before] of summaryOriginals) {
+      accAdd(summaryBefore, before);
+      accAdd(summaryAfter, projectionValues(selectCurrent.get(rowid)));
+    }
+    accFlush(db, summaryBefore, -1);
+    accFlush(db, summaryAfter);
+    summaryOriginals.clear();
+  };
+  const finishCheck = () => {
+    processed++;
+    if (options.onBatch && processed % (options.batchSize || 2000) === 0) {
+      flushSummaries();
+      options.onBatch({ processed, enriched });
+    }
+    report();
+  };
   const rememberSummaryOriginal = row => {
     if (built && !skippedRows.has(row.rowid) && !summaryOriginals.has(row.rowid)) {
       summaryOriginals.set(row.rowid, projectionValues(row));
@@ -297,8 +316,7 @@ function reconcileLegacyMappings(db, affected = {}, options = {}) {
         }
         changed++;
       }
-      processed++;
-      report();
+      finishCheck();
     }
   }
   for (const code of new Set(affected.locations || [])) {
@@ -322,20 +340,11 @@ function reconcileLegacyMappings(db, affected = {}, options = {}) {
         }
         changed++;
       }
-      processed++;
-      report();
+      finishCheck();
     }
   }
   report(true);
-  if (built) {
-    const selectCurrent = db.prepare('SELECT rowid, raw, source, region, muni, field_id, field, group_id, grp, occ_id, occ FROM ads WHERE rowid = ?');
-    for (const [rowid, before] of summaryOriginals) {
-      accAdd(summaryBefore, before);
-      accAdd(summaryAfter, projectionValues(selectCurrent.get(rowid)));
-    }
-    accFlush(db, summaryBefore, -1);
-    accFlush(db, summaryAfter);
-  }
+  flushSummaries();
   return { changed };
 }
 

@@ -82,41 +82,17 @@ async function importFile(file, fileIndex) {
   const started = Date.now();
   const name = path.basename(file);
   const size = fs.statSync(file).size;
-  let sourceExists = !!db.prepare('SELECT 1 FROM sources WHERE name = ?').get(name);
-  let initialEnriched = 0;
   const st = { type: 'progress', file: name, fileIndex, files: files.length, lines: 0, inserted: 0, skipped: 0, errors: 0, duration_ms: 0, pct: 0 };
   let last = 0;
   let pending = 0;
-  let enriched = 0;
   const affected = { occupations: new Set(), locations: new Set() };
   const inserted = [];
 
   const finishBatch = () => {
-    if (affected.occupations.size || affected.locations.size) {
-      reconcileLegacyMappings(db, {
-        occupations: [...affected.occupations],
-        locations: [...affected.locations],
-      }, {
-        skipSummaryRows: new Set(inserted),
-        onProgress: progress => {
-          st.duration_ms = Date.now() - started;
-          parentPort.postMessage({ ...st, ...progress, pct: st.pct, enriched,
-            text: `Enriching data: ${progress.processed.toLocaleString('en-US')} checks in this batch · ${enriched.toLocaleString('en-US')} newly enriched ads in this file` });
-        },
-        onEnrichmentChange: (source, delta) => {
-          if (delta > 0) enriched++;
-          if (source === name && !sourceExists) initialEnriched += delta;
-          else adjustSourceEnriched(db, source, delta);
-        },
-      });
-      parentPort.postMessage({ ...st });
-    }
     if (summary) {
       for (const rowid of inserted) accAdd(acc, projectionValues(selectProjection.get(rowid)));
       accFlush(db, acc);
     }
-    affected.occupations.clear();
-    affected.locations.clear();
     inserted.length = 0;
   };
 
@@ -139,15 +115,15 @@ async function importFile(file, fileIndex) {
     }
     if (mapped) {
       const { values, fts } = mapped;
+      const references = legacyReferences(d);
+      for (const reference of references.occupations) affected.occupations.add(reference.id);
+      for (const reference of references.locations) affected.locations.add(reference.code);
+      if (values[19]) affected.occupations.add(values[19]);
+      if (values[20]) affected.locations.add(values[20]);
       const r = insAd.run(...values);
       if (r.changes) {
         insFts.run(r.lastInsertRowid, ...fts);
-        const references = legacyReferences(d);
         adjustLegacyReferences(db, references);
-        for (const reference of references.occupations) affected.occupations.add(reference.id);
-        for (const reference of references.locations) affected.locations.add(reference.code);
-        if (values[19]) affected.occupations.add(values[19]);
-        if (values[20]) affected.locations.add(values[20]);
         inserted.push(Number(r.lastInsertRowid));
         st.inserted++;
       } else st.skipped++;
@@ -183,9 +159,43 @@ async function importFile(file, fileIndex) {
     `INSERT INTO sources(name, path, ads, imported_at, duration_ms, inserted, skipped, errors, enriched) VALUES (?,?,?,?,?,?,?,?,?)
      ON CONFLICT(name) DO UPDATE SET ads = excluded.ads, path = excluded.path, imported_at = excluded.imported_at,
        duration_ms = excluded.duration_ms, inserted = excluded.inserted, skipped = excluded.skipped, errors = excluded.errors`
-  ).run(name, file, n, new Date().toISOString(), st.duration_ms, st.inserted, st.skipped, st.errors, Math.max(0, initialEnriched));
-  sourceExists = true;
+  ).run(name, file, n, new Date().toISOString(), st.duration_ms, st.inserted, st.skipped, st.errors, 0);
   st.pct = 1;
+  emit(true);
+  parentPort.postMessage({ ...st, type: 'sources-updated' });
+  if (affected.occupations.size || affected.locations.size) {
+    let lastSources = 0;
+    const emitSources = (force = false) => {
+      const now = Date.now();
+      if (force || now - lastSources >= 250) {
+        lastSources = now;
+        parentPort.postMessage({ ...st, type: 'sources-updated' });
+      }
+    };
+    db.exec('BEGIN');
+    try {
+      reconcileLegacyMappings(db, affected, {
+        onProgress: progress => {
+          st.duration_ms = Date.now() - started;
+          parentPort.postMessage({ ...st, ...progress, pct: st.pct,
+            text: `Enriching data: ${progress.processed.toLocaleString('en-US')} checks · ${progress.enriched.toLocaleString('en-US')} newly enriched ads in this file` });
+        },
+        batchSize: BATCH,
+        onBatch: () => {
+          db.exec('COMMIT; BEGIN');
+          emitSources();
+        },
+        onEnrichmentChange: (source, delta) => adjustSourceEnriched(db, source, delta),
+      });
+      db.exec('COMMIT');
+      emitSources(true);
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+  st.duration_ms = Date.now() - started;
+  db.prepare('UPDATE sources SET duration_ms = ? WHERE name = ?').run(st.duration_ms, name);
   emit(true);
   parentPort.postMessage({ ...st, type: 'file-done' });
 }

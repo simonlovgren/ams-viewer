@@ -1711,7 +1711,7 @@
     const overall = ((s.fileIndex + (s.pct || 0)) / s.files) * 100;
     el.innerHTML = `<div class="progress"><b>${esc(s.file)}</b> <span style="color:var(--muted)">(file ${s.fileIndex + 1} of ${s.files})</span>
       <div class="bar"><i style="width:${overall.toFixed(1)}%"></i></div>
-      <small style="color:var(--muted)">${fmtDuration(s.duration_ms)} · ${countHtml(s.inserted)} added · ${countHtml(s.skipped)} duplicates · ${countHtml(s.errors)} errors</small></div>`;
+      <small style="color:var(--muted)">${s.phase === 'enrichment' ? 'Enriching data' : 'Importing data'} · ${fmtDuration(s.duration_ms)} · ${countHtml(s.inserted)} added · ${countHtml(s.skipped)} duplicates · ${countHtml(s.errors)} errors</small></div>`;
   }
 
   async function startImport(promise) {
@@ -1726,7 +1726,7 @@
   }
 
   async function handleImportMessage(m) {
-    if (m.type === 'file-done') {
+    if (m.type === 'file-done' || m.type === 'sources-updated') {
       if (curView === 'data') await refreshDataSources();
       return;
     }

@@ -3,6 +3,7 @@
 Count logic has headless regression tests; visual layout still needs manual review.
 
 ## Live import file list (DAT-013 / D63)
+2026-10-31 D64: `node --test --test-name-pattern='file insertion precedes|import completion and source removal|datasets table and live import' src/main/db.test.js src/renderer/app.test.js` checks 2,001 reference inserts complete before enrichment, live older-source counters and matching summary projections from a separate connection across commits, duplicate re-import reconciliation, phase labels and targeted `sources-updated` refreshes. Complete `node --test` passes 131 tests. Fixtures use disposable databases; native visuals/full-scale timing are unverified. Preserve the import notice's `newly enriched ads in this file` wording; existing coverage checks this contract.
 `node --test --test-name-pattern='import completion and source removal refresh datasets in place|source removal requires confirmation' src/renderer/app.test.js` covers targeted table/totals refresh at file completion, import completion and removal, while asserting the Datasets view and progress panel remain mounted. `node --check src/renderer/app.js && node --check src/renderer/app.test.js && node --test` passes the complete Node suite. Native import interaction and visual behavior remain unverified.
 
 ## Latest import statistics (DAT-014 / D61)

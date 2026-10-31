@@ -6,7 +6,7 @@ Planned work that is specified but not started, plus active tasks. Each task lin
 |---|---|---|---|
 | T1 | Done: vertically resizable filter widgets | UI-010 | S |
 | T2 | Done: collapsible filter widgets and chart | UI-011, UI-007, SRC-017 | S |
-| T3 | Live-updating import file list | DAT-013 | S |
+| T3 | Done: live-updating import file list and enrichment counts | DAT-013 | S |
 | T4 | Done: latest-run import statistics and static enriched-ad counts | DAT-014 | M |
 | T5 | Geographical hotspot view | SRC-019 | L |
 | T6 | Full-scale performance of filtering, counts and statistics (lower priority since startup is fixed; [plan](full-scale-performance-plan.md)) | NFR-003, NFR-004, NFR-005 | L |
@@ -39,14 +39,14 @@ T3 completed 2026-10-31 (D63). T12 completed 2026-10-31 (D58). T15–T17 complet
 - Nine renderer tests passed. Browser fixture verified reload persistence, keyboard controls, badges, drag resizing and non-overlapping 310 px layout at 960x600 and 1400x900 in both font modes. Electron startup passed against 11.25M ads; actual quit/relaunch preference retention not manually tested.
 
 ## T3. Live-updating import file list (DAT-013)
-- Completed 2026-10-31; D63. Refresh source rows and dataset total/source-count/year labels on each `file-done` event, final completion and source removal. Only the source-list contents and count labels change; the Datasets view and progress panel stay mounted.
+- Completed 2026-10-31; D63/D64. Refresh source rows and dataset total/source-count/year labels at insertion completion, throttled committed enrichment batches, each `file-done`, final completion and source removal. Older files' enriched counts update during enrichment. Only the source-list contents and count labels change; the Datasets view and progress panel stay mounted.
 - Active-file counts update at the next file boundary or final completion, not on every progress event. The old `importState` save/restore workaround after full rendering is removed.
 - Verification: renderer syntax checks, all renderer tests and the complete `node --test` suite pass; `git diff --check` passes. Native import interaction and visual layout remain unverified.
 
 ## T4. Import statistics per file (DAT-014)
 - Completed 2026-10-31; D61. Store latest-run `duration_ms`, `inserted`, `skipped` and `errors`, plus a static current `enriched` count on each source row. Existing rows keep null import-run values and display `n/a`; only an import of that source creates or replaces them.
 - `enriched` counts current source ads whose promoted taxonomy/location fields contain values absent from immutable `raw`. Initialize once from stored records and maintain transitions during import, source removal and reprocessing. It is not a per-import count; D62/UI-031's separate live enrichment notice reports in-flight work instead of this stored statistic.
-- Datasets table distinguishes current source ad total (`Ads`), latest-run inserts (`Added`) and current enriched ads. T3's live source-list refresh remains separate and planned.
+- Datasets table distinguishes current source ad total (`Ads`), latest-run inserts (`Added`) and current enriched ads. T3/D64 refreshes stored counts during committed enrichment batches, independently of in-flight enrichment notice counters.
 - Regression coverage includes old-schema migration, latest-run metrics, static count initialization, import-order independence, conflict/removal/reprocess transitions and renderer display. All 126 tests, changed-file syntax checks and `git diff --check` pass. Full-scale count initialization/import overhead and visual fit remain unverified; shared browser server was unavailable.
 
 ## T5. Geographical hotspot view (SRC-019)
