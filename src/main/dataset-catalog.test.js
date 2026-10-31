@@ -9,6 +9,31 @@ const vm = require('node:vm');
 const { open } = require('./dataset-catalog');
 const dbm = require('./db');
 
+test('ad source IPC validates IDs and sender before dispatching to the read worker', async () => {
+  const source = fs.readFileSync(require.resolve('./main'), 'utf8');
+  const handlers = new Map();
+  const requests = [];
+  const sender = {};
+  let stable = true;
+  const context = vm.createContext({
+    ipcMain: { handle: (name, handler) => handlers.set(name, handler) },
+    win: { webContents: sender },
+    assertStableDataset: () => { if (!stable) throw new Error('Dataset changing'); },
+    lists: { request: (...args) => { requests.push(args); return Promise.resolve({ source: {}, enrichment: {} }); } },
+  });
+  vm.runInContext(source.slice(source.indexOf("  ipcMain.handle('ads:source'"), source.indexOf("  ipcMain.handle('datasets:list'")), context);
+  const read = handlers.get('ads:source');
+  assert.throws(() => read({ sender: {} }, 'id'), /main window/);
+  for (const id of [null, {}, 5, '', '   ']) assert.throws(() => read({ sender }, id), /Invalid ad ID/);
+  stable = false;
+  assert.throws(() => read({ sender }, 'id'), /Dataset changing/);
+  assert.equal(requests.length, 0);
+  stable = true;
+  await read({ sender }, 'h-legacy');
+  assert.equal(requests[0][0], 'source');
+  assert.equal(requests[0][1].id, 'h-legacy');
+});
+
 test('manual reprocessing gates dataset mutations and reports progress, completion and failures', async () => {
   const source = fs.readFileSync(require.resolve('./main'), 'utf8');
   const code = source.slice(source.indexOf('async function reprocessDataset(id)'), source.indexOf('async function deleteDataset(id)'));

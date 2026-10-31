@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('api', {
   onTask: (cb) => ipcRenderer.on('task:event', (_e, t) => cb(t)),
   facets: (filters) => ipcRenderer.invoke('ads:facets', filters),
   get: (id) => ipcRenderer.invoke('ads:get', id),
+  getSource: (id) => ipcRenderer.invoke('ads:source', id),
   importDialog: () => ipcRenderer.invoke('import:dialog'),
   importFiles: (paths) => ipcRenderer.invoke('import:start', paths),
   removeSource: (name) => ipcRenderer.invoke('source:remove', name),

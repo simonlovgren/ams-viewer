@@ -7,6 +7,7 @@
   const ICONS = {
     search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
     database: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/>',
+    'file-text': '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h8M8 9h2"/>',
     briefcase: '<rect width="20" height="14" x="2" y="7" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>',
     'map-pin': '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
     calendar: '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
@@ -374,10 +375,12 @@
   function show(view, id) {
     if (curView === 'list') listScroll = $('#list-scroll').scrollTop;
     curView = view;
-    for (const v of ['list', 'ad', 'data', 'settings', 'licenses']) $('#view-' + v).classList.toggle('hidden', v !== view);
-    document.querySelectorAll('.nav').forEach((n) => n.classList.toggle('active', n.dataset.view === (view === 'ad' ? 'list' : view === 'licenses' ? 'settings' : view)));
+    const visibleView = view === 'source' ? 'ad' : view;
+    for (const v of ['list', 'ad', 'data', 'settings', 'licenses']) $('#view-' + v).classList.toggle('hidden', v !== visibleView);
+    $('#view-ad').classList.toggle('source-view', view === 'source');
+    document.querySelectorAll('.nav').forEach((n) => n.classList.toggle('active', n.dataset.view === (visibleView === 'ad' ? 'list' : view === 'licenses' ? 'settings' : view)));
     if (view === 'list') $('#list-scroll').scrollTop = listScroll;
-    if (view === 'ad') loadAd(id);
+    if (visibleView === 'ad') loadAd(id, view === 'source');
     if (view === 'data') renderData();
     if (view === 'licenses') loadThirdPartyLicenses();
   }
@@ -484,7 +487,7 @@
     if (shortcutDialog.open || $('#message-dialog')?.open || $('#theme-dialog')?.open) return;
     shortcutReturnFocus = document.activeElement;
     document.querySelectorAll('[data-shortcut-view]').forEach((section) => {
-      section.hidden = section.dataset.shortcutView !== curView;
+      section.hidden = section.dataset.shortcutView !== (curView === 'source' ? 'ad' : curView);
     });
     shortcutDialog.showModal();
     $('#shortcut-close').focus();
@@ -506,7 +509,7 @@
     else if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); history.forward(); }
     else if (e.key === '/' && !editable(e.target)) {
       e.preventDefault();
-      if (curView === 'ad') $('#ad-find').focus();
+      if (curView === 'ad' || curView === 'source') $('#ad-find').focus();
       else { nav('list'); $('#q').focus(); }
     }
   });
@@ -1259,22 +1262,39 @@
     nav('list');
   }
 
-  async function loadAd(id) {
+  function prettyJSON(value) {
+    return JSON.stringify(value, null, 2).replace(/"(?:\\.|[^"\\])*"(?=\s*:)|"(?:\\.|[^"\\])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|\b(?:true|false|null)\b|[{}\[\],:]/g, (token, offset, json) => {
+      const kind = token[0] === '"' ? (/^\s*:/.test(json.slice(offset + token.length)) ? 'key' : 'string')
+        : /^(true|false)$/.test(token) ? 'boolean' : token === 'null' ? 'null'
+          : /^-?\d/.test(token) ? 'number' : 'punctuation';
+      return `<span class="json-${kind}">${esc(token)}</span>`;
+    });
+  }
+
+  let currentAdId = null;
+  async function loadAd(id, sourceView = false) {
     const s = ++adSeq;
+    currentAdId = id;
     $('#ad-find').value = '';
     adMatches = [];
     showAdMatch(-1);
     $('#ad').innerHTML = '<div class="state">Loading…</div>';
     $('#crumbs').innerHTML = '';
     $('#ad-scroll').scrollTop = 0;
-    const d = await api.get(id);
-    if (s !== adSeq) return;
-    if (!d) { $('#ad').innerHTML = '<div class="state">Ad not found.</div>'; return; }
-    renderAd(d);
+    try {
+      const data = await (sourceView ? api.getSource(id) : api.get(id));
+      if (s !== adSeq || curView !== (sourceView ? 'source' : 'ad')) return;
+      if (!data) { $('#ad').innerHTML = '<div class="state">Ad not found.</div>'; return; }
+      renderAd(sourceView ? data.ad : data, sourceView ? data : null);
+    } catch (error) {
+      if (s !== adSeq || curView !== (sourceView ? 'source' : 'ad')) return;
+      $('#ad').innerHTML = '<div class="state">Ad data could not be loaded.</div>';
+      showError('ad-data', `Could not load ad data: ${String(error?.message || error)}`);
+    }
   }
 
   let adSpecs = [];
-  function renderAd(d) {
+  function renderAd(d, sourceData = null) {
     const first = (x) => (Array.isArray(x) ? x.find(Boolean) : x);
     const co = (o) => (o && o.label ? { id: o.concept_id || o.label, label: o.label } : null);
     const field = co(first(d.occupation_field)), group = co(first(d.occupation_group)), occ = co(first(d.occupation));
@@ -1293,8 +1313,18 @@
     if (field) parts.push(crumb(field.label, '', { field }));
     if (group) parts.push(crumb(group.label, '', { field, group }));
     if (occ) parts.push(crumb(occ.label, '', { field, group, occ }));
-    parts.push(`<span class="cur">${esc(d.headline || '')}</span>`);
+    parts.push(sourceData ? `<a class="ad-crumb" href="#" data-s="ad">${esc(d.headline || '')}</a>` : `<span class="cur">${esc(d.headline || '')}</span>`);
+    if (sourceData) parts.push('<span class="cur">source</span>');
     $('#crumbs').innerHTML = parts.join(sep);
+
+    if (sourceData) {
+      $('#ad').innerHTML = `<section class="ad-hero ad-json" aria-labelledby="source-json-title">
+        <h2 id="source-json-title">Source data</h2><pre><code>${prettyJSON(sourceData.source)}</code></pre>
+      </section>${Object.keys(sourceData.enrichment).length ? `<section class="ad-hero ad-json" aria-labelledby="enrichment-json-title">
+        <h2 id="enrichment-json-title">Enrichment data</h2><pre><code>${prettyJSON(sourceData.enrichment)}</code></pre>
+      </section>` : ''}`;
+      return;
+    }
 
     const tagA = (cls, ic, label, spec) => {
       if (!label) return '';
@@ -1342,7 +1372,8 @@
       <div class="ad-hero">
         <div class="hero-top">${logo}<div style="min-width:0">
           <h1>${esc(d.headline || '')}</h1>
-          <div class="emp-name">${icon('building')}${esc(name)}</div></div></div>
+          <div class="emp-name">${icon('building')}${esc(name)}</div></div>
+          <button class="icon-btn ad-source-button" type="button" data-ad-source title="View source JSON" aria-label="View source JSON">${icon('file-text')}</button></div>
         <div class="tags">${tags}</div>
       </div>
       <div class="ad-cols">
@@ -1382,8 +1413,10 @@
   }
 
   function adNavClick(e) {
+    if (e.target.closest('[data-ad-source]')) return nav('source', currentAdId);
     const el = e.target.closest('[data-s]');
     if (!el) return;
+    if (el.dataset.s === 'ad') { e.preventDefault(); return back(); }
     if (el.dataset.s === 'home') return nav('list');
     applyHier(adSpecs[+el.dataset.s]);
   }

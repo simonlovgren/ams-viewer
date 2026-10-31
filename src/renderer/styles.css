@@ -232,6 +232,17 @@ a.tag:hover { filter: brightness(1.3); }
 .ad-hero h1 { margin: 0; font-size: 27px; line-height: 1.2; }
 .emp-name { color: var(--muted); margin-top: 4px; display: flex; gap: 6px; align-items: center; }
 .ad-hero .tags { margin-top: 16px; }
+.ad-source-button { margin-left: auto; flex: none; align-self: flex-start; }
+#crumbs .ad-crumb { overflow-wrap: anywhere; color: inherit; text-decoration: none; }
+.ad-json + .ad-json { margin-top: 18px; }
+.ad-json h2 { margin: 0 0 16px; font-size: 16px; letter-spacing: 0; }
+.ad-json pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.65; tab-size: 2; }
+.ad-json code { font-family: var(--font-mono); }
+.json-key { color: var(--blue); }
+.json-string { color: var(--teal); }
+.json-number { color: var(--pink); }
+.json-boolean { color: var(--purple); }
+.json-null, .json-punctuation { color: var(--muted); }
 .ad-cols { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; margin-top: 18px; align-items: start; }
 @media (max-width: 1100px) { .ad-cols { grid-template-columns: 1fr; } }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 22px 26px; margin-bottom: 16px; }

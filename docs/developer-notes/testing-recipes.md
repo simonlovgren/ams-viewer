@@ -2,6 +2,13 @@
 
 Count logic has headless regression tests; visual layout still needs manual review.
 
+## Ad source inspection (AD-012, D60)
+`node --test --test-name-pattern='ad source|source route|source view shares|source JSON find' src/main/db.test.js src/main/dataset-catalog.test.js src/renderer/app.test.js` covers immutable source/additions-only responses, ID-less ads, taxonomy array positions, sender/ID/dataset validation, page-icon/header rendering, escaped pretty-print/highlighting, hidden empty-enrichment panels, all Back inputs, forward/history/list-scroll retention, shared find shortcuts, JSON match cycling/clearing, missing ads, stale replies and recoverable read failures.
+
+2026-10-31: browser checks passed eight 1400x900/960x600 cases across both built-in themes and font modes, including header-matched panel widths, wrapped long strings, visible find controls without overflow and breadcrumb return. Browser keyboard checks passed `/`, Enter/Shift+Enter and Escape with matches in both panels and syntax spans preserved. Disposable native `npm start` passed real source IPC, additions-only data, page-button navigation, both-panel find and breadcrumb Back, then exited normally (0). Live data untouched; physical native keyboard/mouse buttons not manually verified. Seed summaries and call `catalog.markInitialized('default')` before native startup; the path helper is `catalog.databasePath()`, not `dbPath()`.
+
+Integrated browser's request API may fail with `Storage.getCookies: Method not found`; app CSP correctly blocks in-page theme fetches. For fixture-only palette loading, navigate to the served theme JSON, parse the body's text, then return to the renderer; do not relax application CSP.
+
 ## Legacy taxonomy and location enrichment (DAT-015/016, D58)
 `node --check src/main/db.js && node --check src/main/import-worker.js && node --test src/main/db.test.js` covers retryable key/map backfill, reference-first and legacy-first import, duplicate-safe contributions, preserved source values/raw JSON, taxonomy and independent location consensus, conflict removal, reprocessing, and summary/facet consistency. Worker fixtures use temporary databases and files only. Do not validate the one-time migration against the live 11.25M-ad database without explicitly planning its write cost; full-scale time/disk use is not measured.
 

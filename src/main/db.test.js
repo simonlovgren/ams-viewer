@@ -267,6 +267,38 @@ test('ad details enrich missing taxonomy while preserving arrays, metadata and s
   }
 });
 
+test('ad source data exposes only enrichment additions without modifying stored JSON', () => {
+  const db = dbm.open(':memory:');
+  try {
+    const original = {
+      headline: '<Source title>',
+      occupation: [{ legacy_ams_taxonomy_id: '7788', extra: 'keep' }, { label: 'Other' }],
+      workplace_address: { municipality_code: '0180', region: 'Source region' },
+    };
+    const mapped = dbm.toRow(original, 'older.jsonl');
+    db.prepare(dbm.INSERT_SQL).run(...mapped.values);
+    const raw = db.prepare('SELECT raw FROM ads').get().raw;
+    db.exec("UPDATE ads SET field_id = 'field-1', field = 'Technology', occ_id = 'occ-1', occ = 'Engineer', muni = 'Stockholm'");
+    const result = dbm.getAd(db, mapped.values[0], true);
+    assert.deepEqual(result.source, original);
+    assert.deepEqual(result.enrichment, {
+      occupation_field: { concept_id: 'field-1', label: 'Technology' },
+      occupation: [{ concept_id: 'occ-1', label: 'Engineer' }],
+      workplace_address: { municipality: 'Stockholm' },
+    });
+    assert.deepEqual(result.ad, dbm.getAd(db, mapped.values[0]));
+    assert.equal(db.prepare('SELECT raw FROM ads').get().raw, raw);
+    db.exec('UPDATE ads SET field_id = NULL, field = NULL, occ_id = NULL, occ = NULL, muni = NULL');
+    assert.deepEqual(dbm.getAd(db, mapped.values[0], true).enrichment, {});
+    assert.equal(dbm.getAd(db, 'missing', true), null);
+    db.prepare('UPDATE ads SET raw = ?').run(JSON.stringify({ ...original, occupation: [null, original.occupation[0]] }));
+    db.exec("UPDATE ads SET occ_id = 'occ-1', occ = 'Engineer'");
+    assert.deepEqual(dbm.getAd(db, mapped.values[0], true).enrichment.occupation, [null, { concept_id: 'occ-1', label: 'Engineer' }]);
+  } finally {
+    db.close();
+  }
+});
+
 test('organization identities consolidate employer variants across all queries and summary updates', () => {
   const db = dbm.open(':memory:');
   try {

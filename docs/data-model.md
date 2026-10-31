@@ -22,6 +22,10 @@ Relevant fields used by the app:
 
 All other fields are kept in `raw` (after pruning nulls, empty strings and empty arrays/objects).
 
+### Ad source inspection response (AD-012, D60)
+
+`ads:source` uses the lists read worker and returns `getAd(db, id, true)`: `{ad, source, enrichment}`, or `null` when the database ad ID is missing. `ad` is the normal D59 presentation projection; `source` is parsed immutable `ads.raw`; `enrichment` contains only taxonomy/location fields added while building that projection. It is `{}` when no additions apply. Taxonomy additions preserve the source's object/array form; array additions use null placeholders for preceding positions, not source metadata or unrelated entries. This is an inspection object, not a merge-patch contract. No schema or stored-record change is involved. Default `getAd(db, id)` still returns the presentation ad only.
+
 ## Dataset catalog and database paths
 
 `<userData>/datasets.json` stores catalog version, active dataset ID, and each dataset's stable generated ID, editable name, multiline description, initialized flag, and optional cached summary (`total`, `sourceCount`, `min`, `max`). Names are metadata only and never used as filesystem paths. `default` uses `datasets/default.db`; other datasets use `datasets/<generated-id>.db`. Each database has the same schema below, its own WAL/SHM files, source rows, ads and summary tables.

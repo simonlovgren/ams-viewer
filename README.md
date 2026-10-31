@@ -4,6 +4,9 @@ Desktop app for browsing historical Swedish job ads (Arbetsförmedlingen / JobTe
 
 ![Reference search-listing screenshot](docs/search-listing.png)
 
+## FAIR WARNING!
+This is an attempt / experiment in fully vibe-coding an application. Extremely little (if any) code change has been made "by a human".
+
 ## Getting the data
 Arbetsförmedlingen publishes their historical data at https://data.arbetsformedlingen.se.
 

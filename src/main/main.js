@@ -706,6 +706,12 @@ function registerHandlers() {
   ipcMain.handle('ads:facets', timed('facets', (_e, f) => { assertStableDataset(); return facetLane.request('facets', { f: f || {} }, true); }));
   ipcMain.handle('summary:get', () => { assertStableDataset(); return summaryState; });
   ipcMain.handle('ads:get', (_e, id) => { assertStableDataset(); return lists.request('get', { id }); });
+  ipcMain.handle('ads:source', (event, id) => {
+    if (event.sender !== win?.webContents) throw new Error('Ad source data requires the main window');
+    if (typeof id !== 'string' || !id.trim()) throw new Error('Invalid ad ID');
+    assertStableDataset();
+    return lists.request('source', { id });
+  });
   ipcMain.handle('datasets:list', () => { assertStableDataset(); return { datasets: datasets.list(), active: datasets.active() }; });
   ipcMain.handle('datasets:summary', () => datasetSummaries());
   ipcMain.handle('tasks:list', () => {

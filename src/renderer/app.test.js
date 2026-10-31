@@ -420,6 +420,27 @@ test('slash focuses ad find without navigating, and list search in other views',
   }
 });
 
+test('source view shares ad find focus and shortcut help without navigating to Search', () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const listeners = new Map();
+  const sections = ['list', 'ad', 'data', 'settings'].map(shortcutView => ({ dataset: { shortcutView }, hidden: true }));
+  let focus;
+  const dialog = { open: false, addEventListener() {}, showModal() { this.open = true; } };
+  const context = vm.createContext({
+    curView: 'source',
+    $: selector => selector === '#shortcut-help' ? dialog : { open: false, addEventListener() {}, focus: () => { focus = selector; } },
+    document: { querySelectorAll: () => sections, addEventListener: (name, callback) => listeners.set(name, callback) },
+    nav: () => { throw new Error('Source find must not navigate'); },
+  });
+  vm.runInContext(source.slice(source.indexOf('  const editable ='), source.indexOf("  document.addEventListener('mouseup'")), context);
+  listeners.get('keydown')({ key: '/', target: { tagName: 'BODY' }, preventDefault() {} });
+  assert.equal(focus, '#ad-find');
+  listeners.get('keydown')({ key: '?', target: { tagName: 'BODY' }, preventDefault() {} });
+  assert.equal(dialog.open, true);
+  assert.equal(sections.find(section => section.dataset.shortcutView === 'ad').hidden, false);
+  assert.equal(sections.find(section => section.dataset.shortcutView === 'list').hidden, true);
+});
+
 test('shortcut help opens the active view, ignores editable targets and restores focus', () => {
   const source = readFileSync(require.resolve('./app.js'), 'utf8');
   for (const view of ['list', 'ad', 'data', 'settings']) {
@@ -1260,6 +1281,190 @@ test('Settings and licenses join history navigation without losing list scroll',
   vm.runInContext("show('list')", context);
   assert.equal(listScroll.scrollTop, 240);
   assert.equal(views.get('settings').has('hidden'), true);
+});
+
+test('source route shares the ad pane and every Back action restores the rendered ad', async () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const elements = new Map();
+  const listeners = new Map();
+  const loads = [];
+  const states = [];
+  let position = 0;
+  let pending;
+  const element = selector => {
+    if (!elements.has(selector)) elements.set(selector, {
+      scrollTop: 240, open: false, flags: {},
+      classList: { toggle: (name, enabled) => { element(selector).flags[name] = enabled; } },
+      addEventListener: (name, callback) => listeners.set(`${selector}:${name}`, callback),
+    });
+    return elements.get(selector);
+  };
+  const context = vm.createContext({
+    $: element,
+    document: { querySelectorAll: () => [], addEventListener: (name, callback) => listeners.set(name, callback) },
+    window: { addEventListener: (name, callback) => listeners.set(name, callback) },
+    history: {
+      replaceState: state => { states[position] = state; },
+      pushState: state => { states.splice(++position, states.length, state); },
+      back: () => { pending = listeners.get('popstate')({ state: states[--position] }); },
+      forward: () => { pending = listeners.get('popstate')({ state: states[++position] }); },
+    },
+    loadAd: (id, sourceView) => loads.push([id, sourceView]), renderData() {},
+    leaveDatasetEditor: async () => true,
+    api: { onCloseRequest() {} },
+  });
+  vm.runInContext(source.slice(source.indexOf('  let idx ='), source.indexOf('  const messageDialog =')), context);
+  vm.runInContext(source.slice(source.indexOf('  const editable ='), source.indexOf('  /* ---------- theme chooser')), context);
+  await vm.runInContext("nav('ad', 'h-legacy')", context);
+  const backActions = [
+    () => listeners.get('#back:click')(),
+    () => listeners.get('keydown')({ key: 'Backspace', target: { tagName: 'BODY' }, preventDefault() {} }),
+    () => listeners.get('keydown')({ key: 'ArrowLeft', altKey: true, target: { tagName: 'BODY' }, preventDefault() {} }),
+    () => listeners.get('mouseup')({ button: 3, preventDefault() {} }),
+  ];
+  for (const action of backActions) {
+    await vm.runInContext("nav('source', 'h-legacy')", context);
+    assert.equal(element('#view-ad').flags.hidden, false);
+    assert.equal(element('#view-ad').flags['source-view'], true);
+    assert.deepEqual(loads.at(-1), ['h-legacy', true]);
+    action();
+    await pending;
+    assert.equal(vm.runInContext('curView', context), 'ad');
+    assert.deepEqual(loads.at(-1), ['h-legacy', false]);
+    assert.equal(element('#view-ad').flags['source-view'], false);
+  }
+  listeners.get('mouseup')({ button: 4, preventDefault() {} });
+  await pending;
+  assert.equal(vm.runInContext('curView', context), 'source');
+  vm.runInContext('back()', context);
+  await pending;
+  vm.runInContext("show('list')", context);
+  assert.equal(element('#list-scroll').scrollTop, 240);
+});
+
+function adSourceContext(api = {}) {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const elements = new Map();
+  const calls = [];
+  const errors = [];
+  const element = selector => {
+    if (!elements.has(selector)) elements.set(selector, { innerHTML: '', value: '', scrollTop: 0, addEventListener() {} });
+    return selector === '#ad .emp-logo img' || selector === '#apply-btn' ? null : elements.get(selector);
+  };
+  const context = vm.createContext({
+    $: element, document: { querySelectorAll: () => [] }, Intl, api,
+    icon: name => `<svg data-icon="${name}"></svg>`,
+    showAdMatch() {}, showError: (...args) => errors.push(args),
+    nav: (...args) => calls.push(args), back: () => calls.push(['back']),
+    fmtText: () => '<p>Job description</p>', fact: () => '', labels: () => [], tagList: () => '',
+  });
+  vm.runInContext('let adSeq = 0; let curView = "source"; let adMatches = [];\n'
+    + source.slice(source.indexOf('  const esc ='), source.indexOf('  /* ---------- filter state'))
+    + source.slice(source.indexOf('  function prettyJSON('), source.indexOf('  /* ---------- data view')), context);
+  return { evaluate: code => vm.runInContext(code, context), element, calls, errors };
+}
+
+test('ad source panels pretty-print and safely highlight JSON, with title breadcrumb return', () => {
+  const fixture = adSourceContext();
+  fixture.evaluate(`renderAd({headline: '<Title>', employer: {name: 'Employer'}}, {
+    source: {headline: '<script>alert("x")</script>', count: -1.25e20, available: true, missing: null, text: 'true 123 "quoted"'},
+    enrichment: {workplace_address: {municipality: 'Stockholm'}}
+  })`);
+  const html = fixture.element('#ad').innerHTML;
+  assert.match(html, /Source data/);
+  assert.match(html, /Enrichment data/);
+  assert.match(html, /\n  <span class="json-key">&quot;headline&quot;/);
+  assert.match(html, /class="json-string">&quot;&lt;script&gt;/);
+  assert.match(html, /class="json-number">-125000000000000000000/);
+  assert.match(html, /class="json-boolean">true/);
+  assert.match(html, /class="json-null">null/);
+  assert.doesNotMatch(html, /<script>|ad-cols|data-ad-source/);
+  assert.match(fixture.element('#crumbs').innerHTML, /data-s="ad">&lt;Title&gt;<\/a>.*class="cur">source/);
+  fixture.evaluate("adNavClick({target: {closest: selector => selector === '[data-s]' ? {dataset: {s: 'ad'}} : null}, preventDefault() {}})");
+  assert.deepEqual(fixture.calls, [['back']]);
+  fixture.evaluate("renderAd({headline: 'Original title'}); currentAdId = 'h-id'; adNavClick({target: {closest: () => ({})}})");
+  assert.match(fixture.element('#ad').innerHTML, /data-ad-source.*aria-label="View source JSON"/);
+  assert.match(fixture.element('#ad').innerHTML, /data-ad-source[^>]*><svg data-icon="file-text"/);
+  assert.deepEqual(fixture.calls.at(-1), ['source', 'h-id']);
+});
+
+test('source JSON find highlights both panels and cycles without changing syntax containers', () => {
+  const source = readFileSync(require.resolve('./app.js'), 'utf8');
+  const marks = [];
+  const handlers = new Map();
+  const controls = new Map();
+  const tokens = ['"municipality_code"', '"municipality"'].map(text => ({
+    className: 'json-key',
+    node: { nodeValue: text },
+    replaceChild(fragment) { marks.push(...fragment.parts.filter(part => part.className === 'ad-match')); },
+  }));
+  for (const token of tokens) token.node.parentNode = token;
+  const root = { querySelectorAll: () => [...marks], normalize() {} };
+  const context = vm.createContext({
+    $: selector => {
+      if (selector === '#ad') return root;
+      if (!controls.has(selector)) controls.set(selector, { value: '', addEventListener: (event, handler) => handlers.set(`${selector}:${event}`, handler) });
+      return controls.get(selector);
+    },
+    matchRanges: (text, query) => {
+      const start = text.toLowerCase().indexOf(query.toLowerCase());
+      return start < 0 ? [] : [{ start, end: start + query.length }];
+    },
+    NodeFilter: { SHOW_TEXT: 4 },
+    document: {
+      createTreeWalker: () => {
+        let index = -1;
+        return { nextNode: () => ++index < tokens.length, get currentNode() { return tokens[index].node; } };
+      },
+      createDocumentFragment: () => ({ parts: [], appendChild(part) { this.parts.push(part); } }),
+      createTextNode: text => ({ nodeValue: text }),
+      createElement: () => {
+        const mark = { childNodes: [], scrollIntoView() { this.scrolled = true; }, replaceWith() { marks.splice(marks.indexOf(this), 1); } };
+        mark.classList = { toggle: (_name, selected) => { mark.current = selected; } };
+        return mark;
+      },
+    },
+  });
+  vm.runInContext(source.slice(source.indexOf('  let adSeq ='), source.indexOf('  function fmtText(')), context);
+  controls.get('#ad-find').value = 'MUNICIPALITY';
+  handlers.get('#ad-find:input')();
+  assert.equal(marks.length, 2);
+  assert.equal(controls.get('#ad-find-status').textContent, '1/2');
+  assert.equal(marks[0].current, true);
+  handlers.get('#ad-find:keydown')({ key: 'Enter', preventDefault() {} });
+  assert.equal(controls.get('#ad-find-status').textContent, '2/2');
+  assert.equal(marks[1].scrolled, true);
+  handlers.get('#ad-find:keydown')({ key: 'Enter', shiftKey: true, preventDefault() {} });
+  assert.equal(controls.get('#ad-find-status').textContent, '1/2');
+  handlers.get('#ad-find:keydown')({ key: 'Escape' });
+  assert.equal(marks.length, 0);
+  assert.equal(controls.get('#ad-find-status').textContent, '0/0');
+  assert.deepEqual(tokens.map(token => token.className), ['json-key', 'json-key']);
+});
+
+test('ad source loading handles missing data, failures and stale replies', async () => {
+  let resolveFirst;
+  const fixture = adSourceContext({ getSource: id => id === 'first' ? new Promise(resolve => { resolveFirst = resolve; }) : Promise.resolve(null) });
+  const first = fixture.evaluate("loadAd('first', true)");
+  await fixture.evaluate("loadAd('missing', true)");
+  resolveFirst({ ad: { headline: 'Stale' }, source: {}, enrichment: {} });
+  await first;
+  assert.match(fixture.element('#ad').innerHTML, /Ad not found/);
+  const failure = adSourceContext({ getSource: async () => { throw new Error('Read failed'); } });
+  await failure.evaluate("loadAd('id', true)");
+  assert.match(failure.element('#ad').innerHTML, /could not be loaded/);
+  assert.match(failure.errors[0][1], /Read failed/);
+  const success = adSourceContext({ getSource: async () => ({ ad: { headline: 'Ad' }, source: { headline: 'Ad' }, enrichment: {} }) });
+  await success.evaluate("loadAd('id', true)");
+  assert.match(success.element('#ad').innerHTML, /Source data/);
+  assert.doesNotMatch(success.element('#ad').innerHTML, /Enrichment data|enrichment-json-title/);
+  assert.equal((success.element('#ad').innerHTML.match(/class="ad-hero ad-json"/g) || []).length, 1);
+  const departed = adSourceContext({ getSource: () => new Promise(resolve => { resolveFirst = resolve; }) });
+  const pending = departed.evaluate("loadAd('id', true)");
+  departed.evaluate("curView = 'list'");
+  resolveFirst({ ad: { headline: 'Departed' }, source: {}, enrichment: {} });
+  await pending;
+  assert.doesNotMatch(departed.element('#ad').innerHTML, /Departed/);
 });
 
 test('dataset history boundary rejects entries from the previous dataset', async () => {

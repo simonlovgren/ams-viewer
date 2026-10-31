@@ -12,6 +12,7 @@ const handlers = {
   search: ({ f, offset, limit }) => dbm.search(db, f || {}, offset, limit, false),
   count: ({ f }) => ({ total: dbm.count(db, f || {}) }),
   get: ({ id }) => dbm.getAd(db, id),
+  source: ({ id }) => dbm.getAd(db, id, true),
   info: () => dbm.info(db),
   datasetStats: () => dbm.datasetStats(db),
   facets: ({ f }) => dbm.facets(db, f || {}),

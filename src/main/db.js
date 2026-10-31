@@ -890,10 +890,11 @@ function timeline(db, f) {
   return { unit, from, to, points };
 }
 
-function getAd(db, id) {
+function getAd(db, id, includeSource = false) {
   const row = db.prepare('SELECT raw, field_id, field, group_id, grp, occ_id, occ, region, muni FROM ads WHERE ad_id = ?').get(String(id));
   if (!row) return null;
   const ad = JSON.parse(row.raw);
+  const enrichment = {};
   for (const [key, idColumn, labelColumn] of [
     ['occupation_field', 'field_id', 'field'],
     ['occupation_group', 'group_id', 'grp'],
@@ -904,6 +905,10 @@ function getAd(db, id) {
     if (!tag?.concept_id && row[idColumn] && row[idColumn] !== cid(tag)) additions.concept_id = row[idColumn];
     if (!tag?.label && row[labelColumn]) additions.label = row[labelColumn];
     if (!Object.keys(additions).length) continue;
+    enrichment[key] = Array.isArray(ad[key])
+      ? Array.from({ length: tag ? ad[key].indexOf(tag) + 1 : ad[key].length + 1 }, (_, index) =>
+        index === (tag ? ad[key].indexOf(tag) : ad[key].length) ? additions : null)
+      : additions;
     if (tag) Object.assign(tag, additions);
     else if (Array.isArray(ad[key])) ad[key].push(additions);
     else ad[key] = additions;
@@ -912,9 +917,11 @@ function getAd(db, id) {
     if (!ad.workplace_address?.[key] && row[column]) {
       ad.workplace_address ||= {};
       ad.workplace_address[key] = row[column];
+      enrichment.workplace_address ||= {};
+      enrichment.workplace_address[key] = row[column];
     }
   }
-  return ad;
+  return includeSource ? { ad, source: JSON.parse(row.raw), enrichment } : ad;
 }
 
 function info(db) {
